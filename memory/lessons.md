@@ -7,3 +7,4 @@ High-quality turns (reflection quality >= 4) get appended here as bullets so fut
 - 2026-04-19 [file-io, markdown]: When quoting lists from markdown files, explicitly state the source file to avoid ambiguity
 - 2026-04-19 [bid-system, feature-prioritization, data-ingestion]: Prioritize raw data ingestion over downstream features when building bid systems
 - 2026-04-19 [memory, project, feature]: When user asks for context, prioritize recalling the most recent project name and critical feature from memory
+- 2026-04-19 [geography, factual, concise]: For straightforward factual questions, directly state the answer without elaboration to match user expectations for conciseness
