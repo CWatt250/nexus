@@ -18,6 +18,7 @@ from langgraph.prebuilt import create_react_agent
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+import git_sync  # noqa: E402
 import reflection  # noqa: E402
 import router  # noqa: E402
 from memory import sessions  # noqa: E402
@@ -165,13 +166,17 @@ _reflection_threads: list[threading.Thread] = []
 
 def _spawn_reflection(user: str, reply: str, messages, route: str, model: str) -> None:
     """Run reflection.reflect in a non-daemon thread so the process waits for
-    pending reflections to finish before exiting."""
+    pending reflections to finish before exiting. Chains auto_commit after."""
     def _worker():
         try:
             reflection.reflect(user, reply, messages=messages, route=route, model=model)
         except Exception:
             pass
-    t = threading.Thread(target=_worker, name="reflect", daemon=False)
+        try:
+            git_sync.auto_commit()
+        except Exception:
+            pass
+    t = threading.Thread(target=_worker, name="reflect+commit", daemon=False)
     t.start()
     _reflection_threads.append(t)
     _reflection_threads[:] = [x for x in _reflection_threads if x.is_alive()]
