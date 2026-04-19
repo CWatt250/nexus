@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtualenv
+venv/
+
+# Local RAG index
+chroma/
+
+# Nexus runtime state — changes every turn, not content
+memory/checkpoints.db
+memory/current_thread.txt
+memory/sessions.json
+
+# Generated designs (can be large; regenerated on demand)
+designs/
+
+# Playwright browser cache / etc.
+.cache/
+
+# OS
+.DS_Store
+*.swp
+*.swo

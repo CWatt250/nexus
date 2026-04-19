@@ -1,0 +1,8 @@
+{
+  "router": "qwen3:4b",
+  "fast":   "qwen3:4b",
+  "mid":    "qwen3:8b",
+  "heavy":  "qwen3.6",
+  "code":   "qwen3.6",
+  "design": "qwen3.6"
+}
