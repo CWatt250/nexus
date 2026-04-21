@@ -20,6 +20,9 @@ memory/clipboard-log.md
 memory/token-usage.log
 memory/blocked-commands.log
 memory/watchdog.log
+memory/git_watcher_seen.json
+memory/git-activity.log
+.env
 
 # Generated designs (can be large; regenerated on demand)
 designs/

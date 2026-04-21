@@ -1,0 +1,22 @@
+{
+  "_comment": "External MCP servers Nexus will spawn on startup. Each entry: {name, command (shell-split), env (optional), enabled (optional, default true), skip_if_missing_env (optional, default true — skip if any env value is empty). Tools appear in Nexus as '<name>__<tool>'.",
+  "servers": [
+    {
+      "name": "markitdown",
+      "command": "/home/cwatt250/AI_Agent/venv/bin/markitdown-mcp",
+      "env": {},
+      "enabled": true
+    },
+    {
+      "name": "github",
+      "command": "npx -y @modelcontextprotocol/server-github",
+      "env": {
+        "GITHUB_TOKEN": "",
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      },
+      "enabled": true,
+      "skip_if_missing_env": true,
+      "note": "Fill GITHUB_TOKEN (and GITHUB_PERSONAL_ACCESS_TOKEN) with a fine-grained PAT. The entry auto-skips while the values are empty so Nexus boots cleanly without a token."
+    }
+  ]
+}

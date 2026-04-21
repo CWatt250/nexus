@@ -27,6 +27,7 @@ from safety import circuit_breaker, guardrails  # noqa: E402,F401
 from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
+from tools.github_tool import GITHUB_TOOLS  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
 from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
 from tools.rag_tool import memory_add, memory_search  # noqa: E402
@@ -56,7 +57,30 @@ TOOLS = [
     markitdown_tool,
     mem0_add,
     mem0_search,
+    *GITHUB_TOOLS,
 ]
+
+
+def extend_tools_with_mcp() -> int:
+    """Spawn external MCP servers from ~/AI_Agent/mcp/servers.json and
+    append their discovered tools to TOOLS. Must be called before any
+    agent is built. Returns the number of tools added."""
+    import importlib.util
+    client_path = ROOT / "mcp" / "client.py"
+    if not client_path.exists():
+        return 0
+    spec = importlib.util.spec_from_file_location("nexus_mcp_client", client_path)
+    if spec is None or spec.loader is None:
+        return 0
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+        mcp_tools = mod.load_mcp_tools()
+    except Exception as exc:
+        print(f"[mcp] failed to load external tools: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 0
+    TOOLS.extend(mcp_tools)
+    return len(mcp_tools)
 
 
 def load_project_context() -> str:
@@ -314,6 +338,9 @@ def daemon_loop() -> None:
 
 def main() -> None:
     set_system_prompt(load_system_prompt())
+    added = extend_tools_with_mcp()
+    if added:
+        print(f"[mcp] loaded {added} external tools", file=sys.stderr)
     if sys.stdin.isatty():
         interactive_loop()
     else:

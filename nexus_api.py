@@ -30,6 +30,7 @@ from memory import sessions  # noqa: E402
 from nexus import (  # noqa: E402
     ThinkStripper,
     build_agent,
+    extend_tools_with_mcp,
     load_system_prompt,
     set_system_prompt,
     strip_thinking,
@@ -42,6 +43,9 @@ PORT = 11435
 app = FastAPI(title="nexus-api", version="0.4")
 # Lock in the system prompt before any agent is built, then warm-start heavy.
 set_system_prompt(load_system_prompt())
+_mcp_added = extend_tools_with_mcp()
+if _mcp_added:
+    print(f"[mcp] nexus-api loaded {_mcp_added} external tools", flush=True)
 build_agent(router.model_for("heavy"))
 _system_prompt = load_system_prompt()
 
