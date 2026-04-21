@@ -17,6 +17,9 @@ memory/sessions.json
 memory/mem0/
 memory/file_watcher_seen.txt
 memory/clipboard-log.md
+memory/token-usage.log
+memory/blocked-commands.log
+memory/watchdog.log
 
 # Generated designs (can be large; regenerated on demand)
 designs/

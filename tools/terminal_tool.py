@@ -1,18 +1,24 @@
 """Terminal execution tool for Nexus.
 
-Wraps subprocess with a 30s timeout and appends every invocation to the
-nexus-core run-log as one JSON line per call.
+Every shell command goes through `safety.sandbox.run_guarded`, which
+consults the guardrails blacklist, rate limiter, and circuit breaker
+before executing with a 60-second hard kill timeout. Each invocation
+appends one JSON line to the nexus-core run-log.
 """
 from __future__ import annotations
 
 import json
-import subprocess
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
 
 from langchain_core.tools import tool
 
-TIMEOUT_SECONDS = 30
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from safety.sandbox import run_guarded  # noqa: E402
+
 RUN_LOG = Path.home() / "AI_Agent" / "projects" / "nexus-core" / "run-log.jsonl"
 
 
@@ -23,45 +29,22 @@ def _log(entry: dict) -> None:
 
 
 def run_shell(command: str) -> dict:
-    """Execute a shell command and return a structured result. Used by both
-    the tool wrapper and direct Python callers."""
-    ts = datetime.now(timezone.utc).isoformat()
-    try:
-        proc = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
-        )
-        result = {
-            "ts": ts,
-            "tool": "terminal",
-            "command": command,
-            "returncode": proc.returncode,
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "timed_out": False,
-        }
-    except subprocess.TimeoutExpired as exc:
-        result = {
-            "ts": ts,
-            "tool": "terminal",
-            "command": command,
-            "returncode": None,
-            "stdout": exc.stdout or "",
-            "stderr": (exc.stderr or "") + f"\n[timed out after {TIMEOUT_SECONDS}s]",
-            "timed_out": True,
-        }
+    """Execute a shell command through the sandbox. Blocked commands
+    return a dict with `blocked=True` instead of running."""
+    result = run_guarded(command)
     _log(result)
     return result
 
 
 @tool
 def terminal(command: str) -> str:
-    """Run a shell command on the host (bash, 30s timeout).
+    """Run a shell command on the host (bash, 60s hard timeout).
+    Dangerous commands (rm -rf, mkfs, dd if=, /etc/passwd, etc.) are
+    blocked by the guardrails layer before execution.
     Returns a short summary of returncode, stdout, stderr."""
     result = run_shell(command)
+    if result.get("blocked"):
+        return f"BLOCKED: {result.get('reason', 'guardrails')}\n{result.get('stderr', '').rstrip()}"
     parts = [f"returncode={result['returncode']}"]
     if result["stdout"]:
         parts.append(f"stdout:\n{result['stdout'].rstrip()}")

@@ -23,6 +23,8 @@ import git_sync  # noqa: E402
 import reflection  # noqa: E402
 import router  # noqa: E402
 from memory import sessions  # noqa: E402
+from safety import circuit_breaker, guardrails  # noqa: E402,F401
+from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
