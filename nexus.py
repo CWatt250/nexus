@@ -25,6 +25,8 @@ import router  # noqa: E402
 from memory import sessions  # noqa: E402
 from safety import circuit_breaker, guardrails  # noqa: E402,F401
 from safety import sandbox as safety_sandbox  # noqa: E402,F401
+from tools import context_compressor  # noqa: E402
+from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
@@ -33,6 +35,8 @@ from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
 from tools.rag_tool import memory_add, memory_search  # noqa: E402
 from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
+from tools.tts_tool import tts_save, tts_speak  # noqa: E402
+from tools.whisper_tool import whisper_record, whisper_transcribe  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -58,6 +62,12 @@ TOOLS = [
     mem0_add,
     mem0_search,
     *GITHUB_TOOLS,
+    brave_search,
+    brave_search_news,
+    whisper_record,
+    whisper_transcribe,
+    tts_speak,
+    tts_save,
 ]
 
 
@@ -137,7 +147,11 @@ def load_system_prompt() -> str:
         "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
         "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
         "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
-        "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n\n"
+        "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
+        "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
+        "- `brave_search(query, count)` / `brave_search_news(query, count)`: web and news search via Brave (needs BRAVE_SEARCH_API_KEY).\n"
+        "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
+        "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
         "Guidelines:\n"
         "- Read files before editing them.\n"
         "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
@@ -318,6 +332,12 @@ def interactive_loop() -> None:
         sessions.touch_session(thread_id, source="nexus", first_msg=user if not resumed and result["messages"] else None)
         sessions.set_current_thread(thread_id)
         _spawn_reflection(user, reply, result.get("messages"), route, model)
+        try:
+            cstatus = context_compressor.maybe_compress(agent, thread_id)
+            if cstatus.get("compressed"):
+                print(f"[context: compressed turn {cstatus['turn']} — dropped {cstatus.get('dropped', 0)} messages]")
+        except Exception as exc:
+            print(f"[context: compressor error: {type(exc).__name__}: {exc}]")
 
 
 def daemon_loop() -> None:

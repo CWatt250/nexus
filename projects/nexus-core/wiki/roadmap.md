@@ -1,6 +1,6 @@
 # Nexus Core — Roadmap
 
-_Last updated: 2026-04-21_
+_Last updated: 2026-04-21 (later in the day)_
 
 ## Phase 0 — Foundation (DONE, earlier in the project)
 - LangGraph ReAct agent wired to local Ollama.
@@ -52,17 +52,29 @@ _Last updated: 2026-04-21_
 - **GitHub MCP server** configured in `servers.json` (auto-skipped until token set). Global npm install requires sudo (`sudo npm install -g @modelcontextprotocol/server-github`); `npx -y` works without it.
 - **`tools/git_watcher.py`** + **`nexus-git-watcher.service`** — every 60s, walks `~/Dev` and `~/AI_Agent` up to depth 3, detects new commits, writes JSONL to `memory/git-activity.log`, stores commit summary in Chroma RAG tagged `git_activity`.
 
-## Phase 6 — Planning session commitments (locked, next up)
+## Phase 6 — Voice, Web Search, Chronicle, Compression, Soul upgrade — 2026-04-21 — SHIPPED
+- **Voice stack**:
+  - `tools/whisper_tool.py` — faster-whisper `base`, `record_and_transcribe` (silence-stops, 30s cap) + `transcribe_file`. Model cached under `models/whisper/`. LangGraph tools: `whisper_record`, `whisper_transcribe`.
+  - `tools/tts_tool.py` — Kokoro-82M (`kokoro-onnx`), `speak` + `save_audio`, default voice `af_heart`. Model + voice bundle auto-downloaded into `models/kokoro/`. LangGraph tools: `tts_speak`, `tts_save`.
+  - `voice_loop.py` — press-Enter-to-record interactive voice assistant; whisper → agent → Kokoro. Run with `python3 ~/AI_Agent/voice_loop.py`.
+  - `sounddevice` requires `libportaudio2` (added to `/tmp/nexus-chronicle-apt.sh`).
+- **Brave Search** — `tools/brave_search_tool.py` (`brave_search`, `brave_search_news`). Reads `BRAVE_SEARCH_API_KEY` from `.env`; when missing returns "Add BRAVE_SEARCH_API_KEY to ~/AI_Agent/.env to enable web search".
+- **Chronicle** — `tools/chronicle.py` + `nexus-chronicle.service`. Every 5 min: scrot → tesseract OCR → qwen3:4b summary → `memory/chronicle/YYYY-MM-DD.md` + RAG `tag=chronicle`. Skips on lock / missing `DISPLAY` / OCR < 50 chars.
+- **Context compression** — `tools/context_compressor.py`. Every 10 CLI turns, qwen3:4b produces a ~500-token summary; LangGraph checkpoint is rewritten via `RemoveMessage` + injected `SystemMessage`. Logs to `memory/compression-log.md`. Wired into `interactive_loop`.
+- **Pattern analyzer v2** — `memory/patterns.py` now tracks peak hour + quality trend (first half vs second half of window), top GitHub repos, hot read/write files, and git-activity commits per repo. Emits both `memory/patterns.md` (full) and `memory/weekly-digest.md` (condensed). `nexus-patterns.timer` runs it every Monday at 06:00 local.
+- **SOUL.md** — rewritten: identity + autonomy push, "never say I can't", WattBott / Irex Argus / BidWatt context, full tool belt, when-to-use cheatsheet, safety rules carried forward.
+
+## Phase 7 — Next up (locked)
 - **GLM-5.1 code-tier route** — add Z.AI / GLM-5.1 as an alternate for the `code` route; key via `Z_AI_API_KEY`.
-- **Brave Search tool** — Phase 6 web-search tool keyed via `BRAVE_SEARCH_API_KEY`.
 - **Tailscale integration** — remote-device visibility via `TAILSCALE_API_KEY`.
 - **Design Studio v2** — keep visual design on its own model, wire output artifacts into Chroma RAG automatically.
 - **BidWatt integration** — dedicated tools for scraping/bidding pipeline; route `bid/*` keywords through a specialist model.
 - **Proactive ingestion expansion** — email-drop watcher once Gmail MCP auth is set up; mirror the file-watcher pattern.
-- **Open WebUI tool bridge** — surface the LangGraph tool catalog as function-calling options.
+- **Open WebUI tool bridge** — surface the full LangGraph tool catalog as function-calling options.
 - **Hardware-aware model routing** — use ROCm GPU availability/utilization as a router signal.
+- **Nomic-embed-text in Ollama** and drop HF sentence-transformers in Mem0.
 
-## Phase 7 — Stretch (unlocked, explored only)
+## Phase 8 — Stretch (unlocked, explored only)
 - **Fine-tuning loop** — use reflection-tagged exchanges (quality=5/1) to build SFT/DPO pairs for a local qwen3 variant.
 - **Multi-agent planning** — design↔code↔critic loop for larger tasks.
 - **Voice in/out** — whisper.cpp + piper wired into the API.
@@ -70,13 +82,15 @@ _Last updated: 2026-04-21_
 ## Services (current)
 | Service | Status | Purpose |
 | --- | --- | --- |
-| `nexus-agent` | running (restart pending for Phase 3+5) | CLI/daemon LangGraph agent |
-| `nexus-api` | running (restart pending for Phase 3+5) | OpenAI-compatible API for Open WebUI |
+| `nexus-agent` | running (restart pending for Phase 3+5+6) | CLI/daemon LangGraph agent |
+| `nexus-api` | running (restart pending for Phase 3+5+6) | OpenAI-compatible API for Open WebUI |
 | `nexus-design` | running | Design Studio |
 | `nexus-file-watcher` | pending install | Auto-ingest Downloads/Documents |
 | `nexus-clipboard-watcher` | pending install | Auto-ingest clipboard |
 | `nexus-watchdog` | pending install | Service monitor + RAM/Ollama watchdog |
 | `nexus-git-watcher` | pending install | Commit watcher → git-activity.log + RAG |
+| `nexus-chronicle` | pending install | Screen → OCR → qwen3:4b summary → RAG |
+| `nexus-patterns.timer` | pending install | Weekly digest Mon 06:00 |
 
 ## Runtime data paths
 - Chroma RAG: `~/AI_Agent/chroma/`
@@ -88,6 +102,13 @@ _Last updated: 2026-04-21_
 - Watchdog log: `~/AI_Agent/memory/watchdog.log`
 - Blocked-command log: `~/AI_Agent/memory/blocked-commands.log`
 - Token-usage log: `~/AI_Agent/memory/token-usage.log`
+- Chronicle pages: `~/AI_Agent/memory/chronicle/YYYY-MM-DD.md`
+- Compression log: `~/AI_Agent/memory/compression-log.md`
+- Compression state: `~/AI_Agent/memory/compression-state.json`
+- Weekly digest: `~/AI_Agent/memory/weekly-digest.md`
+- Patterns report: `~/AI_Agent/memory/patterns.md`
+- Whisper model cache: `~/AI_Agent/models/whisper/`
+- Kokoro model cache: `~/AI_Agent/models/kokoro/`
 - Reflection run log: `~/AI_Agent/projects/nexus-core/run-log.jsonl`
 - MCP server config: `~/AI_Agent/mcp/servers.json`
 - Secrets: `~/AI_Agent/.env` (template in `.env.example`)

@@ -22,6 +22,12 @@ memory/blocked-commands.log
 memory/watchdog.log
 memory/git_watcher_seen.json
 memory/git-activity.log
+memory/chronicle/
+memory/compression-log.md
+memory/compression-state.json
+memory/weekly-digest.md
+memory/patterns.md
+models/
 .env
 
 # Generated designs (can be large; regenerated on demand)

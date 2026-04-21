@@ -29,12 +29,15 @@ from tools.file_tool import (  # noqa: E402
     file_read_tool,
     file_write_tool,
 )
+from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
 from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
 from tools.rag_tool import memory_add, memory_search  # noqa: E402
 from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
+from tools.tts_tool import tts_save, tts_speak  # noqa: E402
+from tools.whisper_tool import whisper_record, whisper_transcribe  # noqa: E402
 
 TOOLS = [
     terminal,
@@ -50,6 +53,12 @@ TOOLS = [
     mem0_add,
     mem0_search,
     *GITHUB_TOOLS,
+    brave_search,
+    brave_search_news,
+    whisper_record,
+    whisper_transcribe,
+    tts_speak,
+    tts_save,
 ]
 
 # stderr-only logging — stdout is reserved for MCP framing.
