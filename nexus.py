@@ -2,6 +2,7 @@
 """Nexus — LangGraph agent over local Ollama with a full tool belt."""
 from __future__ import annotations
 
+import re
 import signal
 import sqlite3
 import sys
@@ -24,6 +25,8 @@ import router  # noqa: E402
 from memory import sessions  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
+from tools.markitdown_tool import markitdown_tool  # noqa: E402
+from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
 from tools.rag_tool import memory_add, memory_search  # noqa: E402
 from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
@@ -48,6 +51,9 @@ TOOLS = [
     browser_tool,
     memory_search,
     memory_add,
+    markitdown_tool,
+    mem0_add,
+    mem0_search,
 ]
 
 
@@ -101,8 +107,11 @@ def load_system_prompt() -> str:
         "- `glob_tool(pattern, root='.')`: list files matching a glob (supports **).\n"
         "- `grep_tool(pattern, root='.', glob='**/*')`: regex search file contents.\n"
         "- `browser_tool(url)`: fetch a URL with headless Chromium and return text.\n"
-        "- `memory_search(query_text, k=4)`: query long-term memory.\n"
-        "- `memory_add(text)`: save a snippet to long-term memory.\n\n"
+        "- `memory_search(query_text, k=4)`: query long-term memory (Chroma RAG).\n"
+        "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
+        "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
+        "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
+        "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n\n"
         "Guidelines:\n"
         "- Read files before editing them.\n"
         "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
@@ -152,13 +161,75 @@ def agent_for_message(message: str) -> tuple[object, str, str]:
     return build_agent(model), route, model
 
 
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
+
+
+def strip_thinking(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks from a model response.
+    qwen3:4b (the fast/router model) sometimes leaks these even with
+    reasoning=False; strip before the text hits the user or reflection."""
+    if not text:
+        return text
+    cleaned = _THINK_RE.sub("", text)
+    cleaned = _OPEN_THINK_RE.sub("", cleaned)
+    return cleaned.strip()
+
+
+class ThinkStripper:
+    """Stateful stripper for streaming qwen3 output. Feeds chunk-at-a-time
+    and buffers partial <think> / </think> tags across chunk boundaries."""
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self.in_think = False
+        self.buf = ""
+
+    def feed(self, text: str) -> str:
+        if text:
+            self.buf += text
+        out: list[str] = []
+        while self.buf:
+            if self.in_think:
+                idx = self.buf.find(self.CLOSE)
+                if idx == -1:
+                    keep = min(len(self.CLOSE) - 1, len(self.buf))
+                    self.buf = self.buf[-keep:] if keep else ""
+                    break
+                self.buf = self.buf[idx + len(self.CLOSE):]
+                self.in_think = False
+            else:
+                idx = self.buf.find(self.OPEN)
+                if idx == -1:
+                    keep = min(len(self.OPEN) - 1, len(self.buf))
+                    emit = self.buf[:-keep] if keep else self.buf
+                    if emit:
+                        out.append(emit)
+                    self.buf = self.buf[-keep:] if keep else ""
+                    break
+                if idx > 0:
+                    out.append(self.buf[:idx])
+                self.buf = self.buf[idx + len(self.OPEN):]
+                self.in_think = True
+        return "".join(out)
+
+    def flush(self) -> str:
+        if self.in_think:
+            self.buf = ""
+            return ""
+        out = self.buf
+        self.buf = ""
+        return out
+
+
 def _extract_reply(state: dict) -> str:
     msgs = state.get("messages", [])
     for m in reversed(msgs):
         content = getattr(m, "content", None)
         if content and (m.__class__.__name__ == "AIMessage" or getattr(m, "type", "") == "ai"):
-            return content
-    return msgs[-1].content if msgs else ""
+            return strip_thinking(content)
+    return strip_thinking(msgs[-1].content) if msgs else ""
 
 
 _reflection_threads: list[threading.Thread] = []
@@ -167,9 +238,10 @@ _reflection_threads: list[threading.Thread] = []
 def _spawn_reflection(user: str, reply: str, messages, route: str, model: str) -> None:
     """Run reflection.reflect in a non-daemon thread so the process waits for
     pending reflections to finish before exiting. Chains auto_commit after."""
+    clean_reply = strip_thinking(reply)
     def _worker():
         try:
-            reflection.reflect(user, reply, messages=messages, route=route, model=model)
+            reflection.reflect(user, clean_reply, messages=messages, route=route, model=model)
         except Exception:
             pass
         try:

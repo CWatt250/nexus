@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -22,9 +23,17 @@ from pydantic import BaseModel, ConfigDict
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+import git_sync  # noqa: E402
+import reflection  # noqa: E402
 import router  # noqa: E402
 from memory import sessions  # noqa: E402
-from nexus import build_agent, load_system_prompt, set_system_prompt  # noqa: E402
+from nexus import (  # noqa: E402
+    ThinkStripper,
+    build_agent,
+    load_system_prompt,
+    set_system_prompt,
+    strip_thinking,
+)
 
 MODEL_NAME = "nexus"
 HOST = "0.0.0.0"
@@ -47,6 +56,29 @@ def _last_user_text(msgs: list) -> str:
 def _pick_agent(messages: list) -> tuple[object, str, str]:
     route, model = router.classify_and_model(_last_user_text(messages))
     return build_agent(model), route, model
+
+
+_reflection_threads: list[threading.Thread] = []
+
+
+def _spawn_reflection(user: str, reply: str, messages, route: str, model: str) -> None:
+    """Run reflect() in a background thread after an API response. Mirrors
+    nexus.py so reflection happens whether the client talks to the CLI or the
+    OpenAI-compatible API."""
+    clean_reply = strip_thinking(reply or "")
+    def _worker():
+        try:
+            reflection.reflect(user, clean_reply, messages=messages, route=route, model=model)
+        except Exception:
+            pass
+        try:
+            git_sync.auto_commit()
+        except Exception:
+            pass
+    t = threading.Thread(target=_worker, name="api-reflect+commit", daemon=True)
+    t.start()
+    _reflection_threads.append(t)
+    _reflection_threads[:] = [x for x in _reflection_threads if x.is_alive()]
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache, no-transform",
@@ -101,9 +133,9 @@ def _thread_id_for(req: ChatRequest) -> tuple[str, str]:
 def _extract_reply(result: dict) -> str:
     for m in reversed(result.get("messages", [])):
         if m.__class__.__name__ == "AIMessage" and getattr(m, "content", None):
-            return m.content
+            return strip_thinking(m.content)
     msgs = result.get("messages", [])
-    return msgs[-1].content if msgs else ""
+    return strip_thinking(msgs[-1].content) if msgs else ""
 
 
 def _completion_envelope(content: str) -> dict:
@@ -134,7 +166,9 @@ def _chunk_bytes(chunk_id: str, created: int, delta: dict, finish: str | None = 
     return f"data: {json.dumps(payload)}\n\n".encode()
 
 
-async def _stream_agent(agent, lc_msgs, config) -> AsyncIterator[bytes]:
+async def _stream_agent(
+    agent, lc_msgs, config, user_msg: str, route: str, model: str
+) -> AsyncIterator[bytes]:
     """Stream agent output token-by-token as OpenAI SSE chunks.
 
     Uses LangGraph's `stream_mode='messages'` which yields
@@ -146,6 +180,10 @@ async def _stream_agent(agent, lc_msgs, config) -> AsyncIterator[bytes]:
     created = int(time.time())
 
     yield _chunk_bytes(chunk_id, created, {"role": "assistant"})
+
+    stripper = ThinkStripper()
+    full_text_parts: list[str] = []
+    final_messages = None
 
     try:
         async for event in agent.astream(
@@ -170,7 +208,14 @@ async def _stream_agent(agent, lc_msgs, config) -> AsyncIterator[bytes]:
                 text = str(content)
             if not text:
                 continue
-            yield _chunk_bytes(chunk_id, created, {"content": text})
+            visible = stripper.feed(text)
+            if visible:
+                full_text_parts.append(visible)
+                yield _chunk_bytes(chunk_id, created, {"content": visible})
+        tail = stripper.flush()
+        if tail:
+            full_text_parts.append(tail)
+            yield _chunk_bytes(chunk_id, created, {"content": tail})
     except Exception as exc:
         yield _chunk_bytes(
             chunk_id, created, {"content": f"\n[stream error: {type(exc).__name__}: {exc}]"}
@@ -178,6 +223,13 @@ async def _stream_agent(agent, lc_msgs, config) -> AsyncIterator[bytes]:
 
     yield _chunk_bytes(chunk_id, created, {}, finish="stop")
     yield b"data: [DONE]\n\n"
+
+    try:
+        snap = agent.get_state(config)
+        final_messages = getattr(snap, "values", {}).get("messages") if snap else None
+    except Exception:
+        final_messages = None
+    _spawn_reflection(user_msg, "".join(full_text_parts), final_messages, route, model)
 
 
 @app.get("/v1/models")
@@ -197,25 +249,28 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
-    agent, _route, _model = _pick_agent(req.messages)
+    agent, route, model = _pick_agent(req.messages)
     thread_id, _src = _thread_id_for(req)
     config = {"configurable": {"thread_id": thread_id}}
 
     # Checkpointer holds prior turns; we only pass the new user message.
     last = _last_user_message(req.messages)
     lc_msgs = [HumanMessage(content=last.content)] if last and last.content else []
+    user_text = last.content if last and last.content else ""
 
     first_msg = last.content if last else None
     sessions.touch_session(thread_id, source="api", first_msg=first_msg)
 
     if req.stream:
         return StreamingResponse(
-            _stream_agent(agent, lc_msgs, config),
+            _stream_agent(agent, lc_msgs, config, user_text, route, model),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
     result = await agent.ainvoke({"messages": lc_msgs}, config=config)
-    return _completion_envelope(_extract_reply(result))
+    reply = _extract_reply(result)
+    _spawn_reflection(user_text, reply, result.get("messages"), route, model)
+    return _completion_envelope(reply)
 
 
 @app.get("/healthz")
