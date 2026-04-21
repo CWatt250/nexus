@@ -14,6 +14,9 @@ chroma/
 memory/checkpoints.db
 memory/current_thread.txt
 memory/sessions.json
+memory/mem0/
+memory/file_watcher_seen.txt
+memory/clipboard-log.md
 
 # Generated designs (can be large; regenerated on demand)
 designs/
