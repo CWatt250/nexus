@@ -1,25 +1,18 @@
 const { app, BrowserWindow, screen, ipcMain, globalShortcut, shell } = require('electron');
 const path = require('path');
 
-const WIN_WIDTH = 220;
-const WIN_HEIGHT = 250;
-const EDGE_MARGIN = 10;        // px — gap between the window and the screen edge
-const CURSOR_POLL_MS = 50;
-
 let mainWindow = null;
 let cursorTimer = null;
-let dragOrigin = null;         // { x, y } window position when a drag started
+const CURSOR_POLL_MS = 50;
 
 function createWindow() {
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
-    width: WIN_WIDTH,
-    height: WIN_HEIGHT,
-    // Spawn in the bottom-right corner of the primary display's work area
-    // (respects the taskbar/panel).
-    x: screenWidth - WIN_WIDTH - EDGE_MARGIN,
-    y: screenHeight - WIN_HEIGHT - EDGE_MARGIN,
+    width: 220,
+    height: 250,
+    x: screenWidth - 240,
+    y: screenHeight - 280,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -115,23 +108,24 @@ ipcMain.on('sparky-settings', () => {
   shell.openExternal('http://localhost:11437/state');
 });
 
-// ---------------- Manual drag ----------------
-// On Wayland (Ubuntu 24.04 default) Chromium's -webkit-app-region: drag
-// is unreliable for transparent/frameless windows, so the renderer also
-// drives drag directly via pointer events + screen coordinates.
-ipcMain.on('sparky-drag-start', () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const b = mainWindow.getBounds();
-  dragOrigin = { x: b.x, y: b.y };
+// Manual window drag — Wayland can't rely on -webkit-app-region, so the
+// renderer drives drag via pointer events and we move the window here.
+let dragOffset = { x: 0, y: 0 };
+
+ipcMain.on('sparky-drag-start', (event, { screenX, screenY }) => {
+  if (!mainWindow) return;
+  const bounds = mainWindow.getBounds();
+  dragOffset = { x: screenX - bounds.x, y: screenY - bounds.y };
 });
 
-ipcMain.on('sparky-drag-move', (event, payload) => {
-  if (!dragOrigin || !mainWindow || mainWindow.isDestroyed()) return;
-  const dx = (payload && typeof payload.dx === 'number') ? payload.dx : 0;
-  const dy = (payload && typeof payload.dy === 'number') ? payload.dy : 0;
-  mainWindow.setPosition(Math.round(dragOrigin.x + dx), Math.round(dragOrigin.y + dy));
+ipcMain.on('sparky-drag-move', (event, { screenX, screenY }) => {
+  if (!mainWindow) return;
+  mainWindow.setPosition(
+    Math.round(screenX - dragOffset.x),
+    Math.round(screenY - dragOffset.y)
+  );
 });
 
 ipcMain.on('sparky-drag-end', () => {
-  dragOrigin = null;
+  dragOffset = { x: 0, y: 0 };
 });
