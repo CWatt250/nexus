@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 import threading
@@ -54,6 +55,15 @@ class BubbleMessage(BaseModel):
     text: str
 
 
+class CardRequest(BaseModel):
+    """Payload for /card — a deliverable preview shown next to Sparky."""
+    type: str                            # file | url | github | command | message
+    title: str
+    subtitle: Optional[str] = None
+    action_url: Optional[str] = None     # path for file / url otherwise
+    action_label: Optional[str] = None   # override the default button label
+
+
 class CurrentState(BaseModel):
     state: SparkyState
     message: Optional[str]
@@ -101,6 +111,34 @@ _revert_task: Optional[asyncio.Task] = None
 _bubble_id: int = 0
 _bubble_text: Optional[str] = None
 _bubble_at: float = 0.0
+
+# Deliverable preview cards — monotonic id per card, ring-buffered to the
+# last MAX_CARDS_STORED so the overlay can resync on reconnect.
+MAX_CARDS_STORED = 20
+_cards: list[dict] = []
+_card_id: int = 0
+
+# Mute state — persisted to ~/AI_Agent/sparky/mute.json.
+MUTE_FILE = Path.home() / "AI_Agent" / "sparky" / "mute.json"
+
+
+def _load_mute() -> bool:
+    if not MUTE_FILE.exists():
+        return False
+    try:
+        return bool(json.loads(MUTE_FILE.read_text(encoding="utf-8")).get("muted", False))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def _save_mute(muted: bool) -> None:
+    MUTE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = MUTE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"muted": muted}), encoding="utf-8")
+    tmp.replace(MUTE_FILE)
+
+
+_muted: bool = _load_mute()
 
 
 def _cancel_revert() -> None:
@@ -151,27 +189,83 @@ async def root():
 
 @app.get("/state")
 async def get_state() -> dict:
-    """Get current Sparky state + latest bubble info (polled by Electron)."""
+    """Get current Sparky state + bubble + cards + mute (polled by Electron)."""
     return {
         **_current_state.model_dump(),
-        "bubble": {
-            "id": _bubble_id,
-            "text": _bubble_text,
-            "at": _bubble_at,
-        },
+        "bubble": {"id": _bubble_id, "text": _bubble_text, "at": _bubble_at},
+        "cards": list(_cards[-10:]),
+        "muted": _muted,
     }
 
 
 @app.post("/message")
 async def post_message(msg: BubbleMessage) -> dict:
-    """Queue a speech-bubble message for the overlay to render above Sparky.
-    Each call bumps a monotonic id so the overlay reliably detects a new
-    bubble even when the text matches the previous one."""
+    """Queue a speech-bubble message for the overlay to render above Sparky."""
     global _bubble_id, _bubble_text, _bubble_at
     _bubble_id += 1
     _bubble_text = msg.text
     _bubble_at = time.time()
     return {"success": True, "bubble_id": _bubble_id}
+
+
+# ---------------------------------------------------------------------------
+# Cards
+# ---------------------------------------------------------------------------
+
+@app.post("/card")
+async def post_card(req: CardRequest) -> dict:
+    """Push a deliverable preview card into the overlay's stack."""
+    global _card_id
+    _card_id += 1
+    entry = {
+        "id": _card_id,
+        "type": (req.type or "message").lower(),
+        "title": req.title,
+        "subtitle": req.subtitle,
+        "action_url": req.action_url,
+        "action_label": req.action_label,
+        "at": time.time(),
+    }
+    _cards.append(entry)
+    if len(_cards) > MAX_CARDS_STORED:
+        _cards.pop(0)
+    return {"success": True, "card_id": _card_id}
+
+
+@app.get("/cards")
+async def list_cards() -> dict:
+    return {"cards": list(_cards[-10:]), "last_id": _card_id}
+
+
+@app.post("/cards/clear")
+async def clear_cards() -> dict:
+    _cards.clear()
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Mute
+# ---------------------------------------------------------------------------
+
+@app.get("/muted")
+async def get_muted() -> dict:
+    return {"muted": _muted}
+
+
+@app.post("/mute")
+async def mute() -> dict:
+    global _muted
+    _muted = True
+    _save_mute(True)
+    return {"muted": True}
+
+
+@app.post("/unmute")
+async def unmute() -> dict:
+    global _muted
+    _muted = False
+    _save_mute(False)
+    return {"muted": False}
 
 
 @app.post("/state")

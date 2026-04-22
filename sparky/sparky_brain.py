@@ -34,7 +34,7 @@ import ollama
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from tools.tts_tool import _get_engine as _warm_engine  # noqa: E402
+from tools.tts_tool import resolved_voice  # noqa: E402
 from tools.tts_tool import speak as tts_speak  # noqa: E402
 
 BRIDGE_URL = "http://localhost:11437"
@@ -189,6 +189,17 @@ def _bridge_post(path: str, body: dict | None = None) -> None:
         log.warning("bridge %s failed: %s", path, exc)
 
 
+def _is_muted() -> bool:
+    try:
+        with httpx.Client(timeout=2) as client:
+            r = client.get(f"{BRIDGE_URL}/muted")
+        if r.status_code != 200:
+            return False
+        return bool(r.json().get("muted", False))
+    except Exception:
+        return False
+
+
 def _speak_hint(message: str) -> None:
     """Orchestrate the full speak flow for one hint."""
     global _last_hint_ts
@@ -206,9 +217,12 @@ def _speak_hint(message: str) -> None:
         _bridge_post("/message", {"text": message})
         _bridge_post("/speaking/start")
         try:
-            status = tts_speak(message)
-            if isinstance(status, str) and status.startswith("ERROR:"):
-                log.warning("tts: %s", status)
+            if _is_muted():
+                log.info("muted — skipping TTS playback")
+            else:
+                status = tts_speak(message)
+                if isinstance(status, str) and status.startswith("ERROR:"):
+                    log.warning("tts: %s", status)
         except Exception as exc:
             log.exception("tts crashed: %s", exc)
         finally:
@@ -297,12 +311,11 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle)
     signal.signal(signal.SIGINT, _handle)
 
-    log.info("sparky-brain starting — warming Kokoro…")
+    log.info("sparky-brain starting — warming TTS…")
     try:
-        _warm_engine()
-        log.info("Kokoro ready")
+        log.info("resolved TTS voice: %s", resolved_voice())
     except Exception as exc:
-        log.warning("Kokoro warm failed (will retry per hint): %s", exc)
+        log.warning("voice probe failed (will retry per hint): %s", exc)
 
     observer = _install_chronicle_watcher()
 

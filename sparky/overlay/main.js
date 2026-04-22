@@ -5,11 +5,11 @@ let mainWindow = null;
 let cursorTimer = null;
 const CURSOR_POLL_MS = 50;
 
-// Window geometry — roomier than before to fit the iMessage speech bubble
-// above Sparky. Kept in sync with index.html: bubble area (top ~80 px),
-// sparky-container (200 × 200 at margin-top 90), status bar below.
-const WIN_WIDTH = 280;
-const WIN_HEIGHT = 340;
+// Window geometry — wide enough for a card stack on the left (280 px) and
+// Sparky on the right (200 px), with the iMessage speech bubble centered
+// above Sparky. Stays anchored bottom-right of the work area.
+const WIN_WIDTH = 540;
+const WIN_HEIGHT = 400;
 const EDGE_MARGIN = 10;
 
 function createWindow() {
@@ -136,4 +136,21 @@ ipcMain.on('sparky-drag-move', (event, { screenX, screenY }) => {
 
 ipcMain.on('sparky-drag-end', () => {
   dragOffset = { x: 0, y: 0 };
+});
+
+// ---------------- Card actions ----------------
+ipcMain.on('sparky-open-path', (event, filePath) => {
+  if (!filePath) return;
+  shell.openPath(filePath).catch(() => {});
+});
+
+ipcMain.on('sparky-open-url', (event, url) => {
+  if (!url) return;
+  shell.openExternal(url).catch(() => {});
+});
+
+ipcMain.on('sparky-copy-text', (event, text) => {
+  if (typeof text !== 'string') return;
+  const { clipboard } = require('electron');
+  try { clipboard.writeText(text); } catch (e) { /* ignore */ }
 });
