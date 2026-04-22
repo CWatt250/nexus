@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
+import threading
 import time
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Make ../tools importable so /speak can drive Kokoro TTS.
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 app = FastAPI(title="Sparky State Bridge", version="1.1.0")
 
@@ -163,6 +172,59 @@ async def reset_state() -> CurrentState:
     return _current_state
 
 
+# ---------------------------------------------------------------------------
+# /speak — one-shot: set state to talking, play message via Kokoro, go idle.
+# Runs playback on a background thread so the HTTP response returns fast.
+# ---------------------------------------------------------------------------
+
+_speak_lock = threading.Lock()
+_bridge_log = logging.getLogger("sparky.bridge")
+
+
+def _play_and_finish(message: str) -> None:
+    """Runs in a worker thread: synth+play the message, then go idle."""
+    global _current_state
+    if not _speak_lock.acquire(blocking=False):
+        _bridge_log.info("speak already in progress; dropping request")
+        return
+    try:
+        try:
+            from tools.tts_tool import speak as _tts_speak
+        except Exception as exc:
+            _bridge_log.warning("tts_tool import failed: %s", exc)
+            return
+        try:
+            status = _tts_speak(message)
+            if isinstance(status, str) and status.startswith("ERROR:"):
+                _bridge_log.warning("tts: %s", status)
+        except Exception as exc:
+            _bridge_log.exception("tts crashed: %s", exc)
+    finally:
+        _speak_lock.release()
+        # Reset to idle after playback, but only if we still look like we're
+        # the active speaker — don't clobber a new state set during playback.
+        if _current_state.state == SparkyState.TALKING:
+            _go_idle()
+
+
+@app.post("/speak")
+async def speak(update: StateUpdate, background: BackgroundTasks) -> dict:
+    """Set Sparky to talking with `message` and play the message via Kokoro
+    TTS. Returns immediately; playback runs in the background."""
+    global _current_state
+    _cancel_revert()
+    _current_state = CurrentState(
+        state=SparkyState.TALKING,
+        message=update.message,
+        updated_at=time.time(),
+        is_speaking=True,
+    )
+    msg = (update.message or "").strip()
+    if msg:
+        background.add_task(_play_and_finish, msg)
+    return {"success": True, "state": _current_state.state, "will_speak": bool(msg)}
+
+
 @app.post("/speaking/start")
 async def start_speaking() -> dict:
     """Signal that Nexus has started speaking (for mouth sync)."""
@@ -224,4 +286,6 @@ async def set_idle() -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=11437)
+    # Bind loopback only — the Electron overlay and nexus.py both run on
+    # this host; no reason to expose the state bridge externally.
+    uvicorn.run(app, host="127.0.0.1", port=11437)
