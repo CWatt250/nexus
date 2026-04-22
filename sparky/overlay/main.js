@@ -1,7 +1,9 @@
-const { app, BrowserWindow, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, globalShortcut, shell } = require('electron');
 const path = require('path');
 
 let mainWindow = null;
+let cursorTimer = null;
+const CURSOR_POLL_MS = 50;
 
 function createWindow() {
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
@@ -25,22 +27,51 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Hide on double-click, show again
-  let visible = true;
-  mainWindow.on('dblclick', () => {
-    visible = !visible;
-    if (visible) {
-      mainWindow.show();
-    } else {
-      mainWindow.hide();
+  // Global cursor polling — fires even when the cursor is outside the overlay
+  // window. Renderer uses this to decide whether Sparky's eyes should track.
+  cursorTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+    try {
+      const cursor = screen.getCursorScreenPoint();
+      const b = mainWindow.getBounds();
+      mainWindow.webContents.send('cursor-pos', {
+        cursor,
+        window: { x: b.x, y: b.y, width: b.width, height: b.height }
+      });
+    } catch (e) {
+      // ignore — screen API occasionally throws on multi-monitor transitions
     }
+  }, CURSOR_POLL_MS);
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
 
-  // Allow dragging
   mainWindow.setIgnoreMouseEvents(false);
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  // Alt+Shift+S toggles Sparky's visibility — lets the user get him back
+  // after the "Hide" context-menu action.
+  globalShortcut.register('Alt+Shift+S', () => {
+    if (!mainWindow) {
+      createWindow();
+      return;
+    }
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+    }
+  });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (cursorTimer) clearInterval(cursorTimer);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -54,9 +85,25 @@ app.on('activate', () => {
   }
 });
 
-// IPC for state updates from Nexus
+// IPC for state updates from Nexus (kept for compatibility — the renderer
+// also polls the HTTP bridge directly, so this is a fast-path).
 ipcMain.on('set-state', (event, state) => {
   if (mainWindow) {
     mainWindow.webContents.send('state-update', state);
   }
+});
+
+// Context-menu actions forwarded from the renderer.
+ipcMain.on('sparky-hide', () => {
+  if (mainWindow) mainWindow.hide();
+});
+
+ipcMain.on('sparky-show', () => {
+  if (mainWindow) mainWindow.show();
+});
+
+ipcMain.on('sparky-settings', () => {
+  // Minimal "settings" — open the state bridge health endpoint in the
+  // default browser. Gives the user a live view of what Sparky is seeing.
+  shell.openExternal('http://localhost:11437/state');
 });

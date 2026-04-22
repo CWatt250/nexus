@@ -26,6 +26,7 @@ from memory import sessions  # noqa: E402
 from safety import circuit_breaker, guardrails  # noqa: E402,F401
 from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools import context_compressor  # noqa: E402
+from tools.sparky_state import SparkyCallbackHandler, post_state  # noqa: E402
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
@@ -344,18 +345,27 @@ def interactive_loop() -> None:
     thread_id, resumed = resolve_thread_id()
     tag = "resumed" if resumed else "new"
     print(f"nexus ready — session {thread_id[:8]} ({tag}). ctrl-d / ctrl-c to exit.")
+    sparky_cb = SparkyCallbackHandler()
     while True:
         try:
             user = input("you> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
+            post_state("idle")
             return
         if not user:
             continue
         agent, route, model = agent_for_message(user)
         print(f"[router: {route} → {model}]")
-        config = {"configurable": {"thread_id": thread_id}}
-        result = agent.invoke({"messages": [HumanMessage(content=user)]}, config=config)
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [sparky_cb],
+        }
+        try:
+            result = agent.invoke({"messages": [HumanMessage(content=user)]}, config=config)
+        except Exception as exc:
+            post_state("error", message=f"{type(exc).__name__}: {exc}")
+            raise
         reply = _extract_reply(result)
         print(f"nexus> {reply}")
         sessions.touch_session(thread_id, source="nexus", first_msg=user if not resumed and result["messages"] else None)
@@ -367,6 +377,7 @@ def interactive_loop() -> None:
                 print(f"[context: compressed turn {cstatus['turn']} — dropped {cstatus.get('dropped', 0)} messages]")
         except Exception as exc:
             print(f"[context: compressor error: {type(exc).__name__}: {exc}]")
+        post_state("idle")
 
 
 def daemon_loop() -> None:

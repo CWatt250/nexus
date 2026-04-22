@@ -15,21 +15,29 @@
       height: 100%;
       overflow: hidden;
       background: transparent;
+      /* The chrome of the window stays draggable so the user can move
+         Sparky around by grabbing him. Interactive regions below opt
+         out with `-webkit-app-region: no-drag`. */
       -webkit-app-region: drag;
       user-select: none;
     }
 
+    /* Sparky himself is clickable, not draggable — otherwise left/right
+       click never reach the renderer. */
     #sparky-container {
       position: relative;
       width: 200px;
       height: 200px;
       margin: 10px auto;
+      -webkit-app-region: no-drag;
+      cursor: pointer;
     }
 
     #sparky {
       width: 200px;
       height: 200px;
       transition: transform 0.3s ease;
+      pointer-events: none; /* let clicks reach #sparky-container */
     }
 
     #emoji-bubble {
@@ -40,6 +48,7 @@
       opacity: 0;
       transition: opacity 0.3s ease;
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      pointer-events: none;
     }
 
     #emoji-bubble.visible {
@@ -54,87 +63,23 @@
     }
 
     /* State animations */
-    .state-idle #sparky {
-      animation: idle-float 3s ease-in-out infinite;
-    }
+    .state-idle #sparky     { animation: idle-float 3s ease-in-out infinite; }
+    .state-thinking #sparky { animation: thinking-shake 0.5s ease-in-out infinite; }
+    .state-working #sparky  { animation: working-bob 1s ease-in-out infinite; }
+    .state-excited #sparky  { animation: excited-vibrate 0.2s ease-in-out infinite; }
+    .state-happy #sparky    { animation: happy-bounce 0.5s ease-out; }
+    .state-error #sparky    { animation: error-shake 0.3s ease-in-out 3; filter: hue-rotate(180deg) saturate(1.5); }
+    .state-sleeping #sparky { animation: sleeping-sway 4s ease-in-out infinite; opacity: 0.7; }
+    .state-whammy #sparky   { animation: whammy-charge 0.5s ease-in-out infinite; filter: drop-shadow(0 0 15px #FACC15); }
 
-    .state-thinking #sparky {
-      animation: thinking-shake 0.5s ease-in-out infinite;
-    }
-
-    .state-working #sparky {
-      animation: working-bob 1s ease-in-out infinite;
-    }
-
-    .state-excited #sparky {
-      animation: excited-vibrate 0.2s ease-in-out infinite;
-    }
-
-    .state-happy #sparky {
-      animation: happy-bounce 0.5s ease-out;
-    }
-
-    .state-error #sparky {
-      animation: error-shake 0.3s ease-in-out 3;
-      filter: hue-rotate(180deg) saturate(1.5);
-    }
-
-    .state-sleeping #sparky {
-      animation: sleeping-sway 4s ease-in-out infinite;
-      opacity: 0.7;
-    }
-
-    .state-whammy #sparky {
-      animation: whammy-charge 0.5s ease-in-out infinite;
-      filter: drop-shadow(0 0 15px #FACC15);
-    }
-
-    @keyframes idle-float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-    }
-
-    @keyframes thinking-shake {
-      0%, 100% { transform: translateX(0) rotate(0deg); }
-      25% { transform: translateX(-3px) rotate(-2deg); }
-      75% { transform: translateX(3px) rotate(2deg); }
-    }
-
-    @keyframes working-bob {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-5px); }
-    }
-
-    @keyframes excited-vibrate {
-      0%, 100% { transform: translateX(0) scale(1); }
-      25% { transform: translateX(-2px) scale(1.02); }
-      75% { transform: translateX(2px) scale(1.02); }
-    }
-
-    @keyframes happy-bounce {
-      0%, 100% { transform: translateY(0) scale(1); }
-      30% { transform: translateY(-25px) scale(1.1); }
-      60% { transform: translateY(-10px) scale(1.05); }
-    }
-
-    @keyframes error-shake {
-      0%, 100% { transform: translateX(0); }
-      20% { transform: translateX(-8px); }
-      40% { transform: translateX(8px); }
-      60% { transform: translateX(-8px); }
-      80% { transform: translateX(8px); }
-    }
-
-    @keyframes sleeping-sway {
-      0%, 100% { transform: rotate(0deg); }
-      25% { transform: rotate(-3deg); }
-      75% { transform: rotate(3deg); }
-    }
-
-    @keyframes whammy-charge {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
-    }
+    @keyframes idle-float       { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
+    @keyframes thinking-shake   { 0%,100%{transform:translateX(0) rotate(0);} 25%{transform:translateX(-3px) rotate(-2deg);} 75%{transform:translateX(3px) rotate(2deg);} }
+    @keyframes working-bob      { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
+    @keyframes excited-vibrate  { 0%,100%{transform:translateX(0) scale(1);} 25%{transform:translateX(-2px) scale(1.02);} 75%{transform:translateX(2px) scale(1.02);} }
+    @keyframes happy-bounce     { 0%,100%{transform:translateY(0) scale(1);} 30%{transform:translateY(-25px) scale(1.1);} 60%{transform:translateY(-10px) scale(1.05);} }
+    @keyframes error-shake      { 0%,100%{transform:translateX(0);} 20%{transform:translateX(-8px);} 40%{transform:translateX(8px);} 60%{transform:translateX(-8px);} 80%{transform:translateX(8px);} }
+    @keyframes sleeping-sway    { 0%,100%{transform:rotate(0deg);} 25%{transform:rotate(-3deg);} 75%{transform:rotate(3deg);} }
+    @keyframes whammy-charge    { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
 
     /* Status indicator */
     #status {
@@ -147,6 +92,37 @@
       color: #0EA5E9;
       text-shadow: 0 1px 2px rgba(0,0,0,0.3);
       opacity: 0.8;
+      pointer-events: none;
+    }
+
+    /* Context menu — floats on top, opts out of dragging. */
+    #context-menu {
+      position: absolute;
+      display: none;
+      min-width: 140px;
+      padding: 4px 0;
+      background: rgba(15, 23, 42, 0.96);
+      color: #f1f5f9;
+      border: 1px solid rgba(14, 165, 233, 0.5);
+      border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 12px;
+      z-index: 9999;
+      -webkit-app-region: no-drag;
+    }
+    #context-menu .menu-item {
+      padding: 7px 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #context-menu .menu-item:hover {
+      background: rgba(14, 165, 233, 0.25);
+    }
+    #context-menu .menu-sep {
+      height: 1px;
+      background: rgba(148, 163, 184, 0.25);
+      margin: 3px 0;
     }
   </style>
 </head>
@@ -157,6 +133,13 @@
   </div>
   <div id="status">idle</div>
 
+  <div id="context-menu">
+    <div class="menu-item" data-action="hide">Hide</div>
+    <div class="menu-item" data-action="settings">Settings</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-action="whammy">Test WHAMMY</div>
+  </div>
+
   <script>
     const { ipcRenderer } = require('electron');
 
@@ -164,86 +147,180 @@
     const emojiBubble = document.getElementById('emoji-bubble');
     const statusDiv = document.getElementById('status');
     const sparkyObj = document.getElementById('sparky');
+    const sparkyContainer = document.getElementById('sparky-container');
+    const contextMenu = document.getElementById('context-menu');
 
-    // Emoji mapping
-    const emojis = {
-      thinking: 'thought_bubble',
-      idea: 'bulb',
-      whammy: 'zap',
-      excited: 'fire',
-      sleeping: 'zzz',
-      error: 'x',
-      happy: 'sparkles',
-      working: 'gear'
+    const TRACKING_RADIUS = 200;        // px — eyes track when cursor within this
+    const PUPIL_MAX_OFFSET = 4;          // px — max pupil displacement from center
+    const PUPIL_BASE_L = { cx: 75, cy: 87 };
+    const PUPIL_BASE_R = { cx: 125, cy: 87 };
+
+    const emojiMap = {
+      thinking: '💭',
+      idea: '💡',
+      whammy: '⚡',
+      excited: '🔥',
+      sleeping: '💤',
+      error: '❌',
+      happy: '✨',
+      working: '⚙️',
     };
 
-    // State management
     let currentState = 'idle';
     let lastActivity = Date.now();
 
     function setState(newState) {
-      if (newState === currentState) return;
-
-      // Remove old state class
-      body.className = '';
-
-      // Add new state class
-      body.classList.add(`state-${newState}`);
+      if (!newState || newState === currentState) return;
+      body.className = `state-${newState}`;
       currentState = newState;
       statusDiv.textContent = newState;
-
-      // Show emoji bubble
-      const emoji = emojis[newState];
-      if (emoji) {
-        showEmoji(emoji);
-      }
-
+      const e = emojiMap[newState];
+      if (e) showEmoji(e);
       lastActivity = Date.now();
     }
 
-    function showEmoji(emojiName) {
-      // Map emoji names to actual emojis
-      const emojiMap = {
-        'thought_bubble': '💭',
-        'bulb': '💡',
-        'zap': '⚡',
-        'fire': '🔥',
-        'zzz': '💤',
-        'x': '❌',
-        'sparkles': '✨',
-        'gear': '⚙️'
-      };
-
-      emojiBubble.textContent = emojiMap[emojiName] || '✨';
+    function showEmoji(emoji) {
+      emojiBubble.textContent = emoji;
       emojiBubble.classList.remove('visible');
-
-      // Trigger reflow
       void emojiBubble.offsetWidth;
-
       emojiBubble.classList.add('visible');
-
-      // Remove after animation
-      setTimeout(() => {
-        emojiBubble.classList.remove('visible');
-      }, 2000);
+      setTimeout(() => emojiBubble.classList.remove('visible'), 2000);
     }
 
-    // Poll Nexus state bridge
+    async function postStateHttp(state, message) {
+      // Mirror the state to the bridge so other listeners (Nexus, other
+      // overlays) see the click-driven change.
+      try {
+        await fetch('http://localhost:11437/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(message ? { state, message } : { state }),
+        });
+      } catch (e) { /* bridge may be down; ignore */ }
+    }
+
+    // ---------------- Cursor tracking ----------------
+    // Eyes follow the OS cursor when it's within TRACKING_RADIUS of
+    // Sparky's on-screen center. Main process sends screen-coordinates
+    // at CURSOR_POLL_MS so we can track even when the cursor is outside
+    // the overlay window.
+
+    function setPupils(offsetX, offsetY) {
+      try {
+        const doc = sparkyObj.contentDocument;
+        if (!doc) return;
+        const lp = doc.getElementById('pupil-left');
+        const rp = doc.getElementById('pupil-right');
+        if (!lp || !rp) return;
+        lp.setAttribute('cx', PUPIL_BASE_L.cx + offsetX);
+        lp.setAttribute('cy', PUPIL_BASE_L.cy + offsetY);
+        rp.setAttribute('cx', PUPIL_BASE_R.cx + offsetX);
+        rp.setAttribute('cy', PUPIL_BASE_R.cy + offsetY);
+      } catch (e) { /* SVG not ready yet */ }
+    }
+
+    ipcRenderer.on('cursor-pos', (event, payload) => {
+      const { cursor, window: win } = payload || {};
+      if (!cursor || !win) return;
+
+      // Sparky's SVG sits inside a 200x200 container centered horizontally
+      // inside the 220-wide window, 10px from the top. Approximate his
+      // screen-center accordingly.
+      const sparkyCx = win.x + win.width / 2;
+      const sparkyCy = win.y + 10 + 100;
+
+      const dx = cursor.x - sparkyCx;
+      const dy = cursor.y - sparkyCy;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist <= TRACKING_RADIUS) {
+        lastActivity = Date.now();
+        if (currentState === 'sleeping') setState('idle');
+        // Scale: at radius, pupils almost fully displaced; at center, 0.
+        const scale = Math.min(1, dist / TRACKING_RADIUS) * PUPIL_MAX_OFFSET;
+        const norm = dist < 1 ? 1 : dist;
+        const offX = (dx / norm) * scale;
+        const offY = (dy / norm) * scale;
+        setPupils(offX, offY);
+      } else {
+        setPupils(0, 0);
+      }
+    });
+
+    // ---------------- Click interactions ----------------
+
+    function showContextMenu(x, y) {
+      // Clamp to the overlay window bounds so the menu never renders off-
+      // screen. The window is 220x250; the menu is ~140x80.
+      const maxX = Math.max(0, window.innerWidth - 150);
+      const maxY = Math.max(0, window.innerHeight - 90);
+      contextMenu.style.left = Math.min(x, maxX) + 'px';
+      contextMenu.style.top = Math.min(y, maxY) + 'px';
+      contextMenu.style.display = 'block';
+    }
+
+    function hideContextMenu() {
+      contextMenu.style.display = 'none';
+    }
+
+    sparkyContainer.addEventListener('click', (e) => {
+      if (e.button !== 0) return;          // left only
+      if (contextMenu.style.display === 'block') {
+        hideContextMenu();
+        return;
+      }
+      e.preventDefault();
+      lastActivity = Date.now();
+      // Trigger the happy-bounce immediately, then let the bridge re-apply
+      // whatever Nexus reports next.
+      body.classList.remove('state-happy');
+      void body.offsetWidth;
+      setState('happy');
+      postStateHttp('happy');
+    });
+
+    sparkyContainer.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      lastActivity = Date.now();
+      showContextMenu(e.clientX, e.clientY);
+    });
+
+    contextMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('.menu-item');
+      if (!item) return;
+      const action = item.dataset.action;
+      hideContextMenu();
+      if (action === 'hide') {
+        ipcRenderer.send('sparky-hide');
+      } else if (action === 'settings') {
+        ipcRenderer.send('sparky-settings');
+      } else if (action === 'whammy') {
+        setState('whammy');
+        postStateHttp('whammy', 'manual test');
+      }
+    });
+
+    // Dismiss menu on any click outside it.
+    document.addEventListener('mousedown', (e) => {
+      if (contextMenu.style.display !== 'block') return;
+      if (!e.target.closest('#context-menu')) hideContextMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hideContextMenu();
+    });
+
+    // ---------------- State polling from the bridge ----------------
+
     async function pollState() {
       try {
         const response = await fetch('http://localhost:11437/state');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.state && data.state !== currentState) {
-            setState(data.state);
-          }
-        }
-      } catch (e) {
-        // API not available, stay in current state
-      }
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.state && data.state !== currentState) setState(data.state);
+      } catch (e) { /* bridge down; ignore */ }
     }
 
-    // Check for idle timeout (sleep after 5 min)
     function checkIdle() {
       const idleTime = Date.now() - lastActivity;
       if (idleTime > 5 * 60 * 1000 && currentState !== 'sleeping') {
@@ -251,59 +328,11 @@
       }
     }
 
-    // Eye tracking (cursor following)
-    document.addEventListener('mousemove', (e) => {
-      lastActivity = Date.now();
-      if (currentState === 'sleeping') {
-        setState('idle');
-      }
+    ipcRenderer.on('state-update', (event, state) => setState(state));
 
-      // Track cursor for eye movement (if SVG is accessible)
-      try {
-        const svgDoc = sparkyObj.contentDocument;
-        if (svgDoc) {
-          const leftPupil = svgDoc.getElementById('pupil-left');
-          const rightPupil = svgDoc.getElementById('pupil-right');
-
-          if (leftPupil && rightPupil) {
-            const rect = sparkyObj.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-
-            const dx = (e.clientX - centerX) / 100;
-            const dy = (e.clientY - centerY) / 100;
-
-            const maxOffset = 4;
-            const offsetX = Math.max(-maxOffset, Math.min(maxOffset, dx * 3));
-            const offsetY = Math.max(-maxOffset, Math.min(maxOffset, dy * 3));
-
-            leftPupil.setAttribute('cx', 75 + offsetX);
-            leftPupil.setAttribute('cy', 87 + offsetY);
-            rightPupil.setAttribute('cx', 125 + offsetX);
-            rightPupil.setAttribute('cy', 87 + offsetY);
-          }
-        }
-      } catch (e) {
-        // SVG not accessible, ignore
-      }
-    });
-
-    // Double-click to toggle visibility
-    document.addEventListener('dblclick', () => {
-      const { ipcRenderer } = require('electron');
-      // This is handled in main.js
-    });
-
-    // Listen for state updates from main process
-    ipcRenderer.on('state-update', (event, state) => {
-      setState(state);
-    });
-
-    // Start polling
     setInterval(pollState, 500);
     setInterval(checkIdle, 30000);
 
-    // Initial state
     setState('idle');
   </script>
 </body>
