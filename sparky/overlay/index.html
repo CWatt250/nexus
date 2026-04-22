@@ -4,40 +4,46 @@
   <meta charset="UTF-8">
   <title>Sparky</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    /* ---------------- Tokens ---------------- */
+    :root {
+      --squish-x: 1.25;
+      --squish-y: 0.75;
+      --stretch-x: 0.85;
+      --stretch-y: 1.2;
+      --spring:       cubic-bezier(.34, 1.56, .64, 1);
+      --spring-land:  cubic-bezier(.2, .8, .4, 1.3);
+      --spring-soft:  cubic-bezier(.25, .8, .35, 1);
     }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
       width: 100%;
       height: 100%;
       overflow: hidden;
       background: transparent;
-      /* The chrome of the window stays draggable so the user can move
-         Sparky around by grabbing him. Interactive regions below opt
-         out with `-webkit-app-region: no-drag`. */
       -webkit-app-region: drag;
       user-select: none;
     }
 
-    /* Sparky himself is clickable, not draggable — otherwise left/right
-       click never reach the renderer. */
+    /* ---------------- Sparky ---------------- */
     #sparky-container {
       position: relative;
       width: 200px;
       height: 200px;
-      margin: 10px auto;
+      /* 90 px of headroom above for the iMessage bubble, 0 below so the
+         status line hugs the bottom drag region. */
+      margin: 90px auto 0;
       -webkit-app-region: no-drag;
       cursor: pointer;
+      transform-origin: center bottom; /* squish compresses from feet up */
+      will-change: transform;
     }
 
     #sparky {
       width: 200px;
       height: 200px;
-      transition: transform 0.3s ease;
-      pointer-events: none; /* let clicks reach #sparky-container */
+      pointer-events: none;
     }
 
     #emoji-bubble {
@@ -50,38 +56,207 @@
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
       pointer-events: none;
     }
-
     #emoji-bubble.visible {
       opacity: 1;
       animation: float-up 2s ease-out forwards;
     }
-
     @keyframes float-up {
-      0% { transform: translateY(0) scale(1); opacity: 1; }
-      70% { transform: translateY(-20px) scale(1.1); opacity: 1; }
+      0%   { transform: translateY(0)    scale(1);   opacity: 1; }
+      70%  { transform: translateY(-20px) scale(1.1); opacity: 1; }
       100% { transform: translateY(-30px) scale(0.8); opacity: 0; }
     }
 
-    /* State animations */
-    .state-idle #sparky     { animation: idle-float 3s ease-in-out infinite; }
-    .state-thinking #sparky { animation: thinking-shake 0.5s ease-in-out infinite; }
-    .state-working #sparky  { animation: working-bob 1s ease-in-out infinite; }
-    .state-excited #sparky  { animation: excited-vibrate 0.2s ease-in-out infinite; }
-    .state-happy #sparky    { animation: happy-bounce 0.5s ease-out; }
-    .state-error #sparky    { animation: error-shake 0.3s ease-in-out 3; filter: hue-rotate(180deg) saturate(1.5); }
-    .state-sleeping #sparky { animation: sleeping-sway 4s ease-in-out infinite; opacity: 0.7; }
-    .state-whammy #sparky   { animation: whammy-charge 0.5s ease-in-out infinite; filter: drop-shadow(0 0 15px #FACC15); }
+    /* ---------------- Spring-physics state animations ----------------
+       Applied to #sparky-container so the squish/stretch scales Sparky
+       as a whole, without touching the SVG. Each continuous-state
+       keyframe starts at 0% in squish pose, which gives a natural
+       "landing" look whenever a state change restarts the animation. */
 
-    @keyframes idle-float       { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
-    @keyframes thinking-shake   { 0%,100%{transform:translateX(0) rotate(0);} 25%{transform:translateX(-3px) rotate(-2deg);} 75%{transform:translateX(3px) rotate(2deg);} }
-    @keyframes working-bob      { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
-    @keyframes excited-vibrate  { 0%,100%{transform:translateX(0) scale(1);} 25%{transform:translateX(-2px) scale(1.02);} 75%{transform:translateX(2px) scale(1.02);} }
-    @keyframes happy-bounce     { 0%,100%{transform:translateY(0) scale(1);} 30%{transform:translateY(-25px) scale(1.1);} 60%{transform:translateY(-10px) scale(1.05);} }
-    @keyframes error-shake      { 0%,100%{transform:translateX(0);} 20%{transform:translateX(-8px);} 40%{transform:translateX(8px);} 60%{transform:translateX(-8px);} 80%{transform:translateX(8px);} }
-    @keyframes sleeping-sway    { 0%,100%{transform:rotate(0deg);} 25%{transform:rotate(-3deg);} 75%{transform:rotate(3deg);} }
-    @keyframes whammy-charge    { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+    .state-idle #sparky-container {
+      animation: idle-bob 2.4s var(--spring) infinite;
+    }
+    @keyframes idle-bob {
+      0%   { transform: translateY(0)   scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      15%  { transform: translateY(-2px) scaleX(1.02)           scaleY(0.98); }
+      45%  { transform: translateY(-8px) scaleX(var(--stretch-x)) scaleY(var(--stretch-y)); }
+      62%  { transform: translateY(-8px) scaleX(var(--stretch-x)) scaleY(var(--stretch-y)); }
+      82%  { transform: translateY(0)   scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      100% { transform: translateY(0)   scaleX(1)               scaleY(1); }
+    }
 
-    /* Status indicator */
+    .state-thinking #sparky-container {
+      animation: thinking-shake 0.5s ease-in-out infinite;
+    }
+    @keyframes thinking-shake {
+      0%,100% { transform: translateX(0)   scaleX(1)    scaleY(1); }
+      25%     { transform: translateX(-3px) scaleX(1.05) scaleY(0.96) rotate(-1deg); }
+      75%     { transform: translateX(3px)  scaleX(1.05) scaleY(0.96) rotate(1deg); }
+    }
+
+    .state-working #sparky-container {
+      animation: working-bob 1.1s var(--spring) infinite;
+    }
+    @keyframes working-bob {
+      0%   { transform: translateY(0)   scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      20%  { transform: translateY(-3px) scaleX(1)               scaleY(1); }
+      50%  { transform: translateY(-6px) scaleX(0.93)            scaleY(1.12); }
+      80%  { transform: translateY(0)   scaleX(1.14)            scaleY(0.9); }
+      100% { transform: translateY(0)   scaleX(1)               scaleY(1); }
+    }
+
+    .state-excited #sparky-container {
+      animation: excited-bounce 0.9s ease-in-out infinite;
+    }
+    @keyframes excited-bounce {
+      0%   { transform: translateY(0)   scaleX(1) scaleY(1); }
+      12%  { transform: translateY(-3px) scaleX(0.97) scaleY(1.06); }
+      24%  { transform: translateY(0)   scaleX(1.1)  scaleY(0.92); }
+      40%  { transform: translateY(-6px) scaleX(0.92) scaleY(1.12); }
+      55%  { transform: translateY(0)   scaleX(1.18) scaleY(0.84); }
+      74%  { transform: translateY(-9px) scaleX(0.88) scaleY(1.18); }
+      88%  { transform: translateY(0)   scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      100% { transform: translateY(0)   scaleX(1) scaleY(1); }
+    }
+
+    .state-happy #sparky-container {
+      animation: happy-jump 0.7s var(--spring-land);
+    }
+    @keyframes happy-jump {
+      0%   { transform: translateY(0)    scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      12%  { transform: translateY(-10px) scaleX(0.9)  scaleY(1.15); }
+      30%  { transform: translateY(-30px) scaleX(var(--stretch-x)) scaleY(var(--stretch-y)); }
+      52%  { transform: translateY(-6px)  scaleX(1)    scaleY(1); }
+      68%  { transform: translateY(0)    scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      84%  { transform: translateY(0)    scaleX(1.08) scaleY(0.94); }
+      100% { transform: translateY(0)    scaleX(1)    scaleY(1); }
+    }
+
+    .state-error #sparky-container {
+      animation: error-shake 0.3s ease-in-out 3;
+    }
+    .state-error #sparky {
+      filter: hue-rotate(180deg) saturate(1.5);
+    }
+    @keyframes error-shake {
+      0%,100% { transform: translateX(0)   scaleX(1)    scaleY(1); }
+      20%     { transform: translateX(-8px) scaleX(1.06) scaleY(0.94); }
+      40%     { transform: translateX(8px)  scaleX(1.06) scaleY(0.94); }
+      60%     { transform: translateX(-8px) scaleX(1.06) scaleY(0.94); }
+      80%     { transform: translateX(8px)  scaleX(1.06) scaleY(0.94); }
+    }
+
+    .state-sleeping #sparky-container {
+      animation: sleeping-sway 4s ease-in-out infinite;
+    }
+    .state-sleeping #sparky {
+      opacity: 0.7;
+    }
+    @keyframes sleeping-sway {
+      0%,100% { transform: rotate(0deg)  scaleX(1) scaleY(1); }
+      25%     { transform: rotate(-3deg) scaleX(1) scaleY(1); }
+      75%     { transform: rotate(3deg)  scaleX(1) scaleY(1); }
+    }
+
+    /* WHAMMY: charge (escalating vibrate) → fire (stretch forward) →
+       squish landing. Runs once — the bridge is expected to bounce state
+       back to idle after its TTL. */
+    .state-whammy #sparky-container {
+      animation: whammy-full 1.25s ease-in-out;
+    }
+    .state-whammy #sparky {
+      filter: drop-shadow(0 0 15px #FACC15);
+    }
+    @keyframes whammy-full {
+      0%   { transform: translateX(0)   scaleX(1) scaleY(1); }
+      6%   { transform: translateX(-1px) scaleX(1.01) scaleY(0.99); }
+      12%  { transform: translateX(1px)  scaleX(1.01) scaleY(0.99); }
+      20%  { transform: translateX(-2px) scaleX(1.03) scaleY(0.97); }
+      28%  { transform: translateX(2px)  scaleX(1.03) scaleY(0.97); }
+      36%  { transform: translateX(-3px) scaleX(1.06) scaleY(0.94); }
+      44%  { transform: translateX(3px)  scaleX(1.06) scaleY(0.94); }
+      52%  { transform: translateX(0)   scaleX(0.72) scaleY(1.34); } /* coil up */
+      62%  { transform: translateX(0)   scaleX(1.38) scaleY(0.66); } /* fire forward (horizontal stretch) */
+      76%  { transform: translateX(0)   scaleX(var(--squish-x)) scaleY(var(--squish-y)); } /* land */
+      88%  { transform: translateX(0)   scaleX(1.06) scaleY(0.95); }
+      100% { transform: translateX(0)   scaleX(1)    scaleY(1); }
+    }
+
+    .state-talking #sparky-container {
+      animation: talking-bob 0.85s var(--spring-soft) infinite;
+    }
+    @keyframes talking-bob {
+      0%,100% { transform: translateY(0)   scaleX(1) scaleY(1); }
+      50%     { transform: translateY(-3px) scaleX(0.97) scaleY(1.04); }
+    }
+
+    /* Landing squish — triggered transiently on every state change via
+       the .landing class. Higher specificity + !important so it wins
+       over whichever state animation would otherwise paint. */
+    .landing #sparky-container {
+      animation: landing-squish 150ms var(--spring-land) !important;
+    }
+    @keyframes landing-squish {
+      0%   { transform: scaleX(1)              scaleY(1); }
+      45%  { transform: scaleX(var(--squish-x)) scaleY(var(--squish-y)); }
+      70%  { transform: scaleX(0.96)           scaleY(1.04); }
+      100% { transform: scaleX(1)              scaleY(1); }
+    }
+
+    /* ---------------- iMessage speech bubble ---------------- */
+    #bubble {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translate(-50%, 6px) scale(0.85);
+      max-width: 240px;
+      min-width: 80px;
+      padding: 9px 13px 10px 13px;
+      background: #ffffff;
+      color: #1f2937;
+      border-radius: 18px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.32;
+      font-weight: 500;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.18);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 40;
+      transition:
+        opacity 260ms ease,
+        transform 320ms var(--spring-land);
+      word-break: break-word;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    #bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-top: 9px solid #ffffff;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.12));
+    }
+    #bubble.visible {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+    #bubble.fading-up {
+      opacity: 0;
+      transform: translate(-50%, -18px) scale(0.95);
+      transition:
+        opacity 260ms ease,
+        transform 280ms var(--spring-soft);
+    }
+
+    /* ---------------- Status indicator ---------------- */
     #status {
       position: absolute;
       bottom: 5px;
@@ -95,7 +270,7 @@
       pointer-events: none;
     }
 
-    /* Context menu — floats on top, opts out of dragging. */
+    /* ---------------- Context menu ---------------- */
     #context-menu {
       position: absolute;
       display: none;
@@ -127,10 +302,13 @@
   </style>
 </head>
 <body class="state-idle">
+  <div id="bubble"></div>
+
   <div id="sparky-container">
     <object id="sparky" type="image/svg+xml" data="../sparky.svg"></object>
     <div id="emoji-bubble"></div>
   </div>
+
   <div id="status">idle</div>
 
   <div id="context-menu">
@@ -149,11 +327,16 @@
     const sparkyObj = document.getElementById('sparky');
     const sparkyContainer = document.getElementById('sparky-container');
     const contextMenu = document.getElementById('context-menu');
+    const bubble = document.getElementById('bubble');
 
-    const TRACKING_RADIUS = 200;        // px — eyes track when cursor within this
-    const PUPIL_MAX_OFFSET = 4;          // px — max pupil displacement from center
+    const TRACKING_RADIUS = 200;
+    const PUPIL_MAX_OFFSET = 4;
     const PUPIL_BASE_L = { cx: 75, cy: 87 };
     const PUPIL_BASE_R = { cx: 125, cy: 87 };
+
+    // Sparky-container is now margin-top 90, height 200, so his visual
+    // center sits 90 + 100 = 190 px below the window top.
+    const SPARKY_CY_OFFSET = 190;
 
     const emojiMap = {
       thinking: '💭',
@@ -168,6 +351,7 @@
 
     let currentState = 'idle';
     let lastActivity = Date.now();
+    let landingTimer = null;
 
     function setState(newState) {
       if (!newState || newState === currentState) return;
@@ -177,6 +361,17 @@
       const e = emojiMap[newState];
       if (e) showEmoji(e);
       lastActivity = Date.now();
+      triggerLanding();
+    }
+
+    function triggerLanding() {
+      // Add the .landing class briefly so the 150 ms spring squish plays
+      // on top of whichever new state animation just became active.
+      if (landingTimer) clearTimeout(landingTimer);
+      body.classList.add('landing');
+      // Force reflow so the animation restarts even on repeated hits.
+      void sparkyContainer.offsetWidth;
+      landingTimer = setTimeout(() => body.classList.remove('landing'), 160);
     }
 
     function showEmoji(emoji) {
@@ -188,8 +383,6 @@
     }
 
     async function postStateHttp(state, message) {
-      // Mirror the state to the bridge so other listeners (Nexus, other
-      // overlays) see the click-driven change.
       try {
         await fetch('http://localhost:11437/state', {
           method: 'POST',
@@ -199,11 +392,67 @@
       } catch (e) { /* bridge may be down; ignore */ }
     }
 
+    // ---------------- iMessage bubble ----------------
+
+    let bubbleTypeTimer = null;
+    let bubbleHideTimer = null;
+
+    function clearBubbleTimers() {
+      if (bubbleTypeTimer) { clearTimeout(bubbleTypeTimer); bubbleTypeTimer = null; }
+      if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
+    }
+
+    function renderBubble(text) {
+      clearBubbleTimers();
+      bubble.textContent = '';
+      bubble.classList.remove('fading-up');
+      // Force reflow so the fade-in transition restarts.
+      void bubble.offsetWidth;
+      bubble.classList.add('visible');
+
+      // Type char-by-char. The CSS line-clamp handles 2-line truncation
+      // with an ellipsis for longer strings; we still type the full text
+      // so the clamp behaves naturally as characters arrive.
+      let i = 0;
+      const step = 24;
+      function tick() {
+        if (i >= text.length) { bubbleTypeTimer = null; return; }
+        bubble.textContent += text[i++];
+        bubbleTypeTimer = setTimeout(tick, step);
+      }
+      tick();
+
+      // Visible window: ≈1 s per 10 chars (100 ms per char), floored at
+      // 2.5 s so even a short line has time to land.
+      const visibleMs = Math.max(2500, text.length * 100);
+      bubbleHideTimer = setTimeout(() => {
+        bubble.classList.remove('visible');
+        bubble.classList.add('fading-up');
+        setTimeout(() => {
+          bubble.classList.remove('fading-up');
+          bubble.textContent = '';
+        }, 320);
+      }, visibleMs);
+    }
+
+    function showBubble(text) {
+      if (!text) return;
+      if (bubble.classList.contains('visible')) {
+        // Slide the current bubble up and fade it out, then render the
+        // new one once the old transition has cleared.
+        clearBubbleTimers();
+        bubble.classList.remove('visible');
+        bubble.classList.add('fading-up');
+        setTimeout(() => {
+          bubble.classList.remove('fading-up');
+          renderBubble(text);
+        }, 280);
+      } else {
+        renderBubble(text);
+      }
+    }
+
     // ---------------- Cursor tracking ----------------
-    // Eyes follow the OS cursor when it's within TRACKING_RADIUS of
-    // Sparky's on-screen center. Main process sends screen-coordinates
-    // at CURSOR_POLL_MS so we can track even when the cursor is outside
-    // the overlay window.
 
     function setPupils(offsetX, offsetY) {
       try {
@@ -222,26 +471,17 @@
     ipcRenderer.on('cursor-pos', (event, payload) => {
       const { cursor, window: win } = payload || {};
       if (!cursor || !win) return;
-
-      // Sparky's SVG sits inside a 200x200 container centered horizontally
-      // inside the 220-wide window, 10px from the top. Approximate his
-      // screen-center accordingly.
       const sparkyCx = win.x + win.width / 2;
-      const sparkyCy = win.y + 10 + 100;
-
+      const sparkyCy = win.y + SPARKY_CY_OFFSET;
       const dx = cursor.x - sparkyCx;
       const dy = cursor.y - sparkyCy;
       const dist = Math.hypot(dx, dy);
-
       if (dist <= TRACKING_RADIUS) {
         lastActivity = Date.now();
         if (currentState === 'sleeping') setState('idle');
-        // Scale: at radius, pupils almost fully displaced; at center, 0.
         const scale = Math.min(1, dist / TRACKING_RADIUS) * PUPIL_MAX_OFFSET;
         const norm = dist < 1 ? 1 : dist;
-        const offX = (dx / norm) * scale;
-        const offY = (dy / norm) * scale;
-        setPupils(offX, offY);
+        setPupils((dx / norm) * scale, (dy / norm) * scale);
       } else {
         setPupils(0, 0);
       }
@@ -250,8 +490,6 @@
     // ---------------- Click interactions ----------------
 
     function showContextMenu(x, y) {
-      // Clamp to the overlay window bounds so the menu never renders off-
-      // screen. The window is 220x250; the menu is ~140x80.
       const maxX = Math.max(0, window.innerWidth - 150);
       const maxY = Math.max(0, window.innerHeight - 90);
       contextMenu.style.left = Math.min(x, maxX) + 'px';
@@ -264,15 +502,13 @@
     }
 
     sparkyContainer.addEventListener('click', (e) => {
-      if (e.button !== 0) return;          // left only
+      if (e.button !== 0) return;
       if (contextMenu.style.display === 'block') {
         hideContextMenu();
         return;
       }
       e.preventDefault();
       lastActivity = Date.now();
-      // Trigger the happy-bounce immediately, then let the bridge re-apply
-      // whatever Nexus reports next.
       body.classList.remove('state-happy');
       void body.offsetWidth;
       setState('happy');
@@ -301,7 +537,6 @@
       }
     });
 
-    // Dismiss menu on any click outside it.
     document.addEventListener('mousedown', (e) => {
       if (contextMenu.style.display !== 'block') return;
       if (!e.target.closest('#context-menu')) hideContextMenu();
@@ -311,8 +546,6 @@
     });
 
     // ---------------- Window drag ----------------
-    // Renderer → main IPC: send screen coords; main.js calls setPosition.
-    // Works on Wayland where -webkit-app-region: drag is unreliable.
     let isDragging = false;
 
     document.body.addEventListener('pointerdown', (e) => {
@@ -332,7 +565,9 @@
       ipcRenderer.send('sparky-drag-end');
     });
 
-    // ---------------- State polling from the bridge ----------------
+    // ---------------- State + bubble polling ----------------
+
+    let lastBubbleId = 0;
 
     async function pollState() {
       try {
@@ -340,6 +575,11 @@
         if (!response.ok) return;
         const data = await response.json();
         if (data.state && data.state !== currentState) setState(data.state);
+        const b = data.bubble;
+        if (b && typeof b.id === 'number' && b.id > lastBubbleId && b.text) {
+          lastBubbleId = b.id;
+          showBubble(b.text);
+        }
       } catch (e) { /* bridge down; ignore */ }
     }
 

@@ -5,14 +5,22 @@ let mainWindow = null;
 let cursorTimer = null;
 const CURSOR_POLL_MS = 50;
 
+// Window geometry — roomier than before to fit the iMessage speech bubble
+// above Sparky. Kept in sync with index.html: bubble area (top ~80 px),
+// sparky-container (200 × 200 at margin-top 90), status bar below.
+const WIN_WIDTH = 280;
+const WIN_HEIGHT = 340;
+const EDGE_MARGIN = 10;
+
 function createWindow() {
   const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
-    width: 220,
-    height: 250,
-    x: screenWidth - 240,
-    y: screenHeight - 280,
+    width: WIN_WIDTH,
+    height: WIN_HEIGHT,
+    // Bottom-right corner of the primary display's work area.
+    x: screenWidth - WIN_WIDTH - EDGE_MARGIN,
+    y: screenHeight - WIN_HEIGHT - EDGE_MARGIN,
     frame: false,
     transparent: true,
     alwaysOnTop: true,

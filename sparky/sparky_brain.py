@@ -201,6 +201,9 @@ def _speak_hint(message: str) -> None:
         log.info("speaking: %s", message[:160])
         _last_hint_ts = time.time()
         _bridge_post("/state", {"state": "talking", "message": message})
+        # Fire the speech bubble at the same moment the TTS lifecycle begins
+        # so the on-screen text and the audio track together.
+        _bridge_post("/message", {"text": message})
         _bridge_post("/speaking/start")
         try:
             status = tts_speak(message)

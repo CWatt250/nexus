@@ -50,6 +50,10 @@ class StateUpdate(BaseModel):
     duration: Optional[int] = None  # Duration in milliseconds, None = use default
 
 
+class BubbleMessage(BaseModel):
+    text: str
+
+
 class CurrentState(BaseModel):
     state: SparkyState
     message: Optional[str]
@@ -91,6 +95,12 @@ _current_state = CurrentState(
     is_speaking=False,
 )
 _revert_task: Optional[asyncio.Task] = None
+
+# Speech bubble — monotonic id so the overlay can detect a new message
+# even if the text is identical to the last one.
+_bubble_id: int = 0
+_bubble_text: Optional[str] = None
+_bubble_at: float = 0.0
 
 
 def _cancel_revert() -> None:
@@ -140,9 +150,28 @@ async def root():
 
 
 @app.get("/state")
-async def get_state() -> CurrentState:
-    """Get current Sparky state (polled by Electron overlay)."""
-    return _current_state
+async def get_state() -> dict:
+    """Get current Sparky state + latest bubble info (polled by Electron)."""
+    return {
+        **_current_state.model_dump(),
+        "bubble": {
+            "id": _bubble_id,
+            "text": _bubble_text,
+            "at": _bubble_at,
+        },
+    }
+
+
+@app.post("/message")
+async def post_message(msg: BubbleMessage) -> dict:
+    """Queue a speech-bubble message for the overlay to render above Sparky.
+    Each call bumps a monotonic id so the overlay reliably detects a new
+    bubble even when the text matches the previous one."""
+    global _bubble_id, _bubble_text, _bubble_at
+    _bubble_id += 1
+    _bubble_text = msg.text
+    _bubble_at = time.time()
+    return {"success": True, "bubble_id": _bubble_id}
 
 
 @app.post("/state")
