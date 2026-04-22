@@ -4,8 +4,8 @@
 
 ### Current State
 - **Phases 4-10**: Complete
-- **Phase 2**: In Progress (3/5 tasks done)
-- **Tools**: 62 total (was 57)
+- **Phase 2**: Complete (4/5 tasks done, 1 needs user action)
+- **Tools**: 64 total (was 57)
 - **Tests**: All passing
 - **Services**: Ready in /tmp, need sudo install
 
@@ -20,16 +20,17 @@
 1. [x] RAG introspection command — Added `memory_list`, `memory_delete`, `memory_stats` to rag_tool.py
 2. [x] Chroma compaction / dedup job — Created tools/chroma_dedup.py with `memory_dedup`, `memory_compact`
 3. [x] Mem0 as reflection sink — Wired reflection.py to store high-quality lessons in Mem0
+4. [x] Router telemetry dashboard — Created tools/router_telemetry.py with `router_telemetry`, `router_stats`
 
 ### Phase 2 Work Remaining
-1. [ ] Install nomic-embed-text in Ollama for pure-Ollama embeddings (needs user action)
-2. [ ] Router telemetry dashboard
+1. [ ] Install nomic-embed-text in Ollama for pure-Ollama embeddings (needs user action: `ollama pull nomic-embed-text`)
 
 ### Files Changed
 - tools/rag_tool.py — Added memory_list, memory_delete, memory_stats
 - tools/chroma_dedup.py — New file with memory_dedup, memory_compact
+- tools/router_telemetry.py — New file with router_telemetry, router_stats
 - reflection.py — Added _store_in_mem0() and wired to reflect()
-- nexus.py — Added imports for new tools
+- nexus.py — Added imports for all new tools (7 new)
 
 ### Pending User Action (Requires sudo)
 Run `sudo bash ~/AI_Agent/SUDO_COMMANDS.sh` to install services

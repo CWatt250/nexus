@@ -1,18 +1,23 @@
 # Nexus Build Changelog
 
-## 2026-04-21 — Phase 2 Progress (Session 2)
+## 2026-04-21 — Phase 2 Complete (Session 2)
 
 ### Completed
 - **RAG introspection tools**: `memory_list`, `memory_delete`, `memory_stats`
 - **Chroma dedup utility**: `memory_dedup`, `memory_compact` in new tools/chroma_dedup.py
 - **Mem0 reflection sink**: High-quality lessons (quality >= 4) now stored in Mem0
+- **Router telemetry dashboard**: `router_telemetry`, `router_stats` in new tools/router_telemetry.py
+
+### Remaining (needs user)
+- Install nomic-embed-text: `ollama pull nomic-embed-text`
 
 ### Tool Count
-- **62 tools** (was 57)
+- **64 tools** (was 57)
 
 ### Files Modified
 - tools/rag_tool.py
 - tools/chroma_dedup.py (new)
+- tools/router_telemetry.py (new)
 - reflection.py
 - nexus.py
 

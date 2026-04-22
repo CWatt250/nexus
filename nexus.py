@@ -34,6 +34,7 @@ from tools.markitdown_tool import markitdown_tool  # noqa: E402
 from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
 from tools.rag_tool import memory_add, memory_search, memory_list, memory_delete, memory_stats  # noqa: E402
 from tools.chroma_dedup import memory_dedup, memory_compact  # noqa: E402
+from tools.router_telemetry import router_telemetry, router_stats  # noqa: E402
 from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
 from tools.tts_tool import tts_save, tts_speak  # noqa: E402
@@ -74,6 +75,8 @@ TOOLS = [
     memory_stats,
     memory_dedup,
     memory_compact,
+    router_telemetry,
+    router_stats,
     markitdown_tool,
     mem0_add,
     mem0_search,

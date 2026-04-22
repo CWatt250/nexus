@@ -23,12 +23,12 @@ _Last updated: 2026-04-21 (later in the day)_
 - **File watcher** (`tools/file_watcher.py`): auto-ingest Downloads + Documents PDF/Word/Excel/PPT. Unit staged.
 - **Clipboard watcher** (`tools/clipboard_watcher.py`): xclip poll → `clipboard-log.md` + RAG. Unit staged.
 
-## Phase 2 — Next up (locked, short horizon)
-- **Install nomic-embed-text in Ollama** and re-test Mem0 with a pure-Ollama embedder (drop HF sentence-transformers).
-- **Chroma compaction / dedup job** — remove near-duplicate chunks (esp. clipboard noise).
-- **RAG introspection command** — `memory list [tag]` / `memory delete <id>` for curation.
-- **Mem0 as reflection sink** — pipe `reflection.reflect()` lessons into `mem0_add`.
-- **Router telemetry dashboard** — route mix / quality histogram / time-saved totals from `run-log.jsonl`.
+## Phase 2 — Memory & Telemetry — 2026-04-21 — SHIPPED
+- **Chroma compaction / dedup job** — `memory_dedup`, `memory_compact` tools in `tools/chroma_dedup.py`.
+- **RAG introspection command** — `memory_list`, `memory_delete`, `memory_stats` in `tools/rag_tool.py`.
+- **Mem0 as reflection sink** — `reflection.py` now pipes quality >= 4 lessons to Mem0.
+- **Router telemetry dashboard** — `router_telemetry`, `router_stats` in `tools/router_telemetry.py`. Generates dashboard at `memory/router-dashboard.md`.
+- **Install nomic-embed-text in Ollama** — pending user action: `ollama pull nomic-embed-text`.
 
 ## Phase 3 — MCP Server Support — 2026-04-21 — SHIPPED
 - **MCP Python SDK** (`mcp==1.8.1`) installed in the venv. `anthropic-mcp` doesn't exist on PyPI and was skipped.
