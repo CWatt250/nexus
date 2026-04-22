@@ -32,7 +32,8 @@ from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # n
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
 from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
-from tools.rag_tool import memory_add, memory_search  # noqa: E402
+from tools.rag_tool import memory_add, memory_search, memory_list, memory_delete, memory_stats  # noqa: E402
+from tools.chroma_dedup import memory_dedup, memory_compact  # noqa: E402
 from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
 from tools.tts_tool import tts_save, tts_speak  # noqa: E402
@@ -68,6 +69,11 @@ TOOLS = [
     browser_tool,
     memory_search,
     memory_add,
+    memory_list,
+    memory_delete,
+    memory_stats,
+    memory_dedup,
+    memory_compact,
     markitdown_tool,
     mem0_add,
     mem0_search,

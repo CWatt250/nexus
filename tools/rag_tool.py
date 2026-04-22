@@ -93,3 +93,135 @@ def memory_add(text: str) -> str:
     """Store a text snippet in Nexus's long-term memory for future recall."""
     ids = add_documents([text])
     return f"stored id={ids[0]}"
+
+
+@tool
+def memory_list(tag: str = "", limit: int = 20) -> str:
+    """List documents in Nexus's long-term memory.
+
+    Args:
+        tag: Optional tag to filter by (checks metadata 'tag' or 'source' field)
+        limit: Maximum number of results (default 20)
+
+    Returns formatted list of document IDs, sources, and preview text."""
+    col = _get_collection()
+    # Get all documents (Chroma doesn't have a direct list-all, so we use a broad query)
+    try:
+        result = col.get(limit=limit, include=["documents", "metadatas"])
+    except Exception as e:
+        return f"Error listing memory: {e}"
+
+    ids = result.get("ids", [])
+    docs = result.get("documents", [])
+    metas = result.get("metadatas", [])
+
+    if not ids:
+        return "(memory is empty)"
+
+    lines = []
+    for i, doc_id in enumerate(ids):
+        meta = metas[i] if i < len(metas) else {}
+        doc = docs[i] if i < len(docs) else ""
+
+        # Filter by tag if specified
+        if tag:
+            source = meta.get("source", "")
+            doc_tag = meta.get("tag", "")
+            if tag.lower() not in source.lower() and tag.lower() not in doc_tag.lower():
+                continue
+
+        source = meta.get("source", "unknown")
+        preview = (doc[:80] + "...") if len(doc) > 80 else doc
+        preview = preview.replace("\n", " ")
+        lines.append(f"[{doc_id[:8]}...] ({source}) {preview}")
+
+    if not lines:
+        return f"(no documents matching tag '{tag}')"
+
+    return f"Found {len(lines)} documents:\n" + "\n".join(lines)
+
+
+@tool
+def memory_delete(doc_id: str) -> str:
+    """Delete a document from Nexus's long-term memory by ID.
+
+    Args:
+        doc_id: The document ID (can be partial, will match prefix)
+
+    Returns confirmation or error message."""
+    col = _get_collection()
+
+    # Try to find the full ID if partial was given
+    try:
+        result = col.get(limit=100, include=["documents"])
+        all_ids = result.get("ids", [])
+    except Exception as e:
+        return f"Error accessing memory: {e}"
+
+    # Find matching IDs
+    matches = [id for id in all_ids if id.startswith(doc_id)]
+
+    if not matches:
+        return f"No document found with ID starting with '{doc_id}'"
+
+    if len(matches) > 1 and len(doc_id) < 36:
+        return f"Multiple matches found ({len(matches)}). Provide more of the ID: {', '.join(m[:12] + '...' for m in matches[:5])}"
+
+    # Delete the matching document(s)
+    try:
+        col.delete(ids=matches)
+        return f"Deleted {len(matches)} document(s): {', '.join(matches)}"
+    except Exception as e:
+        return f"Error deleting: {e}"
+
+
+@tool
+def memory_stats() -> str:
+    """Get statistics about Nexus's long-term memory.
+
+    Returns count, sources breakdown, and storage info."""
+    col = _get_collection()
+
+    try:
+        result = col.get(include=["metadatas"])
+        metas = result.get("metadatas", [])
+        total = len(result.get("ids", []))
+    except Exception as e:
+        return f"Error getting stats: {e}"
+
+    if total == 0:
+        return "Memory is empty."
+
+    # Count by source
+    sources = {}
+    tags = {}
+    for meta in metas:
+        src = meta.get("source", "unknown")
+        sources[src] = sources.get(src, 0) + 1
+        tag = meta.get("tag", "")
+        if tag:
+            tags[tag] = tags.get(tag, 0) + 1
+
+    lines = [f"Total documents: {total}"]
+    lines.append("\nBy source:")
+    for src, count in sorted(sources.items(), key=lambda x: -x[1])[:10]:
+        lines.append(f"  {src}: {count}")
+
+    if tags:
+        lines.append("\nBy tag:")
+        for tag, count in sorted(tags.items(), key=lambda x: -x[1])[:10]:
+            lines.append(f"  {tag}: {count}")
+
+    # Storage size
+    import os
+    try:
+        total_size = sum(
+            os.path.getsize(os.path.join(dirpath, filename))
+            for dirpath, _, filenames in os.walk(PERSIST_DIR)
+            for filename in filenames
+        )
+        lines.append(f"\nStorage: {total_size / 1024 / 1024:.2f} MB")
+    except:
+        pass
+
+    return "\n".join(lines)

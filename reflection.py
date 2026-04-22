@@ -35,6 +35,9 @@ OLLAMA_URL = "http://localhost:11434"
 
 MODEL = "qwen3:4b"
 
+# Flag to enable/disable Mem0 integration
+USE_MEM0 = True
+
 SYSTEM_PROMPT = """You are a post-turn reflection critic. You review a single completed assistant turn and produce a short structured critique.
 
 Return ONLY a JSON object with exactly these keys:
@@ -68,6 +71,43 @@ def _append_md(path: Path, bullet: str) -> None:
         path.write_text("# (auto-generated)\n\n", encoding="utf-8")
     with path.open("a", encoding="utf-8") as f:
         f.write(bullet.rstrip() + "\n")
+
+
+def _store_in_mem0(entry: dict) -> None:
+    """Store high-quality reflection lessons in Mem0 for long-term recall.
+
+    Only stores lessons with quality >= 4 to avoid noise."""
+    if not USE_MEM0:
+        return
+    if entry.get("quality", 0) < 4:
+        return
+
+    try:
+        from tools.mem0_tool import _get_memory, DEFAULT_USER
+
+        lesson = entry.get("lesson", "")
+        tags = entry.get("tags", [])
+        tools = entry.get("tools_used", [])
+
+        if not lesson or lesson == "(no lesson)":
+            return
+
+        # Create a rich memory entry
+        mem_text = f"Lesson: {lesson}"
+        if tags:
+            mem_text += f" Tags: {', '.join(tags)}."
+        if tools:
+            mem_text += f" Tools: {', '.join(tools)}."
+
+        mem = _get_memory()
+        mem.add(mem_text, user_id=DEFAULT_USER, metadata={
+            "type": "reflection",
+            "quality": entry.get("quality", 0),
+            "ts": entry.get("ts", ""),
+        })
+    except Exception:
+        # Silently fail - mem0 is optional
+        pass
 
 
 def _extract_tool_names(messages) -> list[str]:
@@ -197,6 +237,9 @@ def reflect(
             _append_md(IMPROVEMENTS, bullet)
     except OSError:
         pass
+
+    # Store high-quality lessons in Mem0 for long-term recall
+    _store_in_mem0(entry)
 
     return entry
 

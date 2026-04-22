@@ -1,5 +1,23 @@
 # Nexus Build Changelog
 
+## 2026-04-21 — Phase 2 Progress (Session 2)
+
+### Completed
+- **RAG introspection tools**: `memory_list`, `memory_delete`, `memory_stats`
+- **Chroma dedup utility**: `memory_dedup`, `memory_compact` in new tools/chroma_dedup.py
+- **Mem0 reflection sink**: High-quality lessons (quality >= 4) now stored in Mem0
+
+### Tool Count
+- **62 tools** (was 57)
+
+### Files Modified
+- tools/rag_tool.py
+- tools/chroma_dedup.py (new)
+- reflection.py
+- nexus.py
+
+---
+
 ## 2026-04-21 — Session Start
 
 ### Status Assessment
