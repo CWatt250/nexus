@@ -1,0 +1,184 @@
+{
+  "version": "1.0",
+  "canvas": {
+    "width": 200,
+    "height": 200
+  },
+  "colors": {
+    "primary": "#0EA5E9",
+    "secondary": "#38BDF8",
+    "accent": "#FACC15",
+    "highlight": "#FFFFFF",
+    "error": "#EF4444"
+  },
+  "states": {
+    "idle": {
+      "description": "Default state - gentle floating, occasional blink",
+      "bodyAnimation": "float",
+      "eyeAnimation": "blink",
+      "mouthShape": "smile",
+      "duration": "infinite",
+      "transitionsTo": ["thinking", "working", "excited", "sleeping", "error"]
+    },
+    "thinking": {
+      "description": "Eyes look up-left, pupils swirl, slight body shake",
+      "bodyAnimation": "shake",
+      "eyeAnimation": "lookUpLeft",
+      "mouthShape": "neutral",
+      "pupilAnimation": "swirl",
+      "showIndicator": "think-bubble",
+      "emoji": "thought_bubble",
+      "duration": "while_active",
+      "transitionsTo": ["idea", "working", "idle", "error"]
+    },
+    "idea": {
+      "description": "Eyes wide, small bounce, lightbulb appears",
+      "bodyAnimation": "bounce",
+      "eyeAnimation": "wide",
+      "mouthShape": "open-smile",
+      "showIndicator": "idea-bulb",
+      "emoji": "bulb",
+      "duration": 1500,
+      "transitionsTo": ["working", "idle", "excited"]
+    },
+    "whammy": {
+      "description": "Power-up! Shake, glow, lightning shoots forward",
+      "phases": [
+        {
+          "name": "charge",
+          "bodyAnimation": "shake-intense",
+          "glowEffect": true,
+          "duration": 500
+        },
+        {
+          "name": "fire",
+          "lightningShoot": true,
+          "eyeGlow": "#FACC15",
+          "duration": 300
+        },
+        {
+          "name": "smoke",
+          "showSmokePuff": true,
+          "duration": 400
+        }
+      ],
+      "emoji": "zap",
+      "totalDuration": 1200,
+      "transitionsTo": ["working", "excited", "idle"]
+    },
+    "happy": {
+      "description": "Big grin, squinty eyes, small hop",
+      "bodyAnimation": "bounce",
+      "eyeAnimation": "squint",
+      "mouthShape": "big-smile",
+      "duration": 2000,
+      "transitionsTo": ["idle", "excited"]
+    },
+    "excited": {
+      "description": "Vibrating body, sparks fly off",
+      "bodyAnimation": "vibrate",
+      "eyeAnimation": "wide",
+      "mouthShape": "open-smile",
+      "showIndicator": "sparks",
+      "emoji": "fire",
+      "duration": "while_active",
+      "transitionsTo": ["happy", "working", "idle"]
+    },
+    "working": {
+      "description": "Focused squint, determined expression",
+      "bodyAnimation": "slight-bob",
+      "eyeAnimation": "focused",
+      "mouthShape": "determined",
+      "duration": "while_active",
+      "transitionsTo": ["happy", "error", "idle", "thinking"]
+    },
+    "sleeping": {
+      "description": "Droopy eyes, zzz float up",
+      "bodyAnimation": "gentle-float",
+      "eyeAnimation": "droopy",
+      "mouthShape": "neutral",
+      "showIndicator": "zzz",
+      "emoji": "zzz",
+      "duration": "until_activity",
+      "transitionsTo": ["idle", "thinking"]
+    },
+    "error": {
+      "description": "Red tint flash, X eyes, head shake",
+      "bodyAnimation": "shake",
+      "bodyTint": "#EF4444",
+      "eyeAnimation": "x-eyes",
+      "mouthShape": "frown",
+      "showIndicator": "error-x",
+      "emoji": "x",
+      "duration": 2000,
+      "transitionsTo": ["idle", "working"]
+    },
+    "talking": {
+      "description": "Mouth opens and closes in sync with audio",
+      "bodyAnimation": "slight-bob",
+      "eyeAnimation": "normal",
+      "mouthAnimation": "talk-cycle",
+      "syncToAudio": true,
+      "duration": "while_speaking",
+      "transitionsTo": ["idle", "happy"]
+    }
+  },
+  "eyeTracking": {
+    "enabled": true,
+    "trackCursor": true,
+    "maxRadius": 200,
+    "pupilMovement": {
+      "maxOffset": 5,
+      "smoothing": 0.1
+    },
+    "directions": {
+      "looking_left": { "pupilX": -5, "pupilY": 0 },
+      "looking_right": { "pupilX": 5, "pupilY": 0 },
+      "looking_up": { "pupilX": 0, "pupilY": -4 },
+      "looking_down": { "pupilX": 0, "pupilY": 4 },
+      "looking_center": { "pupilX": 0, "pupilY": 0 }
+    }
+  },
+  "mouthShapes": {
+    "smile": "M85 120 Q100 135 115 120",
+    "big-smile": "M80 115 Q100 145 120 115",
+    "neutral": "M85 125 L115 125",
+    "frown": "M85 130 Q100 115 115 130",
+    "open": "M85 118 Q100 140 115 118 Q100 125 85 118",
+    "open-smile": "M85 118 Q100 145 115 118 Q100 130 85 118",
+    "talk-open": "M90 120 Q100 135 110 120 Q100 128 90 120",
+    "talk-closed": "M90 122 Q100 128 110 122"
+  },
+  "emojiBubbles": {
+    "enabled": true,
+    "position": { "x": 160, "y": 30 },
+    "size": 24,
+    "animations": {
+      "fadeIn": 200,
+      "hold": 2000,
+      "fadeOut": 500
+    },
+    "mapping": {
+      "thinking": "thought_bubble",
+      "idea": "bulb",
+      "whammy": "zap",
+      "excited": "fire",
+      "sleeping": "zzz",
+      "error": "x",
+      "happy": "sparkles"
+    }
+  },
+  "triggers": {
+    "taskStart": "thinking",
+    "toolCall": "working",
+    "longTask": "whammy",
+    "taskComplete": "happy",
+    "errorOccurred": "error",
+    "idleTimeout": {
+      "state": "sleeping",
+      "afterSeconds": 300
+    },
+    "userSpeaks": "thinking",
+    "nexusSpeaks": "talking"
+  }
+}

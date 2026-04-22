@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Gradients -->
+    <radialGradient id="bodyGradient" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" style="stop-color:#38BDF8"/>
+      <stop offset="100%" style="stop-color:#0EA5E9"/>
+    </radialGradient>
+    <radialGradient id="eyeGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="90%" style="stop-color:#F0F9FF"/>
+    </radialGradient>
+    <radialGradient id="glowGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FACC15;stop-opacity:0.8"/>
+      <stop offset="100%" style="stop-color:#FACC15;stop-opacity:0"/>
+    </radialGradient>
+
+    <!-- Filters -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Lightning bolt symbol -->
+    <symbol id="lightning" viewBox="0 0 24 40">
+      <path d="M14 0 L6 16 L12 16 L8 40 L20 18 L13 18 Z" fill="#FACC15" filter="url(#glow)"/>
+    </symbol>
+
+    <!-- Spark particle -->
+    <symbol id="spark" viewBox="0 0 10 10">
+      <circle cx="5" cy="5" r="3" fill="#FACC15" filter="url(#glow)"/>
+    </symbol>
+  </defs>
+
+  <!-- Main body group - can be animated -->
+  <g id="sparky-body">
+    <!-- Body shadow -->
+    <ellipse cx="100" cy="175" rx="35" ry="8" fill="rgba(0,0,0,0.2)"/>
+
+    <!-- Legs -->
+    <g id="legs">
+      <ellipse cx="75" cy="155" rx="12" ry="18" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
+      <ellipse cx="125" cy="155" rx="12" ry="18" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
+    </g>
+
+    <!-- Main body (round) -->
+    <ellipse id="body-main" cx="100" cy="100" rx="55" ry="50" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="2"/>
+
+    <!-- Body highlight -->
+    <ellipse cx="85" cy="75" rx="25" ry="15" fill="rgba(255,255,255,0.3)"/>
+
+    <!-- Arms -->
+    <g id="arms">
+      <ellipse cx="45" cy="105" rx="15" ry="10" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
+      <ellipse cx="155" cy="105" rx="15" ry="10" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
+    </g>
+
+    <!-- Lightning bolt on chest -->
+    <use href="#lightning" x="88" y="95" width="24" height="40"/>
+  </g>
+
+  <!-- Face group -->
+  <g id="sparky-face">
+    <!-- Eyes -->
+    <g id="eyes">
+      <!-- Left eye -->
+      <ellipse id="eye-left" cx="75" cy="85" rx="18" ry="20" fill="url(#eyeGradient)" stroke="#0284C7" stroke-width="1"/>
+      <circle id="pupil-left" cx="75" cy="87" r="8" fill="#1E3A5F"/>
+      <circle cx="71" cy="83" r="3" fill="white" opacity="0.8"/>
+
+      <!-- Right eye -->
+      <ellipse id="eye-right" cx="125" cy="85" rx="18" ry="20" fill="url(#eyeGradient)" stroke="#0284C7" stroke-width="1"/>
+      <circle id="pupil-right" cx="125" cy="87" r="8" fill="#1E3A5F"/>
+      <circle cx="121" cy="83" r="3" fill="white" opacity="0.8"/>
+    </g>
+
+    <!-- Mouth - default smile -->
+    <path id="mouth" d="M85 120 Q100 135 115 120" stroke="#0284C7" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Emotion indicators (hidden by default) -->
+  <g id="emotion-indicators" visibility="hidden">
+    <!-- Zzz for sleeping -->
+    <text id="zzz" x="140" y="50" font-family="Arial" font-size="16" fill="#0EA5E9" opacity="0">Zzz</text>
+
+    <!-- Thinking bubble -->
+    <g id="think-bubble" opacity="0">
+      <circle cx="150" cy="40" r="15" fill="white" stroke="#0EA5E9"/>
+      <circle cx="140" cy="55" r="6" fill="white" stroke="#0EA5E9"/>
+      <circle cx="135" cy="65" r="3" fill="white" stroke="#0EA5E9"/>
+    </g>
+
+    <!-- Idea lightbulb -->
+    <g id="idea-bulb" opacity="0">
+      <circle cx="160" cy="35" r="12" fill="#FACC15" filter="url(#glow)"/>
+      <path d="M155 50 L165 50 L163 55 L157 55 Z" fill="#FACC15"/>
+    </g>
+
+    <!-- Sparks for excited -->
+    <g id="sparks" opacity="0">
+      <use href="#spark" x="30" y="40"/>
+      <use href="#spark" x="160" y="30"/>
+      <use href="#spark" x="20" y="90"/>
+      <use href="#spark" x="170" y="80"/>
+      <use href="#spark" x="40" y="140"/>
+      <use href="#spark" x="150" y="150"/>
+    </g>
+
+    <!-- Error X -->
+    <g id="error-x" opacity="0">
+      <line x1="60" y1="75" x2="90" y2="95" stroke="#EF4444" stroke-width="4"/>
+      <line x1="90" y1="75" x2="60" y2="95" stroke="#EF4444" stroke-width="4"/>
+      <line x1="110" y1="75" x2="140" y2="95" stroke="#EF4444" stroke-width="4"/>
+      <line x1="140" y1="75" x2="110" y2="95" stroke="#EF4444" stroke-width="4"/>
+    </g>
+  </g>
+
+  <!-- CSS Animations -->
+  <style>
+    /* Idle floating animation */
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+    }
+
+    /* Blink animation */
+    @keyframes blink {
+      0%, 90%, 100% { transform: scaleY(1); }
+      95% { transform: scaleY(0.1); }
+    }
+
+    /* Bounce animation */
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-15px) scale(1.05); }
+    }
+
+    /* Shake animation for thinking */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
+
+    /* Vibrate for excited */
+    @keyframes vibrate {
+      0%, 100% { transform: translateX(0); }
+      10% { transform: translateX(-2px); }
+      20% { transform: translateX(2px); }
+      30% { transform: translateX(-2px); }
+      40% { transform: translateX(2px); }
+      50% { transform: translateX(-1px); }
+      60% { transform: translateX(1px); }
+      70% { transform: translateX(-1px); }
+      80% { transform: translateX(1px); }
+      90% { transform: translateX(0); }
+    }
+
+    /* Glow pulse for whammy */
+    @keyframes glowPulse {
+      0%, 100% { filter: drop-shadow(0 0 5px #FACC15); }
+      50% { filter: drop-shadow(0 0 20px #FACC15); }
+    }
+
+    /* Default idle state */
+    #sparky-body {
+      animation: float 3s ease-in-out infinite;
+    }
+
+    #eyes {
+      animation: blink 4s ease-in-out infinite;
+      transform-origin: center;
+    }
+
+    /* Expression classes */
+    .thinking #sparky-body {
+      animation: shake 0.5s ease-in-out infinite;
+    }
+
+    .excited #sparky-body {
+      animation: vibrate 0.3s ease-in-out infinite;
+    }
+
+    .excited #sparks {
+      opacity: 1;
+    }
+
+    .happy #sparky-body {
+      animation: bounce 0.5s ease-in-out;
+    }
+
+    .whammy #sparky-body {
+      animation: glowPulse 0.5s ease-in-out infinite;
+    }
+
+    .whammy #lightning {
+      animation: glowPulse 0.3s ease-in-out infinite;
+    }
+
+    .error #error-x {
+      opacity: 1;
+    }
+
+    .sleeping #zzz {
+      opacity: 1;
+    }
+  </style>
+</svg>

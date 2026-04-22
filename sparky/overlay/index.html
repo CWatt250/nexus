@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Sparky</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+
+    #sparky-container {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      margin: 10px auto;
+    }
+
+    #sparky {
+      width: 200px;
+      height: 200px;
+      transition: transform 0.3s ease;
+    }
+
+    #emoji-bubble {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      font-size: 28px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    }
+
+    #emoji-bubble.visible {
+      opacity: 1;
+      animation: float-up 2s ease-out forwards;
+    }
+
+    @keyframes float-up {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      70% { transform: translateY(-20px) scale(1.1); opacity: 1; }
+      100% { transform: translateY(-30px) scale(0.8); opacity: 0; }
+    }
+
+    /* State animations */
+    .state-idle #sparky {
+      animation: idle-float 3s ease-in-out infinite;
+    }
+
+    .state-thinking #sparky {
+      animation: thinking-shake 0.5s ease-in-out infinite;
+    }
+
+    .state-working #sparky {
+      animation: working-bob 1s ease-in-out infinite;
+    }
+
+    .state-excited #sparky {
+      animation: excited-vibrate 0.2s ease-in-out infinite;
+    }
+
+    .state-happy #sparky {
+      animation: happy-bounce 0.5s ease-out;
+    }
+
+    .state-error #sparky {
+      animation: error-shake 0.3s ease-in-out 3;
+      filter: hue-rotate(180deg) saturate(1.5);
+    }
+
+    .state-sleeping #sparky {
+      animation: sleeping-sway 4s ease-in-out infinite;
+      opacity: 0.7;
+    }
+
+    .state-whammy #sparky {
+      animation: whammy-charge 0.5s ease-in-out infinite;
+      filter: drop-shadow(0 0 15px #FACC15);
+    }
+
+    @keyframes idle-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    @keyframes thinking-shake {
+      0%, 100% { transform: translateX(0) rotate(0deg); }
+      25% { transform: translateX(-3px) rotate(-2deg); }
+      75% { transform: translateX(3px) rotate(2deg); }
+    }
+
+    @keyframes working-bob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+
+    @keyframes excited-vibrate {
+      0%, 100% { transform: translateX(0) scale(1); }
+      25% { transform: translateX(-2px) scale(1.02); }
+      75% { transform: translateX(2px) scale(1.02); }
+    }
+
+    @keyframes happy-bounce {
+      0%, 100% { transform: translateY(0) scale(1); }
+      30% { transform: translateY(-25px) scale(1.1); }
+      60% { transform: translateY(-10px) scale(1.05); }
+    }
+
+    @keyframes error-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-8px); }
+      40% { transform: translateX(8px); }
+      60% { transform: translateX(-8px); }
+      80% { transform: translateX(8px); }
+    }
+
+    @keyframes sleeping-sway {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(-3deg); }
+      75% { transform: rotate(3deg); }
+    }
+
+    @keyframes whammy-charge {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    /* Status indicator */
+    #status {
+      position: absolute;
+      bottom: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 11px;
+      color: #0EA5E9;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body class="state-idle">
+  <div id="sparky-container">
+    <object id="sparky" type="image/svg+xml" data="../sparky.svg"></object>
+    <div id="emoji-bubble"></div>
+  </div>
+  <div id="status">idle</div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const body = document.body;
+    const emojiBubble = document.getElementById('emoji-bubble');
+    const statusDiv = document.getElementById('status');
+    const sparkyObj = document.getElementById('sparky');
+
+    // Emoji mapping
+    const emojis = {
+      thinking: 'thought_bubble',
+      idea: 'bulb',
+      whammy: 'zap',
+      excited: 'fire',
+      sleeping: 'zzz',
+      error: 'x',
+      happy: 'sparkles',
+      working: 'gear'
+    };
+
+    // State management
+    let currentState = 'idle';
+    let lastActivity = Date.now();
+
+    function setState(newState) {
+      if (newState === currentState) return;
+
+      // Remove old state class
+      body.className = '';
+
+      // Add new state class
+      body.classList.add(`state-${newState}`);
+      currentState = newState;
+      statusDiv.textContent = newState;
+
+      // Show emoji bubble
+      const emoji = emojis[newState];
+      if (emoji) {
+        showEmoji(emoji);
+      }
+
+      lastActivity = Date.now();
+    }
+
+    function showEmoji(emojiName) {
+      // Map emoji names to actual emojis
+      const emojiMap = {
+        'thought_bubble': '💭',
+        'bulb': '💡',
+        'zap': '⚡',
+        'fire': '🔥',
+        'zzz': '💤',
+        'x': '❌',
+        'sparkles': '✨',
+        'gear': '⚙️'
+      };
+
+      emojiBubble.textContent = emojiMap[emojiName] || '✨';
+      emojiBubble.classList.remove('visible');
+
+      // Trigger reflow
+      void emojiBubble.offsetWidth;
+
+      emojiBubble.classList.add('visible');
+
+      // Remove after animation
+      setTimeout(() => {
+        emojiBubble.classList.remove('visible');
+      }, 2000);
+    }
+
+    // Poll Nexus state bridge
+    async function pollState() {
+      try {
+        const response = await fetch('http://localhost:11437/state');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.state && data.state !== currentState) {
+            setState(data.state);
+          }
+        }
+      } catch (e) {
+        // API not available, stay in current state
+      }
+    }
+
+    // Check for idle timeout (sleep after 5 min)
+    function checkIdle() {
+      const idleTime = Date.now() - lastActivity;
+      if (idleTime > 5 * 60 * 1000 && currentState !== 'sleeping') {
+        setState('sleeping');
+      }
+    }
+
+    // Eye tracking (cursor following)
+    document.addEventListener('mousemove', (e) => {
+      lastActivity = Date.now();
+      if (currentState === 'sleeping') {
+        setState('idle');
+      }
+
+      // Track cursor for eye movement (if SVG is accessible)
+      try {
+        const svgDoc = sparkyObj.contentDocument;
+        if (svgDoc) {
+          const leftPupil = svgDoc.getElementById('pupil-left');
+          const rightPupil = svgDoc.getElementById('pupil-right');
+
+          if (leftPupil && rightPupil) {
+            const rect = sparkyObj.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            const dx = (e.clientX - centerX) / 100;
+            const dy = (e.clientY - centerY) / 100;
+
+            const maxOffset = 4;
+            const offsetX = Math.max(-maxOffset, Math.min(maxOffset, dx * 3));
+            const offsetY = Math.max(-maxOffset, Math.min(maxOffset, dy * 3));
+
+            leftPupil.setAttribute('cx', 75 + offsetX);
+            leftPupil.setAttribute('cy', 87 + offsetY);
+            rightPupil.setAttribute('cx', 125 + offsetX);
+            rightPupil.setAttribute('cy', 87 + offsetY);
+          }
+        }
+      } catch (e) {
+        // SVG not accessible, ignore
+      }
+    });
+
+    // Double-click to toggle visibility
+    document.addEventListener('dblclick', () => {
+      const { ipcRenderer } = require('electron');
+      // This is handled in main.js
+    });
+
+    // Listen for state updates from main process
+    ipcRenderer.on('state-update', (event, state) => {
+      setState(state);
+    });
+
+    // Start polling
+    setInterval(pollState, 500);
+    setInterval(checkIdle, 30000);
+
+    // Initial state
+    setState('idle');
+  </script>
+</body>
+</html>

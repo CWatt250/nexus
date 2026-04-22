@@ -1,0 +1,16 @@
+{
+  "name": "sparky-overlay",
+  "version": "1.0.0",
+  "description": "Sparky - Nexus AI Avatar Desktop Overlay",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "Nexus AI",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

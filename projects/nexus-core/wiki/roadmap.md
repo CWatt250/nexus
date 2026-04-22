@@ -64,20 +64,81 @@ _Last updated: 2026-04-21 (later in the day)_
 - **Pattern analyzer v2** — `memory/patterns.py` now tracks peak hour + quality trend (first half vs second half of window), top GitHub repos, hot read/write files, and git-activity commits per repo. Emits both `memory/patterns.md` (full) and `memory/weekly-digest.md` (condensed). `nexus-patterns.timer` runs it every Monday at 06:00 local.
 - **SOUL.md** — rewritten: identity + autonomy push, "never say I can't", WattBott / Irex Argus / BidWatt context, full tool belt, when-to-use cheatsheet, safety rules carried forward.
 
-## Phase 7 — Next up (locked)
-- **GLM-5.1 code-tier route** — add Z.AI / GLM-5.1 as an alternate for the `code` route; key via `Z_AI_API_KEY`.
-- **Tailscale integration** — remote-device visibility via `TAILSCALE_API_KEY`.
-- **Design Studio v2** — keep visual design on its own model, wire output artifacts into Chroma RAG automatically.
-- **BidWatt integration** — dedicated tools for scraping/bidding pipeline; route `bid/*` keywords through a specialist model.
-- **Proactive ingestion expansion** — email-drop watcher once Gmail MCP auth is set up; mirror the file-watcher pattern.
-- **Open WebUI tool bridge** — surface the full LangGraph tool catalog as function-calling options.
-- **Hardware-aware model routing** — use ROCm GPU availability/utilization as a router signal.
-- **Nomic-embed-text in Ollama** and drop HF sentence-transformers in Mem0.
+## Phase 7 — Computer Use & Media — 2026-04-21 — SHIPPED
+- **YouTube Tool** — `tools/youtube_tool.py` with `youtube_transcript` and `youtube_summary` (qwen3:4b summarization).
+- **Telegram Bot** — `tools/telegram_tool.py` + `tools/telegram_listener.py`. Notifications + remote commands.
+  - `telegram_notify`, `telegram_send_file` LangGraph tools.
+  - Helper functions: `notify_task_complete`, `notify_error`, `notify_sudo_needed`.
+  - Listener service polls Nexus API for command routing.
+  - Service file: `/tmp/nexus-telegram.service`.
+  - Setup docs: `docs/telegram-setup.md`.
+- **Computer Use** — `tools/computer_use_tool.py` (10 tools):
+  - Mouse: `mouse_move`, `mouse_click`, `mouse_drag`
+  - Keyboard: `keyboard_type`, `keyboard_press`
+  - Screen: `screenshot`, `find_on_screen`, `get_screen_size`, `get_mouse_position`
+  - Apps: `open_app` (whitelist-protected)
+  - Lazy-loads pyautogui to avoid display errors.
+- **Image Generation** — `tools/image_gen_tool.py` with ERNIE API support. Placeholder for local SD.
+- **OpenGame** — `tools/opengame_tool.py` — generates web games from prompts.
+- **Vercel Deploy** — `tools/vercel_tool.py` — deploy projects to Vercel from CLI.
 
-## Phase 8 — Stretch (unlocked, explored only)
-- **Fine-tuning loop** — use reflection-tagged exchanges (quality=5/1) to build SFT/DPO pairs for a local qwen3 variant.
-- **Multi-agent planning** — design↔code↔critic loop for larger tasks.
-- **Voice in/out** — whisper.cpp + piper wired into the API.
+## Phase 8 — Sparky Avatar System — 2026-04-21 — SHIPPED
+- **Sparky Design** — `sparky/sparky.svg` — electric blue avatar with expressions:
+  - idle, thinking, idea, whammy, happy, excited, working, sleeping, error, talking
+  - Eye tracking (pupils follow cursor)
+  - Emoji bubbles for states
+- **Animations Config** — `sparky/sparky_animations.json` — all states, transitions, triggers.
+- **Desktop Overlay** — `sparky/overlay/` Electron app:
+  - Always-on-top transparent window
+  - Polls state bridge for state updates
+  - CSS animations for each state
+  - Eye tracking via cursor position
+- **State Bridge** — `sparky/state_bridge.py` FastAPI on port 11437:
+  - POST /state, GET /state endpoints
+  - Quick endpoints: /thinking, /working, /whammy, /happy, /error, /idle
+  - Speaking sync: /speaking/start, /speaking/stop
+- **Autostart** — `~/.config/autostart/sparky.desktop`
+
+## Phase 9 — Multi-Agent Swarms — 2026-04-21 — SHIPPED
+- **Orchestrator** — `agents/orchestrator.py`:
+  - Task queue management (persisted to `memory/task-queue.json`)
+  - Routing by task type (coding→Coder, research→Researcher, etc.)
+  - Status tracking and Telegram notifications
+- **Base Agent** — `agents/base_agent.py`:
+  - Abstract base class with LLM calling, task execution, status tracking
+  - Hand-off support between agents
+- **Sub-Agents**:
+  - `agents/coder_agent.py` — coding, debugging, code generation
+  - `agents/researcher_agent.py` — web search, information synthesis
+  - `agents/builder_agent.py` — builds, tests, deployments
+  - `agents/designer_agent.py` — UI/UX, CSS, visual design
+- **API Endpoints** — `/agents`, `/tasks`, `/chat` added to `nexus_api.py`
+
+## Phase 10 — Game Development Studio — 2026-04-21 — SHIPPED
+- **Godot Integration** — `tools/godot_tool.py`:
+  - `godot_create_project`, `godot_run_export`, `godot_run_headless`
+- **AudioCraft** — `tools/audio_gen_tool.py` (lazy-loaded):
+  - `generate_sfx` — sound effects from text
+  - `generate_music` — background music from text
+- **Bark Voice Acting** — `tools/bark_tool.py` (lazy-loaded):
+  - `bark_speak` — character voice generation
+  - 10 voice presets (narrator, hero, villain, etc.)
+- **Game Pipeline** — `tools/game_pipeline.py`:
+  - `create_game` — end-to-end pipeline:
+    1. Generate design doc
+    2. Create code (OpenGame)
+    3. Generate sprites (ERNIE)
+    4. Generate SFX (AudioCraft)
+    5. Generate music (AudioCraft)
+    6. Generate voices (Bark)
+    7. Deploy to Vercel
+    8. Notify via Telegram
+
+## Future Phases (unlocked)
+- **GLM-5.1 code-tier route** — add Z.AI / GLM-5.1 as an alternate for the `code` route.
+- **Tailscale integration** — remote-device visibility via `TAILSCALE_API_KEY`.
+- **BidWatt integration** — dedicated tools for bidding pipeline.
+- **Fine-tuning loop** — use reflection-tagged exchanges for SFT/DPO.
 
 ## Services (current)
 | Service | Status | Purpose |

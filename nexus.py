@@ -37,6 +37,16 @@ from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
 from tools.tts_tool import tts_save, tts_speak  # noqa: E402
 from tools.whisper_tool import whisper_record, whisper_transcribe  # noqa: E402
+from tools.youtube_tool import YOUTUBE_TOOLS  # noqa: E402
+from tools.telegram_tool import TELEGRAM_TOOLS  # noqa: E402
+from tools.computer_use_tool import COMPUTER_USE_TOOLS  # noqa: E402
+from tools.image_gen_tool import IMAGE_GEN_TOOLS  # noqa: E402
+from tools.opengame_tool import OPENGAME_TOOLS  # noqa: E402
+from tools.vercel_tool import VERCEL_TOOLS  # noqa: E402
+from tools.godot_tool import GODOT_TOOLS  # noqa: E402
+from tools.audio_gen_tool import AUDIO_GEN_TOOLS  # noqa: E402
+from tools.bark_tool import BARK_TOOLS  # noqa: E402
+from tools.game_pipeline import GAME_PIPELINE_TOOLS  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -68,6 +78,16 @@ TOOLS = [
     whisper_transcribe,
     tts_speak,
     tts_save,
+    *YOUTUBE_TOOLS,
+    *TELEGRAM_TOOLS,
+    *COMPUTER_USE_TOOLS,
+    *IMAGE_GEN_TOOLS,
+    *OPENGAME_TOOLS,
+    *VERCEL_TOOLS,
+    *GODOT_TOOLS,
+    *AUDIO_GEN_TOOLS,
+    *BARK_TOOLS,
+    *GAME_PIPELINE_TOOLS,
 ]
 
 

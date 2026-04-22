@@ -282,6 +282,58 @@ async def healthz():
     return {"ok": True, "model": MODEL_NAME}
 
 
+@app.get("/health")
+async def health():
+    """Health check endpoint for Telegram bot."""
+    return {"status": "ok", "model": MODEL_NAME}
+
+
+class SimpleChatRequest(BaseModel):
+    """Simple chat request for Telegram integration."""
+    message: str
+
+
+@app.post("/chat")
+async def simple_chat(req: SimpleChatRequest):
+    """Simple chat endpoint for Telegram bot."""
+    from nexus import build_agent, strip_thinking
+    agent = build_agent(router.model_for("heavy"))
+    thread_id = "telegram-chat"
+    config = {"configurable": {"thread_id": thread_id}}
+    lc_msgs = [HumanMessage(content=req.message)]
+
+    try:
+        result = await agent.ainvoke({"messages": lc_msgs}, config=config)
+        reply = _extract_reply(result)
+        return {"response": reply}
+    except Exception as e:
+        return {"response": f"Error: {type(e).__name__}: {e}"}
+
+
+@app.get("/tasks")
+async def list_tasks():
+    """List current tasks (for Telegram bot)."""
+    try:
+        from agents.orchestrator import get_orchestrator
+        orch = get_orchestrator()
+        status = orch.get_status()
+        tasks = [t["description"] for t in status.get("queued_tasks", [])]
+        return {"tasks": tasks}
+    except Exception:
+        return {"tasks": []}
+
+
+@app.get("/agents")
+async def list_agents():
+    """Get status of all running agents and their tasks."""
+    try:
+        from agents.orchestrator import get_orchestrator
+        orch = get_orchestrator()
+        return orch.get_status()
+    except Exception as e:
+        return {"error": str(e), "agents": {}}
+
+
 def main() -> None:
     import uvicorn
 
