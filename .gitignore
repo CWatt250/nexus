@@ -40,3 +40,7 @@ designs/
 .DS_Store
 *.swp
 *.swo
+
+# Claude Code runtime files
+claude_session.json
+.claude/scheduled_tasks.lock
