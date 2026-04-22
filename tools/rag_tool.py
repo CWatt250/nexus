@@ -1,25 +1,73 @@
 """RAG tool for Nexus — Chroma-backed long-term memory.
 
-Uses sentence-transformers (all-MiniLM-L6-v2) for embeddings and persists the
+Uses Ollama's nomic-embed-text model for embeddings and persists the
 collection at ~/AI_Agent/chroma/.
 """
 from __future__ import annotations
 
+import json
+import time
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Iterable
 
 import chromadb
-from chromadb.utils import embedding_functions
 from langchain_core.tools import tool
 
 COLLECTION_NAME = "nexus-memory"
-EMBED_MODEL = "all-MiniLM-L6-v2"
+EMBED_MODEL = "nomic-embed-text"
 PERSIST_DIR = Path.home() / "AI_Agent" / "chroma"
+OLLAMA_URL = "http://localhost:11434"
 
-_embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name=EMBED_MODEL
-)
+
+def _ollama_embed(texts: list[str]) -> list[list[float]]:
+    """Get embeddings via Ollama's /api/embed endpoint."""
+    try:
+        payload = json.dumps({
+            "model": EMBED_MODEL,
+            "input": texts,
+            "truncate": True,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            OLLAMA_URL + "/api/embed",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["embeddings"]
+    except Exception:
+        # Fallback: return uniform vectors so Chroma still works (queries
+        # will be meaningless but the collection stays bootstrapped).
+        return [[0.0] * 768 for _ in texts]
+
+
+class OllamaEmbeddingFunction:
+    """Chroma embedding function wrapper that calls Ollama /api/embed."""
+    _name = "ollama_nomic-embed-text"
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        return _ollama_embed(list(input))
+
+    def embed_query(self, input: str) -> list[list[float]]:
+        """Single-query embedding — Chroma calls this for query_texts."""
+        return _ollama_embed([input])
+
+    def embed_queries(self, queries: list[str]) -> list[list[float]]:
+        return self(queries)
+
+    def embed_documents(self, documents: list[str]) -> list[list[float]]:
+        return self(documents)
+
+    def _ollama_embed_single(self, text: str) -> list[float]:
+        return _ollama_embed([text])[0]
+
+    def name(self) -> str:
+        return self._name
+
+
+_embed_fn = OllamaEmbeddingFunction()
 _client: chromadb.api.ClientAPI | None = None
 _collection = None
 
@@ -32,6 +80,7 @@ def _get_collection():
         _collection = _client.get_or_create_collection(
             name=COLLECTION_NAME,
             embedding_function=_embed_fn,
+            metadata={"hnsw:space": "cosine"},
         )
     return _collection
 
@@ -50,7 +99,7 @@ def add_documents(
     if ids is None:
         ids = [str(uuid.uuid4()) for _ in docs]
     if metadatas is None:
-        metadatas = [{"source": "nexus", "ts": int(__import__("time").time())} for _ in docs]
+        metadatas = [{"source": "nexus", "ts": int(time.time())} for _ in docs]
     col.add(documents=docs, metadatas=metadatas, ids=ids)
     return ids
 
@@ -76,6 +125,41 @@ def query(text: str, k: int = 4) -> list[dict]:
     return hits
 
 
+def seed_documents(path: str, tag: str, source: str = "manual") -> int:
+    """Read a file, split into chunks, and add to the collection.
+    Returns the number of chunks added.
+    Args:
+        path: filesystem path to the file
+        tag: tag to attach to all chunks
+        source: source metadata (defaults to the filename)
+    """
+    p = Path(path)
+    if not p.exists():
+        return 0
+    text = p.read_text(encoding="utf-8", errors="replace")
+    # Split into chunks of ~500 chars with overlap
+    chunk_size = 500
+    overlap = 100
+    chunks = []
+    metas = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        # Trim to word boundary
+        if end < len(text):
+            last_space = chunk.rfind(" ")
+            if last_space > chunk_size * 0.5:
+                chunk = chunk[:last_space]
+                end = start + last_space
+        if chunk.strip():
+            chunks.append(chunk.strip())
+            metas.append({"source": source, "tag": tag, "chunk_of": p.name})
+        start = end - overlap
+    ids = add_documents(chunks, metadatas=metas)
+    return len(ids)
+
+
 @tool
 def memory_search(query_text: str, k: int = 4) -> str:
     """Search Nexus's long-term memory for passages similar to query_text.
@@ -96,6 +180,19 @@ def memory_add(text: str) -> str:
 
 
 @tool
+def memory_seed_file(path: str, tag: str, source: str = "manual") -> str:
+    """Seed a file into the nexus-memory collection by splitting it into chunks.
+    Returns the number of chunks added.
+    Args:
+        path: filesystem path to the file
+        tag: tag to attach to all chunks
+        source: source metadata (defaults to the filename)
+    """
+    count = seed_documents(path, tag, source)
+    return f"seeded {count} chunks from {path}"
+
+
+@tool
 def memory_list(tag: str = "", limit: int = 20) -> str:
     """List documents in Nexus's long-term memory.
 
@@ -105,7 +202,6 @@ def memory_list(tag: str = "", limit: int = 20) -> str:
 
     Returns formatted list of document IDs, sources, and preview text."""
     col = _get_collection()
-    # Get all documents (Chroma doesn't have a direct list-all, so we use a broad query)
     try:
         result = col.get(limit=limit, include=["documents", "metadatas"])
     except Exception as e:
@@ -123,7 +219,6 @@ def memory_list(tag: str = "", limit: int = 20) -> str:
         meta = metas[i] if i < len(metas) else {}
         doc = docs[i] if i < len(docs) else ""
 
-        # Filter by tag if specified
         if tag:
             source = meta.get("source", "")
             doc_tag = meta.get("tag", "")
@@ -151,14 +246,12 @@ def memory_delete(doc_id: str) -> str:
     Returns confirmation or error message."""
     col = _get_collection()
 
-    # Try to find the full ID if partial was given
     try:
         result = col.get(limit=100, include=["documents"])
         all_ids = result.get("ids", [])
     except Exception as e:
         return f"Error accessing memory: {e}"
 
-    # Find matching IDs
     matches = [id for id in all_ids if id.startswith(doc_id)]
 
     if not matches:
@@ -167,7 +260,6 @@ def memory_delete(doc_id: str) -> str:
     if len(matches) > 1 and len(doc_id) < 36:
         return f"Multiple matches found ({len(matches)}). Provide more of the ID: {', '.join(m[:12] + '...' for m in matches[:5])}"
 
-    # Delete the matching document(s)
     try:
         col.delete(ids=matches)
         return f"Deleted {len(matches)} document(s): {', '.join(matches)}"
@@ -192,7 +284,6 @@ def memory_stats() -> str:
     if total == 0:
         return "Memory is empty."
 
-    # Count by source
     sources = {}
     tags = {}
     for meta in metas:
@@ -212,7 +303,6 @@ def memory_stats() -> str:
         for tag, count in sorted(tags.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"  {tag}: {count}")
 
-    # Storage size
     import os
     try:
         total_size = sum(
@@ -221,7 +311,7 @@ def memory_stats() -> str:
             for filename in filenames
         )
         lines.append(f"\nStorage: {total_size / 1024 / 1024:.2f} MB")
-    except:
+    except Exception:
         pass
 
     return "\n".join(lines)

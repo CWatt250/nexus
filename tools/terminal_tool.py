@@ -17,22 +17,25 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from safety.sandbox import run_guarded  # noqa: E402
-
-RUN_LOG = Path.home() / "AI_Agent" / "projects" / "nexus-core" / "run-log.jsonl"
-
-
-def _log(entry: dict) -> None:
-    RUN_LOG.parent.mkdir(parents=True, exist_ok=True)
-    with RUN_LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+from tools.run_log import log_run  # noqa: E402
 
 
 def run_shell(command: str) -> dict:
     """Execute a shell command through the sandbox. Blocked commands
     return a dict with `blocked=True` instead of running."""
     result = run_guarded(command)
-    _log(result)
+    log_run(
+        tool="terminal",
+        command=command,
+        returncode=result.get("returncode"),
+        stdout=result.get("stdout"),
+        stderr=result.get("stderr"),
+        timed_out=result.get("timed_out", False),
+        blocked=result.get("blocked", False),
+        reason=result.get("reason"),
+        result="ok" if not result.get("blocked") and result.get("returncode", 0) == 0 else ("blocked" if result.get("blocked") else "error"),
+        notes=result.get("reason", ""),
+    )
     return result
 
 
