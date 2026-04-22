@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -29,7 +30,7 @@ import router  # noqa: E402
 from memory import sessions  # noqa: E402
 from nexus import (  # noqa: E402
     ThinkStripper,
-    build_agent,
+    build_agent_async,
     extend_tools_with_mcp,
     load_system_prompt,
     set_system_prompt,
@@ -40,14 +41,23 @@ MODEL_NAME = "nexus"
 HOST = "0.0.0.0"
 PORT = 11435
 
-app = FastAPI(title="nexus-api", version="0.4")
-# Lock in the system prompt before any agent is built, then warm-start heavy.
+# System-prompt + MCP wiring stays sync — these don't need an event loop.
 set_system_prompt(load_system_prompt())
 _mcp_added = extend_tools_with_mcp()
 if _mcp_added:
     print(f"[mcp] nexus-api loaded {_mcp_added} external tools", flush=True)
-build_agent(router.model_for("heavy"))
 _system_prompt = load_system_prompt()
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Warm-build the heavy async agent so the first request doesn't pay
+    # the aiosqlite + LangGraph construction cost.
+    await build_agent_async(router.model_for("heavy"))
+    yield
+
+
+app = FastAPI(title="nexus-api", version="0.5", lifespan=_lifespan)
 
 
 def _last_user_text(msgs: list) -> str:
@@ -57,9 +67,10 @@ def _last_user_text(msgs: list) -> str:
     return ""
 
 
-def _pick_agent(messages: list) -> tuple[object, str, str]:
+async def _pick_agent(messages: list) -> tuple[object, str, str]:
     route, model = router.classify_and_model(_last_user_text(messages))
-    return build_agent(model), route, model
+    agent = await build_agent_async(model)
+    return agent, route, model
 
 
 _reflection_threads: list[threading.Thread] = []
@@ -229,7 +240,7 @@ async def _stream_agent(
     yield b"data: [DONE]\n\n"
 
     try:
-        snap = agent.get_state(config)
+        snap = await agent.aget_state(config)
         final_messages = getattr(snap, "values", {}).get("messages") if snap else None
     except Exception:
         final_messages = None
@@ -253,7 +264,7 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
-    agent, route, model = _pick_agent(req.messages)
+    agent, route, model = await _pick_agent(req.messages)
     thread_id, _src = _thread_id_for(req)
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -296,8 +307,7 @@ class SimpleChatRequest(BaseModel):
 @app.post("/chat")
 async def simple_chat(req: SimpleChatRequest):
     """Simple chat endpoint for Telegram bot."""
-    from nexus import build_agent, strip_thinking
-    agent = build_agent(router.model_for("heavy"))
+    agent = await build_agent_async(router.model_for("heavy"))
     thread_id = "telegram-chat"
     config = {"configurable": {"thread_id": thread_id}}
     lc_msgs = [HumanMessage(content=req.message)]

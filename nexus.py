@@ -11,9 +11,11 @@ import time
 import uuid
 from pathlib import Path
 
+import aiosqlite
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.prebuilt import create_react_agent
 
 ROOT = Path(__file__).resolve().parent
@@ -206,8 +208,13 @@ def load_system_prompt() -> str:
     return "\n\n".join(sections)
 
 
-_AGENT_CACHE: dict[str, object] = {}
+# Agent cache is keyed by (model, is_async) so sync and async variants
+# coexist — they share the same checkpoints.db file but talk to it via
+# different saver objects so each variant sees only the methods it can
+# call safely.
+_AGENT_CACHE: dict[tuple[str, bool], object] = {}
 _SYSTEM_PROMPT = ""
+_ASYNC_CHECKPOINTER: AsyncSqliteSaver | None = None
 
 
 def set_system_prompt(prompt: str) -> None:
@@ -217,20 +224,61 @@ def set_system_prompt(prompt: str) -> None:
     _SYSTEM_PROMPT = prompt or ""
 
 
+def _make_llm(model: str) -> ChatOllama:
+    return ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=False)
+
+
 def build_agent(model: str | None = None):
-    """Build (and cache) a LangGraph agent for the given Ollama model.
-    If `model` is None, uses the router's `heavy` default.
-    """
+    """Build (and cache) a SYNC LangGraph agent for the given Ollama model.
+    Use this from CLI / voice / any code path that calls `.invoke` or
+    `.get_state` directly. For FastAPI's async handlers, call
+    `build_agent_async` instead so checkpoint reads/writes don't go
+    through LangGraph's `asyncio.to_thread` fallback on every turn."""
     model = model or router.model_for("heavy")
-    if model not in _AGENT_CACHE:
-        llm = ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=False)
-        _AGENT_CACHE[model] = create_react_agent(
-            llm,
+    key = (model, False)
+    if key not in _AGENT_CACHE:
+        _AGENT_CACHE[key] = create_react_agent(
+            _make_llm(model),
             TOOLS,
             prompt=_SYSTEM_PROMPT or None,
             checkpointer=_CHECKPOINTER,
         )
-    return _AGENT_CACHE[model]
+    return _AGENT_CACHE[key]
+
+
+async def _get_async_checkpointer() -> AsyncSqliteSaver:
+    """Lazy singleton: one aiosqlite connection shared by every async
+    agent. Must be awaited — aiosqlite's Connection ctor is itself a
+    coroutine and the saver needs a live connection to run setup()."""
+    global _ASYNC_CHECKPOINTER
+    if _ASYNC_CHECKPOINTER is None:
+        conn = await aiosqlite.connect(str(CHECKPOINT_DB), check_same_thread=False)
+        saver = AsyncSqliteSaver(conn)
+        # Ensure the schema exists — no-op if the sync saver already ran it.
+        try:
+            await saver.setup()
+        except Exception:
+            pass
+        _ASYNC_CHECKPOINTER = saver
+    return _ASYNC_CHECKPOINTER
+
+
+async def build_agent_async(model: str | None = None):
+    """Build (and cache) an ASYNC LangGraph agent backed by AsyncSqliteSaver
+    on the same checkpoints.db. Use this from async contexts so state
+    reads/writes don't block the event loop (or bounce through the thread
+    pool on every turn)."""
+    model = model or router.model_for("heavy")
+    key = (model, True)
+    if key not in _AGENT_CACHE:
+        saver = await _get_async_checkpointer()
+        _AGENT_CACHE[key] = create_react_agent(
+            _make_llm(model),
+            TOOLS,
+            prompt=_SYSTEM_PROMPT or None,
+            checkpointer=saver,
+        )
+    return _AGENT_CACHE[key]
 
 
 def agent_for_message(message: str) -> tuple[object, str, str]:
