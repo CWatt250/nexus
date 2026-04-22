@@ -35,11 +35,15 @@ VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/mode
 ENV_FILE = Path.home() / "AI_Agent" / ".env"
 
 # Kokoro voice preference order when SPARKY_VOICE is not set.
-KOKORO_PREFS = ("af_sky", "af_nova", "bf_emma", "af_heart")
+# Male voices first — Nexus speaks as Colton's peer.
+KOKORO_PREFS = ("am_adam", "am_michael", "bm_george", "bm_lewis", "af_sky")
 
 # If the selected voice looks like an Edge Neural voice, route via edge-tts.
 EDGE_NEURAL_MARKER = "neural"
-EDGE_FALLBACK_VOICE = "en-US-JennyNeural"
+EDGE_FALLBACK_VOICE = "en-US-GuyNeural"
+
+# Sparky bridge — consulted as a second-line mute check before playback.
+MUTE_CHECK_URL = "http://localhost:11437/muted"
 
 log = logging.getLogger("nexus.tts")
 
@@ -235,14 +239,37 @@ def synthesize(text: str, *, voice: str | None = None, speed: float = 1.0):
         return _synth_kokoro(text, v2, speed)
 
 
+def _bridge_muted() -> bool:
+    """Second-line mute check: ask the Sparky state bridge. Returns False
+    if the bridge is unreachable — the caller is still expected to have
+    done a primary check first."""
+    try:
+        import requests
+        r = requests.get(MUTE_CHECK_URL, timeout=1)
+        if r.status_code != 200:
+            return False
+        return bool(r.json().get("muted", False))
+    except Exception:
+        return False
+
+
 def speak(text: str, *, voice: str | None = None, speed: float = 1.0) -> str:
-    """Synthesize + play through the default audio device."""
+    """Synthesize + play through the default audio device. Aborts cleanly
+    (no audio, no error) if the Sparky bridge reports muted=True."""
     if not text or not text.strip():
         return "(nothing to speak)"
+    if _bridge_muted():
+        log.info("muted — skipping audio playback in tts_tool.speak")
+        return f"muted: synthesized-but-skipped {len(text)} chars"
     try:
         audio, sr = synthesize(text, voice=voice, speed=speed)
     except Exception as exc:
         return f"ERROR: TTS synth failed — {type(exc).__name__}: {exc}"
+    # Re-check just before hitting the audio device — the user might flip
+    # the mute toggle during synthesis for long passages.
+    if _bridge_muted():
+        log.info("muted during synthesis — skipping playback")
+        return f"muted: synthesized-but-skipped {len(text)} chars"
     try:
         import sounddevice as sd
     except OSError as exc:

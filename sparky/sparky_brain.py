@@ -190,11 +190,12 @@ def _bridge_post(path: str, body: dict | None = None) -> None:
 
 
 def _is_muted() -> bool:
+    """Hard mute check — called immediately before every audio playback.
+    Uses `requests` synchronously so it can't be lost to an async edge
+    case; returns False only if the bridge is reachable AND muted=False."""
     try:
-        with httpx.Client(timeout=2) as client:
-            r = client.get(f"{BRIDGE_URL}/muted")
-        if r.status_code != 200:
-            return False
+        import requests
+        r = requests.get(f"{BRIDGE_URL}/muted", timeout=1)
         return bool(r.json().get("muted", False))
     except Exception:
         return False
@@ -217,8 +218,9 @@ def _speak_hint(message: str) -> None:
         _bridge_post("/message", {"text": message})
         _bridge_post("/speaking/start")
         try:
+            # HARD MUTE GATE — checked immediately before any audio call.
             if _is_muted():
-                log.info("muted — skipping TTS playback")
+                log.info("muted — skipping TTS playback (bubble still shown)")
             else:
                 status = tts_speak(message)
                 if isinstance(status, str) and status.startswith("ERROR:"):
