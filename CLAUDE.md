@@ -37,6 +37,19 @@ When you (Claude Code) modify files in this workspace, create a commit with a de
 
 If the user asks about history or drift, `git log --oneline` is the fastest read. Don't force-push. Don't rewrite pushed commits.
 
+## Phase 11 — Autonomous coding agent (what's already here)
+Nexus can now act as a coding agent on any repo, not just chat. The tools live in `~/AI_Agent/tools/`:
+
+- **Codebase indexer** — `tools/codebase_tool.py`: `index_codebase(repo)` reads every git-tracked file, extracts symbols / imports / routes / deps, stores per-file previews in a dedicated Chroma collection (`nexus-codebase`), and writes a `NEXUS.md` summary at the repo root. Companions: `search_codebase`, `get_file_context`, `list_repo_structure`.
+- **Test runner** — `tools/test_runner_tool.py`: auto-detects pytest / jest / vitest / cargo / go, runs with timeout, parses `N passed, M failed` + the failing test names. Python is invoked via `sys.executable -m pytest` so it works without pytest on `$PATH`. Entry points: `run_tests`, `run_specific_test`, `watch_tests`.
+- **Diff reviewer** — `tools/diff_tool.py`: `get_diff`, `review_diff` (sends the diff to qwen3.6 as a senior-engineer review), `approve_diff` (commits only when the review is clean).
+- **Autonomous coding loop** — `tools/coding_agent.py → solve_coding_task(task, repo, max_iterations=10)`: index → plan → baseline tests → iterate (LLM-driven JSON edit plans applied via exact string replace) → diff review → commit → optional PR on feature branches → Sparky card + Telegram notify. Also exposed as LangGraph tool `solve_task`.
+- **Repo watcher** — `tools/repo_watcher.py → on_commit(repo)`: auto re-indexes any repo under `~/Dev` whenever the existing `nexus-git-watcher` service sees a new commit, and caches `NEXUS.md` to `memory/nexus_md/<repo>.md` so Nexus can pull it into context.
+- **CLI mode** — `python3 ~/AI_Agent/nexus.py --code "<task>" --repo <path>` runs the full coding loop headless and writes a markdown report to `memory/coding-sessions/YYYY-MM-DD-HH-MM-<repo>.md`.
+- **Integration test repo** — `test_repos/hello_world/` (buggy `add()` fixed end-to-end: 3/3 tests pass, committed `baf5ab97`).
+
+Every tool is registered in both `nexus.TOOLS` and `mcp/server.py`. Total tool count after this phase: **75 native + MCP**.
+
 ---
 
 # Karpathy Coding Principles

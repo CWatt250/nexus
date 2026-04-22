@@ -201,6 +201,12 @@ def _scan_once(state: dict[str, list[str]]) -> None:
             _log_commit(repo, rec)
             _rag_store(repo, rec)
             log.info("%s %s %s", repo.name, sha[:8], rec.get("subject", "")[:80])
+        # Phase 11: re-index ~/Dev repos and refresh the cached NEXUS.md.
+        try:
+            from tools.repo_watcher import on_commit as _reindex
+            _reindex(repo)
+        except Exception as exc:
+            log.debug("repo_watcher.on_commit failed for %s: %s", repo.name, exc)
         # Cap the remembered SHA list so it doesn't grow unbounded.
         keep = new_shas + seen
         state[key] = keep[:200]

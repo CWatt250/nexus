@@ -134,6 +134,17 @@ _Last updated: 2026-04-21 (later in the day)_
     7. Deploy to Vercel
     8. Notify via Telegram
 
+## Phase 11 — Autonomous Coding Agent — 2026-04-21 — SHIPPED
+- **Codebase indexer** — `tools/codebase_tool.py`. `index_codebase` walks git-tracked files, extracts symbols / imports / routes / deps, stores per-file previews in a dedicated `nexus-codebase` Chroma collection tagged by repo name, and writes `NEXUS.md` at the repo root (stack, key files, entry points, test/build commands, rules). Companions `search_codebase`, `get_file_context`, `list_repo_structure`.
+- **Test runner** — `tools/test_runner_tool.py`. Auto-detects pytest/jest/vitest/cargo/go; Python test runs via `sys.executable -m pytest` so pytest works regardless of `$PATH`. Parses pass/fail counts + failing test names. Tools: `run_tests`, `run_specific_test`, `watch_tests`.
+- **Diff tools** — `tools/diff_tool.py`. `get_diff` → `review_diff` (qwen3.6 as senior reviewer: bugs, security, missing error handling, tests needed) → `approve_diff` (only commits when the review is clean).
+- **Autonomous coding loop** — `tools/coding_agent.py → solve_coding_task`. Index → plan → baseline tests → iterate (LLM JSON edit plans, exact-string replace) → review → commit → optional PR on feature branches → Sparky card + Telegram notify. Exposed as LangGraph tool `solve_task`.
+- **Repo watcher hook** — `tools/repo_watcher.py → on_commit`. Nexus-git-watcher now triggers a re-index on every new commit under `~/Dev/`; refreshed `NEXUS.md` cached to `memory/nexus_md/<repo>.md`.
+- **CLI mode** — `python3 ~/AI_Agent/nexus.py --code "<task>" --repo <path>` drives the full loop headless and logs to `memory/coding-sessions/YYYY-MM-DD-HH-MM-<repo>.md`.
+- **SOUL.md** — new "Coding agent" section: read first, plan in writing, test-driven, self-review, minimal idiomatic edits, descriptive commits.
+- **Integration test** — `test_repos/hello_world/` created with a buggy `add()` that returns `a - b`. End-to-end run: 1 iteration, 3/3 tests pass after the LLM-proposed edit, commit `baf5ab97` written, NEXUS.md generated. Session log at `memory/coding-sessions/`.
+- Tool count: **75 native** (64 + 11 new).
+
 ## Future Phases (unlocked)
 - **GLM-5.1 code-tier route** — add Z.AI / GLM-5.1 as an alternate for the `code` route.
 - **Tailscale integration** — remote-device visibility via `TAILSCALE_API_KEY`.

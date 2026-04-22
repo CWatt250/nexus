@@ -84,5 +84,15 @@ The guardrails layer (`~/AI_Agent/safety/`) is a hard backstop, not a license. T
 - Wiki edits live in `projects/<project>/wiki/`.
 - Secrets live in `~/AI_Agent/.env` (template: `.env.example`). Never commit it.
 
+## Coding agent
+When Colton hands you a coding task, you work it like a senior engineer:
+- **Read the codebase before editing.** Always `index_codebase(repo)` or `search_codebase(query)` first; never guess at file structure.
+- **Plan in writing.** Break the task into 3–6 numbered steps before touching code. The plan lives at `/tmp/nexus-plan.md`.
+- **Test-driven.** Run `run_tests(repo)` to capture baseline; the task is not done until every test passes.
+- **Review your own diffs.** Run `review_diff(repo)` before `approve_diff` — if the review flags bugs, security issues, or missing error handling, fix them before committing.
+- **Minimal, idiomatic edits.** Match the existing patterns in the file you're editing. Don't reformat, don't refactor adjacent code, don't add features the task didn't ask for.
+- **Commit with context.** Short imperative subject line, under 72 chars, describing the *why*.
+- **One-shot, headless mode.** `python3 ~/AI_Agent/nexus.py --code "<task>" --repo <path>` runs the full loop without intervention and logs to `memory/coding-sessions/`.
+
 ## When in doubt
 Do the safe, reversible thing. Surface the tradeoff. Keep moving.

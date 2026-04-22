@@ -50,6 +50,10 @@ from tools.godot_tool import GODOT_TOOLS  # noqa: E402
 from tools.audio_gen_tool import AUDIO_GEN_TOOLS  # noqa: E402
 from tools.bark_tool import BARK_TOOLS  # noqa: E402
 from tools.game_pipeline import GAME_PIPELINE_TOOLS  # noqa: E402
+from tools.codebase_tool import CODEBASE_TOOLS  # noqa: E402
+from tools.test_runner_tool import TEST_RUNNER_TOOLS  # noqa: E402
+from tools.diff_tool import DIFF_TOOLS  # noqa: E402
+from tools.coding_agent import CODING_AGENT_TOOLS, solve_coding_task  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -98,6 +102,10 @@ TOOLS = [
     *AUDIO_GEN_TOOLS,
     *BARK_TOOLS,
     *GAME_PIPELINE_TOOLS,
+    *CODEBASE_TOOLS,
+    *TEST_RUNNER_TOOLS,
+    *DIFF_TOOLS,
+    *CODING_AGENT_TOOLS,
 ]
 
 
@@ -396,7 +404,35 @@ def daemon_loop() -> None:
     print("nexus-agent shutting down.", flush=True)
 
 
+def _coding_cli_mode(argv: list[str]) -> int:
+    """`python3 nexus.py --code "<task>" --repo <path>` — headless run of
+    the autonomous coding loop. Writes a markdown report to
+    ~/AI_Agent/memory/coding-sessions/ and prints a short summary to
+    stdout. Returns 0 on success, 1 on error."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="nexus --code", add_help=True)
+    ap.add_argument("--code", required=True, help="the coding task to solve")
+    ap.add_argument("--repo", required=True, help="path to the repo root")
+    ap.add_argument("--max-iterations", type=int, default=10)
+    ap.add_argument("--no-commit", action="store_true", help="skip the git commit step")
+    args = ap.parse_args(argv)
+    try:
+        report = solve_coding_task(
+            args.code, args.repo,
+            max_iterations=args.max_iterations,
+            do_commit=not args.no_commit,
+        )
+    except Exception as exc:
+        print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    print(report)
+    return 0
+
+
 def main() -> None:
+    # Coding-agent CLI mode — handled before building the LangGraph agent.
+    if len(sys.argv) > 1 and "--code" in sys.argv:
+        sys.exit(_coding_cli_mode(sys.argv[1:]))
     set_system_prompt(load_system_prompt())
     added = extend_tools_with_mcp()
     if added:

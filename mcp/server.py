@@ -38,6 +38,10 @@ from tools.search_tool import glob_tool, grep_tool  # noqa: E402
 from tools.terminal_tool import terminal  # noqa: E402
 from tools.tts_tool import tts_save, tts_speak  # noqa: E402
 from tools.whisper_tool import whisper_record, whisper_transcribe  # noqa: E402
+from tools.codebase_tool import CODEBASE_TOOLS  # noqa: E402
+from tools.test_runner_tool import TEST_RUNNER_TOOLS  # noqa: E402
+from tools.diff_tool import DIFF_TOOLS  # noqa: E402
+from tools.coding_agent import CODING_AGENT_TOOLS  # noqa: E402
 
 TOOLS = [
     terminal,
@@ -59,6 +63,10 @@ TOOLS = [
     whisper_transcribe,
     tts_speak,
     tts_save,
+    *CODEBASE_TOOLS,
+    *TEST_RUNNER_TOOLS,
+    *DIFF_TOOLS,
+    *CODING_AGENT_TOOLS,
 ]
 
 # stderr-only logging — stdout is reserved for MCP framing.

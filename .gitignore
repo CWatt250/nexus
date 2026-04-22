@@ -28,6 +28,12 @@ memory/compression-state.json
 memory/weekly-digest.md
 memory/patterns.md
 models/
+memory/coding-sessions/
+memory/nexus_md/
+test_repos/
+sparky/mute.json
+sparky/overlay/node_modules/
+sparky/overlay/package-lock.json
 .env
 
 # Generated designs (can be large; regenerated on demand)
