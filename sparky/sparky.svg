@@ -57,9 +57,6 @@
       <ellipse cx="45" cy="105" rx="15" ry="10" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
       <ellipse cx="155" cy="105" rx="15" ry="10" fill="url(#bodyGradient)" stroke="#0284C7" stroke-width="1"/>
     </g>
-
-    <!-- Lightning bolt on chest -->
-    <use href="#lightning" x="88" y="95" width="24" height="40"/>
   </g>
 
   <!-- Face group -->
@@ -77,8 +74,51 @@
       <circle cx="121" cy="83" r="3" fill="white" opacity="0.8"/>
     </g>
 
+    <!-- Battle scar — faded lightning bolt under the right eye -->
+    <g id="scar" opacity="0.7">
+      <path d="M 132 106 L 137 113 L 133 113 L 138 125 L 133 117 L 136 117 Z"
+            fill="#FDE68A" stroke="#B45309" stroke-width="0.5" stroke-linejoin="round"/>
+    </g>
+
     <!-- Mouth - default smile -->
     <path id="mouth" d="M85 120 Q100 135 115 120" stroke="#0284C7" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Viking helmet — metal dome, two curved horns, nose guard down the center -->
+  <g id="viking-helmet">
+    <!-- Left horn -->
+    <path d="M 56 42 Q 38 26 22 8 L 28 4 Q 44 18 62 36 Z"
+          fill="#F3F4F6" stroke="#4B5563" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M 36 22 Q 46 28 56 40" stroke="#9CA3AF" stroke-width="1" fill="none" opacity="0.55"/>
+
+    <!-- Right horn -->
+    <path d="M 144 42 Q 162 26 178 8 L 172 4 Q 156 18 138 36 Z"
+          fill="#F3F4F6" stroke="#4B5563" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M 164 22 Q 154 28 144 40" stroke="#9CA3AF" stroke-width="1" fill="none" opacity="0.55"/>
+
+    <!-- Dome -->
+    <path d="M 52 58 Q 52 16 100 10 Q 148 16 148 58 Z"
+          fill="#6B7280" stroke="#1F2937" stroke-width="2" stroke-linejoin="round"/>
+
+    <!-- Dome highlight -->
+    <path d="M 72 28 Q 86 18 108 17"
+          stroke="#D1D5DB" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- Rim band -->
+    <path d="M 50 55 Q 100 59 150 55 L 148 62 Q 100 66 52 62 Z"
+          fill="#4B5563" stroke="#1F2937" stroke-width="1.5" stroke-linejoin="round"/>
+
+    <!-- Rivets -->
+    <circle cx="62" cy="59" r="1.6" fill="#D1D5DB"/>
+    <circle cx="82" cy="61" r="1.6" fill="#D1D5DB"/>
+    <circle cx="100" cy="62" r="1.6" fill="#D1D5DB"/>
+    <circle cx="118" cy="61" r="1.6" fill="#D1D5DB"/>
+    <circle cx="138" cy="59" r="1.6" fill="#D1D5DB"/>
+
+    <!-- Nose guard: vertical strip from rim down between the eyes -->
+    <path d="M 96 62 L 96 82 Q 100 86 104 82 L 104 62 Z"
+          fill="#6B7280" stroke="#1F2937" stroke-width="1.5" stroke-linejoin="round"/>
+    <line x1="100" y1="64" x2="100" y2="80" stroke="#D1D5DB" stroke-width="1" opacity="0.5"/>
   </g>
 
   <!-- Emotion indicators (hidden by default) -->

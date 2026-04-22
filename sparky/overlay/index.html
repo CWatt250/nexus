@@ -95,6 +95,41 @@
       pointer-events: none;
     }
 
+    /* WHAMMY label — sits above Sparky, only visible during whammy state.
+       The normal #status indicator keeps showing "whammy" underneath at its
+       usual small size; this label is the loud, electric version above. */
+    #whammy-label {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Impact', 'Arial Black', 'Segoe UI', sans-serif;
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      color: #FACC15;
+      text-shadow:
+        0 0 6px rgba(250, 204, 21, 0.95),
+        0 0 14px rgba(250, 204, 21, 0.7),
+        0 0 22px rgba(250, 204, 21, 0.4),
+        0 2px 3px rgba(0, 0, 0, 0.55);
+      opacity: 0;
+      pointer-events: none;
+      user-select: none;
+      z-index: 20;
+      transition: opacity 0.15s ease-in-out;
+    }
+
+    body.state-whammy #whammy-label {
+      opacity: 1;
+      animation: whammy-text-pulse 0.45s ease-in-out infinite;
+    }
+
+    @keyframes whammy-text-pulse {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50%      { transform: translateX(-50%) scale(1.1); }
+    }
+
     /* Context menu — floats on top, opts out of dragging. */
     #context-menu {
       position: absolute;
@@ -127,6 +162,7 @@
   </style>
 </head>
 <body class="state-idle">
+  <div id="whammy-label">WHAMMY</div>
   <div id="sparky-container">
     <object id="sparky" type="image/svg+xml" data="../sparky.svg"></object>
     <div id="emoji-bubble"></div>
