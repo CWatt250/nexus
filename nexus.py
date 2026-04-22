@@ -185,6 +185,7 @@ def load_system_prompt() -> str:
         "- `browser_tool(url)`: fetch a URL with headless Chromium and return text.\n"
         "- `memory_search(query_text, k=4)`: query long-term memory (Chroma RAG).\n"
         "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
+        "- `memory_seed_file(path, tag)`: seed an entire file into RAG (splits into chunks).\n"
         "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
         "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
         "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
