@@ -342,6 +342,45 @@
       if (contextMenu.style.display !== 'block') return;
       if (!e.target.closest('#context-menu')) hideContextMenu();
     });
+
+    // ---------------- Manual window drag ----------------
+    // -webkit-app-region: drag on body is the primary mechanism on X11
+    // and Windows, but it's broken on Wayland (the compositor this session
+    // is using) for transparent frameless windows. We back it up with a
+    // pointer-capture-based JS drag that tells main.js to move the window.
+    // The interactive children opt out so their own click/contextmenu
+    // handlers still win.
+    let dragStartScreen = null;
+
+    document.body.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;                            // left-drag only
+      if (e.target.closest('#sparky-container')) return;      // clicks on Sparky
+      if (e.target.closest('#context-menu')) return;          // menu items
+
+      dragStartScreen = { x: e.screenX, y: e.screenY };
+      document.body.style.cursor = 'grabbing';
+      ipcRenderer.send('sparky-drag-start');
+      try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* non-fatal */ }
+    });
+
+    document.body.addEventListener('pointermove', (e) => {
+      if (!dragStartScreen) return;
+      ipcRenderer.send('sparky-drag-move', {
+        dx: e.screenX - dragStartScreen.x,
+        dy: e.screenY - dragStartScreen.y,
+      });
+    });
+
+    function endDrag() {
+      if (!dragStartScreen) return;
+      dragStartScreen = null;
+      document.body.style.cursor = '';
+      ipcRenderer.send('sparky-drag-end');
+    }
+    document.body.addEventListener('pointerup', endDrag);
+    document.body.addEventListener('pointercancel', endDrag);
+    document.body.addEventListener('lostpointercapture', endDrag);
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') hideContextMenu();
     });
