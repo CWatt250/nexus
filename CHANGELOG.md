@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.2 Full computer use with vision — DONE
+- New `tools/computer_use_tool.find_on_screen_vision(description, vision_model='qwen2.5vl:7b')`. Captures a fresh full-screen screenshot, asks the VL model to return `x,y` coords for a natural-language UI description. Graceful fallback message when the VL model isn't pulled yet (`ollama pull qwen2.5vl:7b` line added to `SUDO_COMMANDS_R3.sh`).
+- New safety gate `_click_safe`: `mouse_click` now refuses to fire when the active window title is outside the approved-app whitelist (firefox/chrome/code/terminals/file managers/nexus). Model must explicitly set `approve=True` to bypass for unfamiliar windows.
+- Registered `find_on_screen_vision` in `COMPUTER_USE_TOOLS`.
+
 ### 16.1 Two-way Telegram (real fix) — DONE
 - New `tools.telegram_tool.proactive_send(message)` — async, best-effort, no-raise. Skips silently when bot not configured. The existing async listener (15.5) already handles incoming messages without blocking.
 - `workers.task_worker._run_one` now calls `proactive_send` after every task completion with a short summary `"✅ task <id> (Xs)\n› <user>\n‹ <reply>"` (or ❌ on failure). Best-effort: a Telegram failure never breaks the worker.

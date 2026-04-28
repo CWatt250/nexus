@@ -64,4 +64,13 @@ sudo systemctl enable nexus-telegram.service
 sudo systemctl restart nexus-telegram.service
 journalctl -u nexus-telegram.service -n 30 --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 16.2 — optional: pull a vision-language model so
+# find_on_screen_vision works without the "model not installed" fallback.
+# Disk: ~6 GB. No sudo required, but listed here so it's part of the same
+# checklist Colton runs after the autonomous batch.
+# ---------------------------------------------------------------------------
+ollama pull qwen2.5vl:7b
+ollama list | grep -i vl
+
 
