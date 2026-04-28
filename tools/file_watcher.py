@@ -79,6 +79,17 @@ def _ingest(path: Path) -> None:
         log.warning("RAG store failed for %s: %s: %s", path, type(exc).__name__, exc)
         return
     log.info("ingested %s → chroma id=%s (%d chars)", path.name, ids[0] if ids else "?", len(text))
+    # Phase 19.2 — event-driven Sparky nudge.
+    try:
+        from core import event_bus
+        event_bus.publish_remote(
+            "file_ingested",
+            path=str(path),
+            ext=path.suffix.lower(),
+            chars=len(text),
+        )
+    except Exception:
+        pass
 
 
 def _scan_once(seen: set[str]) -> None:

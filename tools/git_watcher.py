@@ -201,6 +201,17 @@ def _scan_once(state: dict[str, list[str]]) -> None:
             _log_commit(repo, rec)
             _rag_store(repo, rec)
             log.info("%s %s %s", repo.name, sha[:8], rec.get("subject", "")[:80])
+            # Phase 19.2 — event-driven Sparky nudge.
+            try:
+                from core import event_bus
+                event_bus.publish_remote(
+                    "git_commit",
+                    repo=repo.name,
+                    sha=sha[:8],
+                    subject=(rec.get("subject") or "")[:120],
+                )
+            except Exception:
+                pass
         # Phase 11: re-index ~/Dev repos and refresh the cached NEXUS.md.
         try:
             from tools.repo_watcher import on_commit as _reindex

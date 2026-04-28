@@ -4,10 +4,10 @@
 19
 
 ## Current Task
-19.2 Event-driven nudges
+19.3 Daily end-of-day auto-summary
 
 ## Last Completed Task
-19.1 Task extraction from messages
+19.2 Event-driven nudges
 
 ## Phase Status
 - Phase 12: SKIPPED

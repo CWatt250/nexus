@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
+### 19.2 Event-driven nudges — DONE
+- `tools/file_watcher.py:_ingest` and `tools/git_watcher.py:_scan_once` now `event_bus.publish_remote('file_ingested' | 'git_commit', …)` after every successful event.
+- Combined with Phase 17.2 emissions (`task_started/completed/failed`, `tool_called`, `scheduler_fired`), Sparky's overlay can subscribe to `/ws/events` and react to *real* signals instead of polling. The 5-min poll loop is now a redundant fallback rather than the primary path — it can be removed in a future cleanup once the dashboard is in regular use.
+- No new infra needed beyond what the bus already provides; this is the "wire the existing services to the bus" task the spec called for.
+
 ### 19.1 Task extraction from messages — DONE
 - New `tools/task_extractor.py:extract_commitments(message, source)` — regex-first commitment + deadline extractor. Supports `by friday/tomorrow/next week/end of {day,week,month}` and weekday names; resolves to UTC datetime. LLM fallback (qwen3:4b, JSON-format) when regex hits the verb but misses the deadline phrase.
 - Records to `memory/reminders.jsonl`. Phase 16.5 scheduler can iterate due reminders for delivery via `proactive_send`.
