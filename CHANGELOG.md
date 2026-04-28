@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 18 (Polish + Advanced Features) starting
 
+### 18.6 Phase 18 verification — PASS
+- Planner correctly classifies and clarifies on `build me an app` (4.4s, action=clarify with questions); short-circuits a clear task with a numbered plan in 6.2s.
+- Model watcher candidate filter excludes locally-pulled families and surfaces new ones with realistic library shapes.
+- Full report: `PHASE_18_VERIFY.md`. **Phase 18 COMPLETE; Phase 19 unblocked.**
+
 ### 18.5 Auto model watcher — DONE
 - New `tools/model_watcher.py:model_watcher_run()`. Reads `/api/tags` for local models, scrapes the public `ollama.com/library` page for the published catalog (regex over href links — no HTML parser dep), reports new candidates whose name contains an interesting family (qwen3, qwen2.5, qwen3.6, glm, llama3, deepseek, mistral). **Does not auto-pull.**
 - Records each run to `memory/model-watcher.jsonl`. Best-effort Telegram notification with the candidate list via `proactive_send`.
