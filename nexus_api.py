@@ -32,6 +32,8 @@ from nexus import (  # noqa: E402
     ThinkStripper,
     build_agent_async,
     extend_tools_with_mcp,
+    fast_mode_messages,
+    is_fast_route,
     load_system_prompt,
     set_system_prompt,
     strip_thinking,
@@ -270,8 +272,8 @@ async def chat_completions(req: ChatRequest):
 
     # Checkpointer holds prior turns; we only pass the new user message.
     last = _last_user_message(req.messages)
-    lc_msgs = [HumanMessage(content=last.content)] if last and last.content else []
     user_text = last.content if last and last.content else ""
+    lc_msgs = fast_mode_messages(user_text, route=route) if user_text else []
 
     first_msg = last.content if last else None
     sessions.touch_session(thread_id, source="api", first_msg=first_msg)

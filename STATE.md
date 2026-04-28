@@ -4,10 +4,10 @@
 13
 
 ## Current Task
-13.4 fast_mode flag
+13.5 Parallel tool execution
 
 ## Last Completed Task
-13.3 Streaming everywhere
+13.4 fast_mode flag
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

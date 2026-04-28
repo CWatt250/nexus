@@ -2,6 +2,12 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.4 fast_mode flag — DONE
+- New `nexus.FAST_MODE_INSTRUCTION` + `is_fast_route(route)` + `fast_mode_messages(user, route, override)`.
+- Router's existing `fast` route triggers fast mode automatically. Caller can also force it with `override=True/False`.
+- API path (`nexus_api.chat_completions`) and CLI loop (`nexus.interactive_loop`) both now build their input messages with `fast_mode_messages`. CLI prints `[router: fast → qwen3:4b FAST]` when fast mode is active.
+- Strip-think is already handled downstream by `ThinkStripper`, so fast-mode replies stay clean even if the model leaks `<think>` blocks.
+
 ### 13.3 Streaming everywhere — DONE
 - API path (`nexus_api._stream_agent`) was already streaming via `agent.astream(stream_mode='messages')`. Verified.
 - CLI path (`nexus.interactive_loop`): converted from blocking `agent.invoke` to `agent.stream(stream_mode='messages')`. Tokens print as they arrive, ThinkStripper drops `<think>` blocks on the fly. Smoke test passed.

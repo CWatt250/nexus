@@ -336,6 +336,33 @@ def agent_for_message(message: str) -> tuple[object, str, str]:
     return build_agent(model), route, model
 
 
+FAST_MODE_INSTRUCTION = (
+    "FAST MODE: respond immediately, no thinking, no preamble, "
+    "no tool calls unless strictly necessary, max 2 sentences."
+)
+
+
+def is_fast_route(route: str) -> bool:
+    """A route counts as fast if the router classified it as a quick lookup."""
+    return route == "fast"
+
+
+def fast_mode_messages(user_text: str, *, route: str | None = None, override: bool | None = None) -> list:
+    """Return the message list to feed into the agent for one turn.
+
+    Prepends a SystemMessage with the FAST_MODE_INSTRUCTION when fast mode is
+    on. Caller decides whether fast mode applies (`override`) or lets the
+    router decide via the route name. Returns plain LangChain messages so
+    both sync and async agent paths can use it.
+    """
+    fast = override if override is not None else (route is not None and is_fast_route(route))
+    msgs: list = []
+    if fast:
+        msgs.append(SystemMessage(content=FAST_MODE_INSTRUCTION))
+    msgs.append(HumanMessage(content=user_text))
+    return msgs
+
+
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
 
@@ -461,7 +488,9 @@ def interactive_loop() -> None:
         if not user:
             continue
         agent, route, model = agent_for_message(user)
-        print(f"[router: {route} → {model}]")
+        fast = is_fast_route(route)
+        tag = " FAST" if fast else ""
+        print(f"[router: {route} → {model}{tag}]")
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": [sparky_cb],
@@ -471,7 +500,7 @@ def interactive_loop() -> None:
             stripper = ThinkStripper()
             parts: list[str] = []
             for event in agent.stream(
-                {"messages": [HumanMessage(content=user)]},
+                {"messages": fast_mode_messages(user, route=route)},
                 config=config,
                 stream_mode="messages",
             ):
