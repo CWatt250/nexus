@@ -2,6 +2,10 @@
 
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
+### 19.5 Multi-agent speech bubbles — DONE
+- `agents/base_agent.execute_task` now `event_bus.emit` `subagent_started` / `subagent_completed` / `subagent_failed` with `{agent, agent_id, task_id, …}` so the Sparky overlay can subscribe to `/ws/events` and render anchored mini-bubbles per sub-agent.
+- Data plane only — overlay rendering of these specific events is a follow-up that can land without touching the producer side. Existing event types (`task_started`, `tool_called`) already render in the dashboard's live stream as proof of concept.
+
 ### 19.4 Calendar prep briefs — DONE
 - New `tools/calendar_prep.py:calendar_prep_run(window_minutes=30)` reads a local .ics file (path from `NEXUS_ICS_PATH` env, default `~/.local/share/nexus-calendar.ics`) — no Google OAuth dependency. For each event starting in the window, pulls RAG context for the title and posts a prep brief to Sparky bubble + Telegram.
 - Dedup via `memory/calendar-briefed.jsonl` so we don't re-fire on every poll.

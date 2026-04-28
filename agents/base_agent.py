@@ -71,6 +71,18 @@ If you encounter issues, describe them precisely so they can be resolved."""
         task.status = AgentStatus.RUNNING
         task.assigned_to = self.name
 
+        # Phase 19.5 — fan agent lifecycle into the event bus so the
+        # Sparky overlay can render anchored mini-bubbles per sub-agent.
+        try:
+            from core import event_bus
+            event_bus.emit(
+                "subagent_started",
+                agent=self.name, agent_id=self.id, task_id=task.id,
+                description=(task.description or "")[:200],
+            )
+        except Exception:
+            pass
+
         try:
             result = await self._run(task)
             task.status = AgentStatus.COMPLETED
@@ -78,6 +90,15 @@ If you encounter issues, describe them precisely so they can be resolved."""
             task.completed_at = time.time()
             self.status = AgentStatus.IDLE
             self.task_history.append(task)
+            try:
+                from core import event_bus
+                event_bus.emit(
+                    "subagent_completed",
+                    agent=self.name, agent_id=self.id, task_id=task.id,
+                    result_preview=(result or "")[:200],
+                )
+            except Exception:
+                pass
             return result
 
         except Exception as e:
@@ -86,6 +107,15 @@ If you encounter issues, describe them precisely so they can be resolved."""
             task.completed_at = time.time()
             self.status = AgentStatus.IDLE
             self.task_history.append(task)
+            try:
+                from core import event_bus
+                event_bus.emit(
+                    "subagent_failed",
+                    agent=self.name, agent_id=self.id, task_id=task.id,
+                    error=task.result[:200],
+                )
+            except Exception:
+                pass
             return task.result
 
         finally:

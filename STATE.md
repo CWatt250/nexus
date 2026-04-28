@@ -4,10 +4,10 @@
 19
 
 ## Current Task
-19.5 Multi-agent speech bubbles
+19.6 Click-to-chat Sparky UI
 
 ## Last Completed Task
-19.4 Calendar prep briefs
+19.5 Multi-agent speech bubbles
 
 ## Phase Status
 - Phase 12: SKIPPED
