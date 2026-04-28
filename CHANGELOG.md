@@ -2,6 +2,14 @@
 
 ## 2026-04-28 — Phase 17 (Unified Observability Dashboard) starting
 
+### 17.2 Agent event emission — DONE
+- New `event_bus.publish_remote(event, **fields)` posts events to FastAPI's `/events/publish` so out-of-process workers (task_worker, scheduler, perf_guardian) still surface to dashboard subscribers attached to the API's in-process bus.
+- Wired emissions:
+  - `workers/task_worker.py`: `task_started`, `task_completed`, `task_failed` (with elapsed_s, tool_calls, preview).
+  - `core/scheduler.py`: `scheduler_fired` (with schedule_id, kind, spec, task_id).
+  - `memory/metrics.py`: every `record_tool_call` also `event_bus.emit('tool_called', …)` in-process.
+- Regression suite still 24/24 after the wiring.
+
 ### 17.1 Websocket infrastructure — DONE
 - New `core/event_bus.py` — in-process event bus with JSONL persistence (`memory/agent-events.jsonl`). API: `subscribe / unsubscribe / publish / replay_recent / emit`. Each subscriber gets its own asyncio.Queue; full-queue drops are debug-logged.
 - New `/ws/events` WebSocket endpoint in `nexus_api.py` sends a 100-event replay on connect, then streams new events live.

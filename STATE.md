@@ -4,10 +4,10 @@
 17
 
 ## Current Task
-17.2 Agent event emission
+17.3-17.10 Dashboard UI (minimal-viable)
 
 ## Last Completed Task
-17.1 Websocket infrastructure
+17.2 Agent event emission
 
 ## Phase Status
 - Phase 12: SKIPPED

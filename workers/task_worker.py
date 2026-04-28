@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 import nexus  # noqa: E402  — registers tools, builds prompt, etc.
 import router  # noqa: E402
-from core import task_queue  # noqa: E402
+from core import event_bus, task_queue  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
@@ -65,6 +65,10 @@ async def _run_one(row: dict) -> None:
         "thread_id": thread_id, "route": route, "model": model,
         "input_preview": user_text[:200],
     })
+    event_bus.publish_remote(
+        "task_started", task_id=task_id, route=route, model=model,
+        input_preview=user_text[:200],
+    )
 
     config = {"configurable": {"thread_id": thread_id}}
     lc_msgs = nexus.fast_mode_messages(user_text, route=route)
@@ -117,6 +121,11 @@ async def _run_one(row: dict) -> None:
         "ok": ok, "elapsed_s": round(elapsed, 3), "tool_calls": tool_calls,
         "reply_preview": reply[:200], "error": err,
     })
+    event_bus.publish_remote(
+        "task_completed" if ok else "task_failed",
+        task_id=task_id, elapsed_s=round(elapsed, 3),
+        tool_calls=tool_calls, reply_preview=reply[:200], error=err,
+    )
 
     # Phase 16.1 — proactive Telegram notification, best-effort. Skips
     # silently when the bot isn't configured.

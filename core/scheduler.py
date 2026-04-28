@@ -213,6 +213,15 @@ def tick_once(now: Optional[datetime] = None) -> list[str]:
         try:
             task_id = task_queue.enqueue(row["input"], priority=int(row["priority"]))
             enqueued.append(task_id)
+            try:
+                from core import event_bus
+                event_bus.publish_remote(
+                    "scheduler_fired",
+                    schedule_id=row["schedule_id"], kind=row["kind"],
+                    spec=row["spec"], task_id=task_id,
+                )
+            except Exception:
+                pass
         except Exception as exc:
             log.warning("scheduler enqueue failed for %s: %s", row["schedule_id"], exc)
             continue

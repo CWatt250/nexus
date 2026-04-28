@@ -99,3 +99,19 @@ def emit(event: str, **fields: Any) -> None:
     """Convenience: emit a typed event with arbitrary fields."""
     record = {"event": event, **fields}
     publish(record)
+
+
+def publish_remote(event: str, **fields: Any) -> None:
+    """Best-effort fire to the FastAPI bus from a different process.
+    Used by workers (task_worker, scheduler, perf_guardian) so their
+    events still surface to dashboard subscribers connected to
+    nexus_api's in-process bus."""
+    try:
+        import httpx
+        with httpx.Client(timeout=2) as client:
+            client.post(
+                "http://localhost:11435/events/publish",
+                json={"event": event, "fields": fields},
+            )
+    except Exception as exc:
+        log.debug("publish_remote failed: %s", exc)

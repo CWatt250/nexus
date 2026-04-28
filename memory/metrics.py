@@ -59,7 +59,7 @@ def record_tool_call(
     tokens_out: int = 0,
     error: str = "",
 ) -> None:
-    _append(TOOL_LOG, {
+    record = {
         "ts": _now_iso(),
         "task_id": task_id,
         "tool": tool,
@@ -68,7 +68,14 @@ def record_tool_call(
         "tokens_out": tokens_out,
         "success": bool(success),
         "error": error[:500],
-    })
+    }
+    _append(TOOL_LOG, record)
+    # Also fan out as a dashboard event (Phase 17.2). Best-effort.
+    try:
+        from core import event_bus
+        event_bus.emit("tool_called", **record)
+    except Exception:
+        pass
 
 
 def record_agent_turn(
