@@ -2,6 +2,13 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.7 Human-in-the-loop checkpoints — DONE
+- New `core/checkpoints.py` implements `checkpoint(task_id, summary, options, timeout)`. Writes a request JSON to `memory/checkpoints/<task_id>.json`, polls for `<task_id>.response.json`, returns `{"choice", "note", "timed_out"}`. Fail-safe: timeout returns `cancel`.
+- Best-effort Telegram fire via `telegram_notify` (no-op while bot is offline; Phase 16.1 will wire two-way delivery).
+- `respond(task_id, choice, note)` helper for the dashboard / Telegram bot to drop the response file.
+- `should_checkpoint(elapsed, expected, last_pct)` returns True at quartile boundaries for tasks ≥30 min, so callers can insert checkpoints at 25/50/75/100%.
+- Verified: response file releases the wait in 0.5s; timeout returns `cancel`; quartile logic fires at the right thresholds and skips short tasks.
+
 ### 14.6 GLM-5.1 escalation path — DONE
 - New `tools/glm_tool.py` exposes `glm_consult(prompt, reason, model)` as a LangGraph tool. Reads `Z_AI_API_KEY` (or `ZHIPU_API_KEY` / `GLM_API_KEY`) from `~/AI_Agent/.env`. POSTs OpenAI-compatible chat completions to `https://api.z.ai/api/paas/v4/chat/completions`. Default model `glm-4.6`.
 - Every call appends to `memory/external-calls.jsonl` with elapsed_ms, prompt/completion tokens, USD cost estimate, and rolling monthly spend. Pricing table baked in (glm-4.6 = $0.60/$2.20 per 1M in/out).

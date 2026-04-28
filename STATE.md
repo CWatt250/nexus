@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.7 Human-in-the-loop checkpoints
+14.8 Phase 14 verification
 
 ## Last Completed Task
-14.6 GLM-5.1 escalation path
+14.7 Human-in-the-loop checkpoints
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
