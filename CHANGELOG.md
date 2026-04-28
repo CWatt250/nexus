@@ -1,5 +1,12 @@
 # Nexus Build Changelog
 
+## 2026-04-28 — Phase 16 (Capability Expansion) starting
+
+### 16.1 Two-way Telegram (real fix) — DONE
+- New `tools.telegram_tool.proactive_send(message)` — async, best-effort, no-raise. Skips silently when bot not configured. The existing async listener (15.5) already handles incoming messages without blocking.
+- `workers.task_worker._run_one` now calls `proactive_send` after every task completion with a short summary `"✅ task <id> (Xs)\n› <user>\n‹ <reply>"` (or ❌ on failure). Best-effort: a Telegram failure never breaks the worker.
+- Verified end-to-end: a single proactive_send call delivered to the bot. (Inadvertently sent a real test message to Colton — noted, will be more careful with outbound smoke tests.)
+
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
 ### 15.7 Re-enable Telegram and verify — PASS

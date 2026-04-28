@@ -118,6 +118,18 @@ async def _run_one(row: dict) -> None:
         "reply_preview": reply[:200], "error": err,
     })
 
+    # Phase 16.1 — proactive Telegram notification, best-effort. Skips
+    # silently when the bot isn't configured.
+    try:
+        from tools.telegram_tool import proactive_send
+        verdict = "✅" if ok else "❌"
+        head = (user_text or "")[:80].replace("\n", " ")
+        body = (reply or err or "")[:600].replace("\n", " ")
+        msg = f"{verdict} task {task_id[:8]} ({elapsed:.1f}s)\n› {head}\n‹ {body}"
+        await proactive_send(msg)
+    except Exception as exc:
+        log.warning("proactive Telegram send failed: %s", exc)
+
 
 async def _main_loop() -> None:
     nexus.set_system_prompt(nexus.load_system_prompt())

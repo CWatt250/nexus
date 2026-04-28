@@ -4,10 +4,10 @@
 16
 
 ## Current Task
-16.1 Two-way Telegram (real fix)
+16.2 Full computer use with vision
 
 ## Last Completed Task
-15.7 Re-enable Telegram and verify (architectural PASS)
+16.1 Two-way Telegram (real fix)
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

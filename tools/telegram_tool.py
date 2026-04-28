@@ -70,6 +70,21 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
+async def proactive_send(message: str) -> str:
+    """Async-safe proactive Telegram send for use from workers / agents.
+
+    Returns the same kinds of strings as the @tool wrappers but never
+    raises, so callers can fire-and-forget without try/except. Skips
+    silently when the bot isn't configured (Phase 16.1 expectation:
+    proactive notifications are best-effort)."""
+    if not (TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID):
+        return "telegram not configured — skipped"
+    try:
+        return await _send_message_async(message)
+    except Exception as exc:
+        return f"telegram send failed: {type(exc).__name__}: {exc}"
+
+
 @tool
 def telegram_notify(message: str) -> str:
     """Send a notification message to Colton's Telegram.
