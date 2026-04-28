@@ -4,10 +4,10 @@
 19
 
 ## Current Task
-19.3 Daily end-of-day auto-summary
+19.4 Calendar prep briefs
 
 ## Last Completed Task
-19.2 Event-driven nudges
+19.3 Daily end-of-day auto-summary
 
 ## Phase Status
 - Phase 12: SKIPPED

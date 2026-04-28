@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
+### 19.3 Daily end-of-day auto-summary — DONE
+- New `tools/eod_summary.py:eod_summary_run()` reads today's `task_metrics.jsonl`, `agent-events.jsonl`, and reminders due in the next 24h, then asks qwen3:4b for a 4-6 sentence brief covering shipped / broken / pending. Push to Sparky bubble + Telegram via best-effort `proactive_send`.
+- New `/tmp/nexus-eod-summary.{service,timer}` — fires Mon-Fri 17:00 local. Sudo install lines added.
+- Smoke-callable as a tool, but not auto-fired here to avoid sending Colton a redundant Telegram message.
+
 ### 19.2 Event-driven nudges — DONE
 - `tools/file_watcher.py:_ingest` and `tools/git_watcher.py:_scan_once` now `event_bus.publish_remote('file_ingested' | 'git_commit', …)` after every successful event.
 - Combined with Phase 17.2 emissions (`task_started/completed/failed`, `tool_called`, `scheduler_fired`), Sparky's overlay can subscribe to `/ws/events` and react to *real* signals instead of polling. The 5-min poll loop is now a redundant fallback rather than the primary path — it can be removed in a future cleanup once the dashboard is in regular use.

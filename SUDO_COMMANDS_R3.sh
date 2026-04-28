@@ -120,4 +120,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-model-watcher.timer
 systemctl list-timers nexus-model-watcher.timer --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 19.3 — install the daily 17:00 EOD summary timer.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-eod-summary.service /etc/systemd/system/nexus-eod-summary.service
+sudo cp /tmp/nexus-eod-summary.timer /etc/systemd/system/nexus-eod-summary.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-eod-summary.timer
+systemctl list-timers nexus-eod-summary.timer --no-pager
+
 
