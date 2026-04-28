@@ -2,6 +2,13 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.6 GLM-5.1 escalation path — DONE
+- New `tools/glm_tool.py` exposes `glm_consult(prompt, reason, model)` as a LangGraph tool. Reads `Z_AI_API_KEY` (or `ZHIPU_API_KEY` / `GLM_API_KEY`) from `~/AI_Agent/.env`. POSTs OpenAI-compatible chat completions to `https://api.z.ai/api/paas/v4/chat/completions`. Default model `glm-4.6`.
+- Every call appends to `memory/external-calls.jsonl` with elapsed_ms, prompt/completion tokens, USD cost estimate, and rolling monthly spend. Pricing table baked in (glm-4.6 = $0.60/$2.20 per 1M in/out).
+- Monthly cap enforced (`GLM_BUDGET_USD`, default `$50`): rolling spend computed from the JSONL; new calls refused once cap is hit.
+- Alert bands at 50/80/100% append to `memory/external-budget-alerts.jsonl` and ride out on the tool reply. Telegram delivery deferred until Phase 15.
+- Registered in `nexus.TOOLS` so the orchestrator (or any agent) can invoke it after local retries fail. Verified: no-key path gives a clear setup message; alert bands fire at the right thresholds; cost estimate matches the table.
+
 ### 14.5 Regression test suite — DONE
 - New `tests/` package with `conftest.py` (sys.path), `test_tools.py` (16 golden-path tool tests), and `test_agent_e2e.py` (5 end-to-end agent tests).
 - Coverage: file_read/write/edit, glob, grep, sandbox.run_guarded (safe + hard-block + soft-destructive dry-run), destructive.is_destructive patterns, router.classify_and_model, truncate_tool_result passthrough, instant_ack heuristic, parallel_tools.repo_inspect, metrics.record_tool_call, lessons_aggregator helpers, plus 5 e2e: fast greeting through agent, router classification, fast_mode_messages, static-prefix stability, all tools metrics-wrapped.
