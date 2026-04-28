@@ -56,6 +56,7 @@ from tools.codebase_tool import CODEBASE_TOOLS  # noqa: E402
 from tools.test_runner_tool import TEST_RUNNER_TOOLS  # noqa: E402
 from tools.diff_tool import DIFF_TOOLS  # noqa: E402
 from tools.coding_agent import CODING_AGENT_TOOLS, solve_coding_task  # noqa: E402
+from tools.parallel_tools import PARALLEL_TOOLS  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -108,6 +109,7 @@ TOOLS = [
     *TEST_RUNNER_TOOLS,
     *DIFF_TOOLS,
     *CODING_AGENT_TOOLS,
+    *PARALLEL_TOOLS,
 ]
 
 
@@ -195,6 +197,7 @@ _TOOL_HINT = (
     "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
     "- Use `browser_tool` when the user cites a URL or you need current info the model doesn't have.\n"
     "- After completing a task, consider `memory_add` to record anything useful for future sessions.\n"
+    "- When two tool calls are independent, issue them in the SAME assistant turn so they run in parallel. For common pairs prefer the composites: `quick_lookup` (web+memory), `repo_inspect` (file context+git log), `screen_clip` (clipboard+screenshot).\n"
 )
 
 _STATIC_PREFIX_CACHE: str | None = None

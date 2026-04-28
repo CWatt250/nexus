@@ -2,6 +2,14 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.5 Parallel tool execution — DONE
+- New `tools/parallel_tools.py` exposes three composite tools that run paired lookups in a `ThreadPoolExecutor` for guaranteed parallelism:
+  - `quick_lookup(query)` → `brave_search` + `memory_search`
+  - `repo_inspect(file_path, repo_path)` → `get_file_context` + `git log`
+  - `screen_clip()` → xclip + scrot screenshot
+- Registered in `nexus.TOOLS` (now 78 total). Tool hint nudges the model to batch independent calls in one assistant turn (LangGraph ToolNode already runs batched tool_calls in parallel).
+- Smoke-tested: `quick_lookup` 0.08s, `repo_inspect` 0.02s.
+
 ### 13.4 fast_mode flag — DONE
 - New `nexus.FAST_MODE_INSTRUCTION` + `is_fast_route(route)` + `fast_mode_messages(user, route, override)`.
 - Router's existing `fast` route triggers fast mode automatically. Caller can also force it with `override=True/False`.
