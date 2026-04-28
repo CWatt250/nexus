@@ -4,10 +4,10 @@
 17
 
 ## Current Task
-17.1 Websocket infrastructure
+17.2 Agent event emission
 
 ## Last Completed Task
-16.9 Phase 16 verification (PASS — scheduler fires, perf guardian samples, handler <1ms)
+17.1 Websocket infrastructure
 
 ## Phase Status
 - Phase 12: SKIPPED

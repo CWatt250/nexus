@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict
@@ -426,6 +426,44 @@ async def schedule_list():
 async def schedule_delete(schedule_id: str):
     from core import scheduler
     return {"deleted": scheduler.delete_schedule(schedule_id)}
+
+
+@app.websocket("/ws/events")
+async def ws_events(ws: WebSocket):
+    """Phase 17.1 — websocket bus subscription. Sends a small replay of
+    recent events on connect, then streams new events as they arrive."""
+    from core import event_bus
+    await ws.accept()
+    q = event_bus.subscribe()
+    try:
+        for item in event_bus.replay_recent(limit=100):
+            await ws.send_json(item)
+        while True:
+            item = await q.get()
+            try:
+                await ws.send_json(item)
+            except Exception:
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        event_bus.unsubscribe(q)
+
+
+class PublishRequest(BaseModel):
+    """POST /events/publish — let out-of-process workers ship into the bus."""
+    event: str
+    fields: dict | None = None
+
+
+@app.post("/events/publish")
+async def events_publish(req: PublishRequest):
+    from core import event_bus
+    record = {"event": req.event, **(req.fields or {})}
+    event_bus.publish(record)
+    return {"ok": True}
 
 
 @app.get("/agents")

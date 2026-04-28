@@ -1,5 +1,13 @@
 # Nexus Build Changelog
 
+## 2026-04-28 — Phase 17 (Unified Observability Dashboard) starting
+
+### 17.1 Websocket infrastructure — DONE
+- New `core/event_bus.py` — in-process event bus with JSONL persistence (`memory/agent-events.jsonl`). API: `subscribe / unsubscribe / publish / replay_recent / emit`. Each subscriber gets its own asyncio.Queue; full-queue drops are debug-logged.
+- New `/ws/events` WebSocket endpoint in `nexus_api.py` sends a 100-event replay on connect, then streams new events live.
+- New `POST /events/publish` HTTP endpoint so out-of-process workers (task_worker, scheduler, perf_guardian) can ship events into the bus over loopback.
+- Smoke test: `emit('phase17.1.smoke', …)` lands in `agent-events.jsonl` and is read back via `replay_recent`.
+
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
 ### 16.9 Phase 16 verification — PASS
