@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.4 Conversation handler process — DONE
+- New `workers/conversation_handler.py`. Builds a small ReAct agent on `qwen3:4b` (the warmed router model) with five `HANDLER_TOOLS`: `get_task_status`, `pause_task`, `cancel_task`, `modify_task`, `queue_new_task`. Heavy work is enqueued to the worker — never runs here.
+- Both sync and async builders provided. They reuse `nexus._CHECKPOINTER` / `nexus._get_async_checkpointer()` namespaced via `thread_id="handler:<id>"` so the handler's conversation state never collides with any task's state (Phase 15.6 isolation).
+- `HANDLER_TOOLS` smoke-tested directly: queue → status → list → modify → cancel all worked end-to-end.
+
 ### 15.3 Task worker process — DONE
 - New `workers/task_worker.py` standalone script. Polls `core.task_queue.claim_next()` every 1s, runs the row through `nexus.build_agent_async` with the task's own thread_id (15.6 isolation), records metrics + retro after each turn, writes `done` / `failed` / crashed back to the queue, and appends one snapshot per state change to `memory/active_tasks.jsonl`.
 - SIGTERM / SIGINT handler finishes the current task before exiting (clean systemd stop).

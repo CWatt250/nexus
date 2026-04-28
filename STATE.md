@@ -4,10 +4,10 @@
 15
 
 ## Current Task
-15.4 Conversation handler process
+15.5 Telegram routing layer
 
 ## Last Completed Task
-15.3 Task worker process
+15.4 Conversation handler process
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
