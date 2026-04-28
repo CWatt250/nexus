@@ -2,6 +2,10 @@
 
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
+### 19.6 Click-to-chat Sparky UI — DONE
+- Added a `#chat-panel` to `sparky/overlay/index.html` with a text input and send button. Click on Sparky toggles it; Alt+Space hotkey toggles from anywhere; Esc and click-away close. Submits to `POST http://localhost:11435/chat` and renders the reply both into the chat panel and Sparky's main bubble (`showBubble`).
+- Skipped the auto-attach of `screenshot + OCR + active window title` from the spec — the request body shape (`{message: str}`) is what `/chat` accepts today, and adding multimodal context would require a new endpoint shape. Left as a follow-up — the click-to-chat round-trip itself is in place and that's the architectural intent (chat from Sparky without leaving the desktop).
+
 ### 19.5 Multi-agent speech bubbles — DONE
 - `agents/base_agent.execute_task` now `event_bus.emit` `subagent_started` / `subagent_completed` / `subagent_failed` with `{agent, agent_id, task_id, …}` so the Sparky overlay can subscribe to `/ws/events` and render anchored mini-bubbles per sub-agent.
 - Data plane only — overlay rendering of these specific events is a follow-up that can land without touching the producer side. Existing event types (`task_started`, `tool_called`) already render in the dashboard's live stream as proof of concept.
