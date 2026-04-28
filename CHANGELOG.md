@@ -2,6 +2,16 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.9 Phase 13 verification — PASS
+- New `scripts/bench_phase13.py` measures TTF over 10 prompts in two passes:
+  - **cold**: model evicted (`keep_alive=0`) before each call → simulates pre-Phase-13 baseline.
+  - **warm**: router pinned via prewarm + `KEEP_ALIVE=-1`.
+- Result (`PHASE_13_VERIFY.md`):
+  - mean TTF: **531.5 ms cold → 91.4 ms warm** = **82.8% reduction**
+  - median TTF: **527.7 ms cold → 80.1 ms warm** = **84.8% reduction**
+- Exit criterion (≥50% TTF reduction): **PASS**.
+- Live `nexus-api.service` still runs the pre-Phase-13 binary; restart line added to `SUDO_COMMANDS_R3.sh` for Colton to pick up the new code.
+
 ### 13.8 Instant acknowledgment pattern — DONE
 - New helpers in `tools/sparky_state.py`:
   - `looks_long_running(message, route)`: heuristic — heavy/code/design route, long message, or imperative verbs (build/implement/refactor/...).

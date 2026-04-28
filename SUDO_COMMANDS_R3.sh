@@ -15,3 +15,13 @@ sudo systemctl enable nexus-prewarm.service
 # Run it once now so router/heavy are warm without a reboot:
 sudo systemctl start nexus-prewarm.service
 
+# ---------------------------------------------------------------------------
+# Phase 13.9 — restart nexus-api so the long-running service picks up the new
+# Phase 13 code (streaming CLI, fast_mode, parallel tools, truncation,
+# instant ack, prompt-cache prefix).
+# ---------------------------------------------------------------------------
+sudo systemctl restart nexus-api.service
+# Tail logs briefly to confirm startup is clean:
+journalctl -u nexus-api.service -n 30 --no-pager
+
+
