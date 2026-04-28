@@ -2,6 +2,13 @@
 
 ## 2026-04-28 — Phase 18 (Polish + Advanced Features) starting
 
+### 18.2-18.4 Notion / Obsidian / chat-history import — DONE
+- `tools/notion_sync.py:notion_sync(database_id, limit)` queries Notion REST directly via httpx, flattens block rich-text to markdown, seeds into RAG with tag='notion'. Reads `NOTION_API_KEY` (or `NOTION_TOKEN`) and optional `NOTION_DATABASE_ID` from `~/AI_Agent/.env`. Graceful "creds not found" when missing.
+- `tools/obsidian_sync.py:obsidian_sync(root)` walks `~/Obsidian/`, indexes every `.md` (cap 100KB/file) into RAG with tag='obsidian'. No-op message when the vault dir doesn't exist. Daily refresh is a one-liner via the Phase 16.5 scheduler.
+- `tools/chat_history_import.py` exposes `claude_history_import(json_path)` and `chatgpt_history_import(json_path)`. Each parses the standard export shape and seeds one RAG doc per conversation, tagged accordingly.
+- Registered in `nexus.TOOLS`. `.env.example` gained `NOTION_API_KEY` / `NOTION_DATABASE_ID` placeholders.
+- All three tools return clear setup messages on missing creds / files; verified with no-key smoke runs.
+
 ### 18.1 Planner agent — DONE
 - New `agents/planner_agent.py`. Two-tier: cheap regex classifier (`classify_task`) catches obviously-vague openers ("build me", <10 words without concrete verbs / file paths) without any LLM call; borderline cases fall through to qwen3:4b.
 - `plan_or_clarify(text)` returns `{action: 'clarify', questions: [...]}` for vague input or `{action: 'plan', plan: '...'}` for clear input. Plan format: numbered steps with verification + final effort estimate (small/medium/large) and suggested router route.

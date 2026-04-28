@@ -60,6 +60,9 @@ from tools.parallel_tools import PARALLEL_TOOLS  # noqa: E402
 from tools.truncate import wrap_tools  # noqa: E402
 from tools.glm_tool import GLM_TOOLS  # noqa: E402
 from tools.bidwatt_tool import BIDWATT_TOOLS  # noqa: E402
+from tools.notion_sync import NOTION_TOOLS  # noqa: E402
+from tools.obsidian_sync import OBSIDIAN_TOOLS  # noqa: E402
+from tools.chat_history_import import HISTORY_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -130,6 +133,9 @@ TOOLS = [
     *PARALLEL_TOOLS,
     *GLM_TOOLS,
     *BIDWATT_TOOLS,
+    *NOTION_TOOLS,
+    *OBSIDIAN_TOOLS,
+    *HISTORY_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,

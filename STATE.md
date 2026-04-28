@@ -4,10 +4,10 @@
 18
 
 ## Current Task
-18.2-18.4 Notion/Obsidian/history import
+18.5 Auto model watcher
 
 ## Last Completed Task
-18.1 Planner agent
+18.2-18.4 Notion/Obsidian/history import
 
 ## Phase Status
 - Phase 12: SKIPPED
