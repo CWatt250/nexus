@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus — Live Ops</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #131a30;
+    --line: #233152;
+    --fg: #e6ecff;
+    --muted: #91a0c8;
+    --accent: #0EA5E9;
+    --accent-2: #FACC15;
+    --ok: #22c55e;
+    --bad: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  header .ws-state { font-size: 12px; padding: 3px 8px; border-radius: 12px; background: #1f2a47; color: var(--muted); }
+  header .ws-state.ok { color: var(--ok); }
+  header .ws-state.bad { color: var(--bad); }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button {
+    background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 5px 12px;
+    border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  nav button.active { background: var(--accent); color: #001a2c; border-color: var(--accent); }
+  main { padding: 14px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: 280px 1fr 280px; }
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stream { max-height: 60vh; overflow-y: auto; font-size: 12px; }
+  .stream .ev { padding: 6px 4px; border-bottom: 1px dashed var(--line); display: flex; gap: 8px; }
+  .stream .ev:last-child { border-bottom: none; }
+  .stream .ev .t { color: var(--muted); white-space: nowrap; }
+  .stream .ev .k { color: var(--accent-2); font-weight: 600; }
+  .stream .ev.task_completed .k { color: var(--ok); }
+  .stream .ev.task_failed .k { color: var(--bad); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #1f2a47; color: var(--muted); font-size: 11px; margin-right: 4px; }
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+  .gauge { background: #1c2745; border-radius: 8px; padding: 8px; text-align: center; }
+  .gauge .v { font-size: 22px; font-weight: 700; }
+  .gauge .l { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .row.bad { color: var(--bad); }
+  .hidden { display: none !important; }
+  footer { color: var(--muted); font-size: 11px; padding: 8px 16px; }
+  .controls { display:flex; gap:6px; margin-top:8px; }
+  .controls input { flex:1; background:#0e152a; border:1px solid var(--line); color:var(--fg); padding:6px 8px; border-radius:6px; font-size:12px; }
+  .controls button { background:var(--accent); color:#001a2c; border:0; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; }
+  .pulse { animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Nexus — Live Ops</h1>
+  <span id="ws-state" class="ws-state">connecting…</span>
+  <nav>
+    <button class="tab-btn active" data-tab="live">Live</button>
+    <button class="tab-btn" data-tab="activity">Activity</button>
+    <button class="tab-btn" data-tab="perf">Performance</button>
+    <button class="tab-btn" data-tab="history">History</button>
+  </nav>
+</header>
+
+<main>
+  <!-- LIVE OPS -->
+  <section id="tab-live" class="tab">
+    <div class="grid">
+      <div class="card">
+        <h3>Active task</h3>
+        <div id="active-task" class="stream"><em>none</em></div>
+      </div>
+      <div class="card">
+        <h3>Live event stream <span class="pulse">●</span></h3>
+        <div id="live-stream" class="stream" data-pause="0"></div>
+      </div>
+      <div class="card">
+        <h3>System gauges</h3>
+        <div id="gauges" class="gauges"></div>
+        <h3 style="margin-top:14px;">Loaded models</h3>
+        <div id="loaded-models" class="stream"><em>polling…</em></div>
+        <h3 style="margin-top:14px;">Queue</h3>
+        <div id="queue-mini" class="stream"><em>polling…</em></div>
+        <div class="controls">
+          <input id="quick-task" placeholder="enqueue task: …" />
+          <button id="quick-task-go">Queue</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVITY -->
+  <section id="tab-activity" class="tab hidden">
+    <div class="card">
+      <h3>Recent tool calls (last 1000)</h3>
+      <table>
+        <thead><tr><th>ts</th><th>tool</th><th>latency</th><th>tokens in/out</th><th>ok</th><th>task_id</th></tr></thead>
+        <tbody id="activity-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PERFORMANCE -->
+  <section id="tab-perf" class="tab hidden">
+    <div class="card">
+      <h3>Recent agent turns (avg latency, tools, tokens)</h3>
+      <table>
+        <thead><tr><th>ts</th><th>route</th><th>model</th><th>wall_s</th><th>tools</th><th>tokens in/out</th><th>ok</th></tr></thead>
+        <tbody id="perf-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="tab-history" class="tab hidden">
+    <div class="card">
+      <h3>Recent retros</h3>
+      <ul id="retro-list"></ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Nexus dashboard · WS: <span id="ws-url"></span> · last update: <span id="last-update">never</span>
+</footer>
+
+<script>
+const API_BASE = `http://${location.hostname}:11435`;
+const WS_URL = `ws://${location.hostname}:11435/ws/events`;
+document.getElementById('ws-url').textContent = WS_URL;
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+
+// Pause-on-hover for the live stream
+const stream = document.getElementById('live-stream');
+stream.addEventListener('mouseenter', () => stream.dataset.pause = '1');
+stream.addEventListener('mouseleave', () => stream.dataset.pause = '0');
+
+const wsState = document.getElementById('ws-state');
+const lastUpdate = document.getElementById('last-update');
+
+let activeTaskId = null;
+function setActiveTask(taskId, fields) {
+  activeTaskId = taskId;
+  const el = document.getElementById('active-task');
+  if (!taskId) { el.innerHTML = '<em>none</em>'; return; }
+  el.innerHTML = `
+    <div><span class="pill">${(fields.route || '?')}</span><span class="pill">${fields.model || '?'}</span></div>
+    <div><strong>${taskId}</strong></div>
+    <div style="margin-top:6px;color:#91a0c8">${(fields.input_preview || '').replace(/</g,'&lt;')}</div>
+  `;
+}
+
+function pushEvent(rec) {
+  if (stream.dataset.pause === '1') return; // hover-pause
+  const t = (rec.ts || '').slice(11, 19);
+  const ev = document.createElement('div');
+  ev.className = 'ev ' + (rec.event || 'event');
+  let body = '';
+  if (rec.event === 'tool_called') body = `<span class="k">${rec.tool}</span> ${rec.latency_ms?.toFixed?.(0) ?? '?'}ms ${rec.success ? '✓' : '✗'} task=${(rec.task_id||'').slice(0,8)}`;
+  else if (rec.event === 'task_started') body = `<span class="k">task_started</span> ${rec.task_id?.slice(0,8)} ${rec.route} → ${rec.model}`;
+  else if (rec.event === 'task_completed') body = `<span class="k">task_completed</span> ${rec.task_id?.slice(0,8)} ${rec.elapsed_s}s tools=${rec.tool_calls}`;
+  else if (rec.event === 'task_failed') body = `<span class="k">task_failed</span> ${rec.task_id?.slice(0,8)} ${rec.error||''}`;
+  else if (rec.event === 'scheduler_fired') body = `<span class="k">scheduler_fired</span> ${rec.kind} → ${rec.task_id?.slice(0,8)}`;
+  else body = `<span class="k">${rec.event||'event'}</span> ${JSON.stringify(rec).slice(0, 240)}`;
+  ev.innerHTML = `<span class="t">${t}</span><span>${body}</span>`;
+  stream.prepend(ev);
+  while (stream.children.length > 200) stream.removeChild(stream.lastChild);
+  lastUpdate.textContent = new Date().toLocaleTimeString();
+
+  if (rec.event === 'task_started') setActiveTask(rec.task_id, rec);
+  if ((rec.event === 'task_completed' || rec.event === 'task_failed') && rec.task_id === activeTaskId) {
+    setActiveTask(null, {});
+  }
+}
+
+let ws;
+function connect() {
+  wsState.textContent = 'connecting…';
+  wsState.className = 'ws-state';
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => { wsState.textContent = 'live'; wsState.className = 'ws-state ok'; };
+  ws.onclose = () => { wsState.textContent = 'disconnected'; wsState.className = 'ws-state bad'; setTimeout(connect, 2000); };
+  ws.onerror = () => { wsState.textContent = 'error'; wsState.className = 'ws-state bad'; };
+  ws.onmessage = (msg) => {
+    try { pushEvent(JSON.parse(msg.data)); } catch (e) { console.warn(e); }
+  };
+}
+connect();
+
+// HTTP polling for queue / models / gauges every 5s
+async function pollOnce() {
+  try {
+    const tasks = await (await fetch(`${API_BASE}/tasks`)).json();
+    const queueEl = document.getElementById('queue-mini');
+    const tlist = (tasks.tasks || []).slice(0, 6);
+    queueEl.innerHTML = tlist.length ? tlist.map(t => `<div class="ev"><span>${t}</span></div>`).join('') : '<em>empty</em>';
+  } catch {}
+  // perf-guardian sample (best-effort via direct file fetch — stub when not exposed)
+  // We don't have a /perf endpoint yet so render placeholders. Phase 17 follow-up
+  // can wire a /perf JSON endpoint.
+  const gauges = document.getElementById('gauges');
+  if (!gauges.dataset.init) {
+    gauges.innerHTML = ['CPU','RAM','VRAM','load/CPU'].map(l =>
+      `<div class="gauge"><div class="v">—</div><div class="l">${l}</div></div>`).join('');
+    gauges.dataset.init = '1';
+  }
+}
+pollOnce();
+setInterval(pollOnce, 5000);
+
+// Quick-task input
+document.getElementById('quick-task-go').addEventListener('click', async () => {
+  const inp = document.getElementById('quick-task');
+  const txt = (inp.value || '').trim();
+  if (!txt) return;
+  try {
+    const resp = await fetch(`${API_BASE}/chat`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({message: 'queue: ' + txt}),
+    });
+    const data = await resp.json();
+    inp.value = '';
+    pushEvent({event:'queued', detail: data.response, ts: new Date().toISOString()});
+  } catch (e) {
+    pushEvent({event:'error', detail: String(e), ts: new Date().toISOString()});
+  }
+});
+
+// Initial load — fill activity + perf tabs from JSONL endpoints we'll add.
+// For now, fall back to "events from the websocket replay" only.
+</script>
+</body>
+</html>

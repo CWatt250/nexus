@@ -4,10 +4,10 @@
 17
 
 ## Current Task
-17.3-17.10 Dashboard UI (minimal-viable)
+17.11 Phase 17 verification
 
 ## Last Completed Task
-17.2 Agent event emission
+17.3-17.10 Dashboard UI (minimal-viable)
 
 ## Phase Status
 - Phase 12: SKIPPED

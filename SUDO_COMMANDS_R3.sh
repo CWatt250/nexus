@@ -103,4 +103,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-perf-guardian.service
 journalctl -u nexus-perf-guardian.service -n 20 --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 17 — minimal-viable observability dashboard at port 11438.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-dashboard.service /etc/systemd/system/nexus-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-dashboard.service
+echo "open http://localhost:11438/ (or http://100.124.210.84:11438/ via Tailscale)"
+
 
