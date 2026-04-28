@@ -4,10 +4,10 @@
 16
 
 ## Current Task
-16.8 Sparky auto-start on login
+16.9 Phase 16 verification
 
 ## Last Completed Task
-16.7 Performance Guardian
+16.8 Sparky auto-start on login
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

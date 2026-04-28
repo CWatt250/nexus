@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.8 Sparky auto-start on login — DONE
+- Verified `~/.config/autostart/sparky.desktop` already exists with `X-GNOME-Autostart-enabled=true` and the right `Exec=…sparky/overlay/start.sh` invocation. No changes needed.
+- `start.sh` launches `state_bridge.py` then `npx electron .`, killing the bridge when the overlay closes.
+- Reboot-verify is a Colton step (Phase 16.9 verification).
+
 ### 16.7 Performance Guardian — DONE
 - New `safety/perf_guardian.py`. Per-tick sample (RAM, swap, CPU 5-min, load/CPU, GPU VRAM via `/api/ps`). Thresholds: ram 85%, swap 50%, gpu 90%, cpu 90%, load/CPU 1.5. Hysteresis 30 min — `memory/perf-guardian.state.json` records last-fire time per metric so we never re-alert the same condition within that window.
 - LRU rule: `protect_pinned_models()` checks `/api/ps` every tick and reports if `qwen3:4b` or `qwen3.6` falls out of resident memory. Fail-loud, not auto-fix — the prewarm service is what re-warms.
