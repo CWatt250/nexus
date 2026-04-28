@@ -69,24 +69,23 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /tasks command."""
+    """Handle /tasks command — read queue directly (no API hop)."""
     if not is_authorized(update):
         return
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{NEXUS_API_URL}/tasks", timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                tasks = data.get("tasks", [])
-                if tasks:
-                    task_list = "\n".join(f"- {t}" for t in tasks[:10])
-                    await update.message.reply_text(f"Current tasks:\n{task_list}")
-                else:
-                    await update.message.reply_text("No active tasks.")
-            else:
-                await update.message.reply_text("Could not fetch tasks.")
+        from core import task_queue
+        rows = task_queue.list_tasks(limit=10)
+        if not rows:
+            await update.message.reply_text("Queue is empty.")
+            return
+        lines = []
+        for r in rows:
+            preview = (r.get("input") or "")[:60]
+            lines.append(f"- {r['task_id']}  [{r['status']}]  {preview}")
+        await update.message.reply_text("Recent tasks:\n" + "\n".join(lines))
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        logger.exception("tasks_command failed: %s", e)
+        await update.message.reply_text(f"Error: {type(e).__name__}: {e}")
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -97,37 +96,44 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle regular text messages — route to Nexus."""
+    """Route user message through the conversation handler (Phase 15.5).
+
+    The handler runs on qwen3:4b only and decides — via its own tool calls
+    — whether to answer from queue state, modify a running task, or
+    enqueue a new heavy task for the task_worker. Heavy turns NEVER run
+    in this request; the bot replies fast (<10s) and the worker streams
+    progress to memory/active_tasks.jsonl independently."""
     if not is_authorized(update):
         return
 
     user_message = update.message.text
-    logger.info(f"Received message: {user_message[:100]}")
-
-    # Send typing indicator
+    logger.info("Received message: %s", user_message[:100])
     await update.message.chat.send_action("typing")
 
+    chat_id = update.effective_chat.id
+    thread_id = f"handler:tg:{chat_id}"
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{NEXUS_API_URL}/chat",
-                json={"message": user_message},
-                timeout=120,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                reply = data.get("response", "No response from Nexus")
-                # Truncate if too long for Telegram (4096 chars max)
-                if len(reply) > 4000:
-                    reply = reply[:4000] + "\n... [truncated]"
-                await update.message.reply_text(reply)
-            else:
-                await update.message.reply_text(f"Nexus error: {response.status_code}")
-    except httpx.TimeoutException:
-        await update.message.reply_text("Request timed out. Nexus might be processing a long task.")
+        from workers import conversation_handler
+        reply = await asyncio.wait_for(
+            conversation_handler.handle_async(user_message, thread_id=thread_id),
+            timeout=20,
+        )
+    except asyncio.TimeoutError:
+        await update.message.reply_text(
+            "Took >20s — the handler is supposed to be fast. Falling back to queue:\n"
+            "use /tasks to inspect or send 'queue: <task>' to enqueue."
+        )
+        return
     except Exception as e:
-        logger.error(f"Error routing to Nexus: {e}")
-        await update.message.reply_text(f"Error: {type(e).__name__}: {e}")
+        logger.exception("conversation handler error: %s", e)
+        await update.message.reply_text(f"handler error: {type(e).__name__}: {e}")
+        return
+
+    if not reply:
+        reply = "(handler returned no text — try again)"
+    if len(reply) > 4000:
+        reply = reply[:4000] + "\n... [truncated]"
+    await update.message.reply_text(reply)
 
 
 def main() -> None:

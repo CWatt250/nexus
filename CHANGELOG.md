@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.5 Telegram routing layer — DONE
+- `tools/telegram_listener.handle_message` no longer POSTs to `nexus_api /chat` (the path that triggered the original async crash). Now imports `workers.conversation_handler` directly and calls `handle_async` with `thread_id="handler:tg:<chat_id>"`. 20s asyncio timeout protects the bot from any handler hang. Heavy work, when needed, is enqueued to the task_worker — never executed in the request path.
+- `/tasks` command also bypasses the API and reads `core.task_queue.list_tasks` directly so it never blocks on a busy worker.
+- Handler tool decisions: status_check / new_task / task_modification / chat — all driven by the conversation handler's tool calls (`get_task_status`, `pause_task`, `cancel_task`, `modify_task`, `queue_new_task`).
+- Verified: telegram_listener imports cleanly with all five handlers wired.
+
 ### 15.4 Conversation handler process — DONE
 - New `workers/conversation_handler.py`. Builds a small ReAct agent on `qwen3:4b` (the warmed router model) with five `HANDLER_TOOLS`: `get_task_status`, `pause_task`, `cancel_task`, `modify_task`, `queue_new_task`. Heavy work is enqueued to the worker — never runs here.
 - Both sync and async builders provided. They reuse `nexus._CHECKPOINTER` / `nexus._get_async_checkpointer()` namespaced via `thread_id="handler:<id>"` so the handler's conversation state never collides with any task's state (Phase 15.6 isolation).
