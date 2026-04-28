@@ -4,10 +4,10 @@
 19
 
 ## Current Task
-19.1 Task extraction from messages
+19.2 Event-driven nudges
 
 ## Last Completed Task
-18.6 Phase 18 verification (PASS — planner clarify+plan, watcher candidates)
+19.1 Task extraction from messages
 
 ## Phase Status
 - Phase 12: SKIPPED

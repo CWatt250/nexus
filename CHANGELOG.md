@@ -1,5 +1,12 @@
 # Nexus Build Changelog
 
+## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
+
+### 19.1 Task extraction from messages — DONE
+- New `tools/task_extractor.py:extract_commitments(message, source)` — regex-first commitment + deadline extractor. Supports `by friday/tomorrow/next week/end of {day,week,month}` and weekday names; resolves to UTC datetime. LLM fallback (qwen3:4b, JSON-format) when regex hits the verb but misses the deadline phrase.
+- Records to `memory/reminders.jsonl`. Phase 16.5 scheduler can iterate due reminders for delivery via `proactive_send`.
+- Smoke-tested: `'I will send the bid by Friday'` → reminder with due=2026-05-01; `'Hello there!'` → no commitment detected.
+
 ## 2026-04-28 — Phase 18 (Polish + Advanced Features) starting
 
 ### 18.6 Phase 18 verification — PASS
