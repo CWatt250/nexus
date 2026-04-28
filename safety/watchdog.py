@@ -30,9 +30,6 @@ WATCH_INTERVAL = 30
 SERVICES = [
     "nexus-agent",
     "nexus-api",
-    "nexus-design",
-    "open-webui",
-    "open-terminal",
     "ollama",
 ]
 LOG_PATH = Path.home() / "AI_Agent" / "memory" / "watchdog.log"

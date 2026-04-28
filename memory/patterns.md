@@ -1,72 +1,46 @@
-# Nexus Patterns — last 14 days
+# Nexus Patterns — last 7 days
 
-_Generated: 2026-04-21T05:42:28_
+_Generated: 2026-04-27T06:00:01_
 
-- Log entries analyzed: **44**
-- Reflections: **8**
-- Commits observed: **1**
-- Average reflection quality: **4.12 / 5**
-- Quality trend: **improving** (3.75 → 4.50)
-- Peak hour (UTC): **21:00**
-
-## Quality distribution
-- 1/5 —   0 
-- 2/5 —   1 █
-- 3/5 —   1 █
-- 4/5 —   2 ██
-- 5/5 —   4 ████
+- Log entries analyzed: **70**
+- Reflections: **0**
+- Commits observed: **42**
+- Average reflection quality: **0.00 / 5**
+- Peak hour (UTC): **12:00**
 
 ## Most used tools
-- `terminal` — 12
-- `memory_add` — 5
-- `claude-code` — 3
-- `file_read_tool` — 1
+- `terminal` — 64
+- `claude-code` — 5
+- `test` — 1
 
-## Most common task types (first reflection tag)
-- `greeting` — 1
-- `math` — 1
-- `file-io` — 1
-- `clarification` — 1
-- `bid-system` — 1
-- `memory` — 1
-- `geography` — 1
-- `debugging` — 1
-
-## All tags
-- `response` — 2
-- `greeting` — 1
-- `prompting` — 1
-- `math` — 1
-- `arithmetic` — 1
-- `file-io` — 1
-- `markdown` — 1
-- `clarification` — 1
-- `user-intent` — 1
-- `bid-system` — 1
-
-## Router decisions
-- `mid` — 7
-- `fast` — 6
-- `code` — 4
-- `design` — 3
-- `heavy` — 1
+## Files most frequently read
+- `~/AI_Agent/projects/nexus-core/run-log.jsonl` — 1
+- `~/AI_Agent/memory/circuit-breaker-state.json` — 1
+- `~/AI_Agent/tools/run_log.py` — 1
 
 ## Files most frequently written
-- `/library/` — 2
+- `/home/cwatt250/AI_Agent` — 25
+- `~/AI_Agent/venv/bin/python3` — 15
+- `~/AI_Agent` — 13
+- `/home/cwatt250/AI_Agent/venv/bin/python3` — 10
+- `/home/cwatt250/AI_Agent/chroma` — 4
+- `~/AI_Agent/chroma/` — 2
+- `/home/cwatt250/AI_Agent/SOUL.md` — 2
+- `/home/cwatt250/AI_Agent/STYLE.md` — 2
+- `/home/cwatt250/AI_Agent/projects/` — 2
+- `~/AI_Agent/chroma/22bbe70b-2949-49a5-9697-6c7f9678122d/` — 1
 
 ## Git repos with most commits
-- `AI_Agent` — 1
+- `AI_Agent` — 42
 
 ## Top commit authors
-- `nexus` — 1
+- `nexus` — 35
+- `Colton Watt` — 7
 
 ## Hour-of-day usage (UTC)
-- 04:00  ▇▇▇▇▇▇ 2
-- 11:00  ▇▇▇▇▇▇▇▇▇ 3
-- 12:00  ▇▇▇▇▇▇▇▇▇ 3
-- 16:00  ▇▇▇ 1
-- 17:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 7
-- 20:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 10
-- 21:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 13
-- 22:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 5
+- 11:00  ▇▇ 3
+- 12:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 44
+- 13:00  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 21
+- 20:00   1
+- 22:00   1
 
