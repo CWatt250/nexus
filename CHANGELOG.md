@@ -2,6 +2,14 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.6 Per-task LangGraph checkpointing — DONE
+- Convention codified across the worker / handler:
+  - `core.task_queue.enqueue` stamps every row with `thread_id = f"task:{task_id}"`.
+  - `workers.task_worker._run_one` configures the agent with that thread_id.
+  - `workers.conversation_handler.handle_*` uses `thread_id="handler:<id>"` and the Telegram bot uses `f"handler:tg:{chat_id}"`.
+  - `task:*` and `handler:*` namespaces can never collide, even though both savers share the same `checkpoints.db` file.
+- New `tests/test_checkpointing.py` (3 tests, all passing): enqueue stamps unique per-task thread_ids, handler namespace stays distinct, two task thread_ids hold independent state under the same agent (ALPHA in A's history, BETA in B's, no cross-contamination).
+
 ### 15.5 Telegram routing layer — DONE
 - `tools/telegram_listener.handle_message` no longer POSTs to `nexus_api /chat` (the path that triggered the original async crash). Now imports `workers.conversation_handler` directly and calls `handle_async` with `thread_id="handler:tg:<chat_id>"`. 20s asyncio timeout protects the bot from any handler hang. Heavy work, when needed, is enqueued to the task_worker — never executed in the request path.
 - `/tasks` command also bypasses the API and reads `core.task_queue.list_tasks` directly so it never blocks on a busy worker.

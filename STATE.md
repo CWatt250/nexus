@@ -4,10 +4,10 @@
 15
 
 ## Current Task
-15.6 Per-task LangGraph checkpointing
+15.7 Re-enable Telegram and verify
 
 ## Last Completed Task
-15.5 Telegram routing layer
+15.6 Per-task LangGraph checkpointing
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
