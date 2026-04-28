@@ -203,6 +203,7 @@ def github_commit_file(
     content: str,
     message: str,
     branch: str = "main",
+    approve: bool = False,
 ) -> str:
     """Create or update a single file in a GitHub repo on the given branch.
 
@@ -212,7 +213,17 @@ def github_commit_file(
         content: new file content (utf-8 text).
         message: commit message.
         branch: branch to commit onto (default "main").
+        approve: must be True to actually push. Default False returns a
+                 dry-run preview so the model never silently ships a
+                 commit without explicit confirmation.
     Returns the commit SHA and HTML URL."""
+    if not approve:
+        return (
+            "DRY-RUN: github_commit_file not executed.\n"
+            f"repo: {repo}\nbranch: {branch}\npath: {path}\n"
+            f"message: {message}\ncontent_bytes: {len(content)}\n"
+            "to actually push, call again with approve=True."
+        )
     try:
         r = _repo(repo)
         try:

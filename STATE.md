@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.1 Dry-run mode for destructive tools
+14.2 Task metrics logging
 
 ## Last Completed Task
-13.9 Phase 13 verification (PASS — 82.8% mean TTF reduction)
+14.1 Dry-run mode for destructive tools
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

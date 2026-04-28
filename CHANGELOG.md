@@ -1,5 +1,14 @@
 # Nexus Build Changelog
 
+## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
+
+### 14.1 Dry-run mode for destructive tools — DONE
+- New `safety/destructive.py` with `is_destructive(cmd) -> (bool, reason)`, `needs_approval`, `strip_approval`, `dry_run_summary`. Patterns cover: git force-push / reset --hard / clean -fdx / branch -D / rebase --root / filter-*, SQL DROP/TRUNCATE/DELETE-without-WHERE, rm -r, mv to /dev/null, redirects to /dev/sd*, docker prune --all, kubectl delete, supabase db reset, npm publish, vercel remove, etc.
+- `safety.sandbox.run_guarded` and `run_guarded_async` both now default `dry_run=True`. When the command matches a destructive pattern and lacks an `APPROVED:` prefix, they return a dry-run summary instead of executing. `APPROVED:` prefix is stripped before the command reaches the shell.
+- `tools/github_tool.github_commit_file` and `tools/vercel_tool.vercel_deploy` gained an `approve=False` arg that returns a dry-run preview by default. Model must explicitly set `approve=True` to push or deploy.
+- Existing hard guardrails (rm -rf, mkfs, etc.) still block at the earlier layer — destructive.py is the *softer* tier above it.
+- Smoke-tested: `git reset --hard HEAD~1` now returns `DRY-RUN: not executed`, `APPROVED: echo` runs, plain `echo` runs, `rm -rf /tmp/test` still hard-blocked. `github_commit_file` and `vercel_deploy` show preview without `approve=True`.
+
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
 ### 13.9 Phase 13 verification — PASS

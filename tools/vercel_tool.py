@@ -31,17 +31,30 @@ def _check_vercel_installed() -> bool:
 
 
 @tool
-def vercel_deploy(project_dir: str, project_name: Optional[str] = None, prod: bool = False) -> str:
+def vercel_deploy(
+    project_dir: str,
+    project_name: Optional[str] = None,
+    prod: bool = False,
+    approve: bool = False,
+) -> str:
     """Deploy a project to Vercel.
 
     Args:
         project_dir: Path to the project directory to deploy
         project_name: Optional project name for Vercel (uses directory name if not provided)
         prod: If True, deploy to production. Otherwise, creates a preview deployment.
+        approve: must be True to actually deploy. Default False returns a dry-run preview.
 
     Returns:
         Deployment URL or error message
     """
+    if not approve:
+        target = "production" if prod else "preview"
+        return (
+            "DRY-RUN: vercel_deploy not executed.\n"
+            f"project_dir: {project_dir}\nproject_name: {project_name}\ntarget: {target}\n"
+            "to actually deploy, call again with approve=True."
+        )
     if not VERCEL_TOKEN:
         return (
             "Error: VERCEL_TOKEN not configured.\n"
