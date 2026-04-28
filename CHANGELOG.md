@@ -2,6 +2,15 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.8 Phase 14 verification — PASS
+- `run_tests.sh` re-run: **21/21 passing (100%)** — far above the 90% bar.
+- `scripts/verify_phase14.py` fired 5 short turns; resulting counts:
+  - `memory/task_metrics.jsonl`: 6 records (≥5 required)
+  - `memory/tool_metrics.jsonl`: 26 records
+  - `memory/retros/`: 5 retro.md files (≥1 required)
+- Bug surfaced and fixed in the verification driver: counter was filtering by *local* date while records use UTC. Counter now just totals valid lines.
+- Full report: `PHASE_14_VERIFY.md`. **Phase 14 COMPLETE. Phase 15 unblocked.**
+
 ### 14.7 Human-in-the-loop checkpoints — DONE
 - New `core/checkpoints.py` implements `checkpoint(task_id, summary, options, timeout)`. Writes a request JSON to `memory/checkpoints/<task_id>.json`, polls for `<task_id>.response.json`, returns `{"choice", "note", "timed_out"}`. Fail-safe: timeout returns `cancel`.
 - Best-effort Telegram fire via `telegram_notify` (no-op while bot is offline; Phase 16.1 will wire two-way delivery).

@@ -1,3 +1,6 @@
 2026-04-27T21:04:21-07:00 | phase=13 task=13.1 | starting mega-run
 2026-04-27T21:12:35-07:00 | phase=13 task=13.6 | done=13.1,13.2,13.3,13.4,13.5 fail=0
 2026-04-27T21:22:13-07:00 | phase=13 done; starting phase=14 task=14.1 | tasks done=13.1-9 fail=0
+2026-04-27T21:28:32-07:00 | phase=14 task=14.3 | done=14.1,14.2 fail=0
+2026-04-27T21:35:37-07:00 | phase=14 task=14.6 | done=14.1-5 fail=0 tests=21/21
+2026-04-27T21:43:50-07:00 | phase=14 done; starting phase=15 task=15.1 | tasks done=14.1-8 fail=0 tests=21/21
