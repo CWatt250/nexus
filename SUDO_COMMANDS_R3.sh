@@ -73,4 +73,12 @@ journalctl -u nexus-telegram.service -n 30 --no-pager
 ollama pull qwen2.5vl:7b
 ollama list | grep -i vl
 
+# ---------------------------------------------------------------------------
+# Phase 16.5 — install the standalone scheduler tick loop.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-scheduler.service /etc/systemd/system/nexus-scheduler.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-scheduler.service
+systemctl status nexus-scheduler.service --no-pager
+
 

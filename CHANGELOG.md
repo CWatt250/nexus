@@ -2,6 +2,13 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.5 Task scheduler — DONE
+- New `core/scheduler.py` with three trigger kinds: `once` (ISO datetime), `cron` (5-field UTC), `interval` (seconds). Persistent in `memory/scheduled_tasks.db` (WAL). Mini cron expander supports `*`, `*/N`, `a,b,c`, `a-b`. `tick_once` enqueues fired triggers into the Phase 15 task queue and reschedules cron/interval rows; `once` rows are deleted after firing.
+- New `workers/scheduler_loop.py` — calls `scheduler.run_forever(poll_seconds=10)`. Heavy work runs on the task_worker, never inside the tick.
+- New `/tmp/nexus-scheduler.service` (Type=simple, Restart=always). Sudo install line added to `SUDO_COMMANDS_R3.sh`.
+- New API endpoints in `nexus_api.py`: `POST /schedule`, `GET /schedules`, `DELETE /schedule/{id}` with `ScheduleRequest` body shape.
+- Smoke test: `once` schedule fired and was deleted; `interval` stayed registered for next tick; cron parser accepted `M H * * *`.
+
 ### 16.4 BidWatt integration (read-only) — DONE
 - New `tools/bidwatt_tool.py`: `bidwatt_list_bids(limit, status)`, `bidwatt_get_bid(id)`, `bidwatt_search_bids(query, limit)`. Calls Supabase PostgREST directly via httpx — no `supabase-py` dependency. **Strictly read-only**: no INSERT / UPDATE / DELETE in this phase.
 - Reads `BIDWATT_SUPABASE_URL` / `BIDWATT_SUPABASE_ANON_KEY` from `~/AI_Agent/.env`, then falls back to `NEXT_PUBLIC_SUPABASE_*` in `~/Dev/cwatt-bidboard/.env.local`. Graceful "creds not found" message when both are missing — verified.

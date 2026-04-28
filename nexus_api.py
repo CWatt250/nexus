@@ -398,6 +398,36 @@ async def list_tasks():
         return {"tasks": []}
 
 
+class ScheduleRequest(BaseModel):
+    """Phase 16.5 — POST /schedule body shape."""
+    kind: str          # 'once' | 'cron' | 'interval'
+    spec: str          # ISO datetime | cron expr | seconds
+    input: str
+    priority: int = 0
+
+
+@app.post("/schedule")
+async def schedule_create(req: ScheduleRequest):
+    from core import scheduler
+    try:
+        sid = scheduler.add_schedule(req.kind, req.spec, req.input, priority=req.priority)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {"ok": True, "schedule_id": sid}
+
+
+@app.get("/schedules")
+async def schedule_list():
+    from core import scheduler
+    return {"schedules": scheduler.list_schedules()}
+
+
+@app.delete("/schedule/{schedule_id}")
+async def schedule_delete(schedule_id: str):
+    from core import scheduler
+    return {"deleted": scheduler.delete_schedule(schedule_id)}
+
+
 @app.get("/agents")
 async def list_agents():
     """Get status of all running agents and their tasks."""
