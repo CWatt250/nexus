@@ -1,5 +1,12 @@
 # Nexus Build Changelog
 
+## 2026-04-28 — Phase 18 (Polish + Advanced Features) starting
+
+### 18.1 Planner agent — DONE
+- New `agents/planner_agent.py`. Two-tier: cheap regex classifier (`classify_task`) catches obviously-vague openers ("build me", <10 words without concrete verbs / file paths) without any LLM call; borderline cases fall through to qwen3:4b.
+- `plan_or_clarify(text)` returns `{action: 'clarify', questions: [...]}` for vague input or `{action: 'plan', plan: '...'}` for clear input. Plan format: numbered steps with verification + final effort estimate (small/medium/large) and suggested router route.
+- Smoke-tested deterministic classifier: `'build me an app'` → vague, `'refactor tools/glm_tool.py to use httpx.AsyncClient'` → clear.
+
 ## 2026-04-28 — Phase 17 (Unified Observability Dashboard) starting
 
 ### 17.11 Phase 17 verification — PASS

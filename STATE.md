@@ -4,10 +4,10 @@
 18
 
 ## Current Task
-18.1 Planner agent
+18.2-18.4 Notion/Obsidian/history import
 
 ## Last Completed Task
-17.11 Phase 17 verification (PASS — html, bus, publish_remote)
+18.1 Planner agent
 
 ## Phase Status
 - Phase 12: SKIPPED
