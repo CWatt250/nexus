@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.6 Wake word voice activation — DONE
+- New `workers/wakeword_listener.py`. Uses `openwakeword` (optional dep) to listen on the default mic for the wake words listed in `WAKE_MODELS` (currently `hey_jarvis` + `alexa` as placeholders for `hey_nexus` / `hey_sparky` until a custom model is trained — same hand-off path).
+- On detection: triggers `whisper_record(12s)`, then routes via `fast_handle` first; if fast_handle defers, the transcript is enqueued as a heavy task for the worker.
+- Graceful no-dep behavior: the listener prints an actionable install hint and sleeps 600s so systemd's RestartSec=300 doesn't crashloop.
+- New `/tmp/nexus-wakeword.service` (Type=simple, Restart=always, RestartSec=300). Sudo install + pip install lines added to `SUDO_COMMANDS_R3.sh`.
+
 ### 16.5 Task scheduler — DONE
 - New `core/scheduler.py` with three trigger kinds: `once` (ISO datetime), `cron` (5-field UTC), `interval` (seconds). Persistent in `memory/scheduled_tasks.db` (WAL). Mini cron expander supports `*`, `*/N`, `a,b,c`, `a-b`. `tick_once` enqueues fired triggers into the Phase 15 task queue and reschedules cron/interval rows; `once` rows are deleted after firing.
 - New `workers/scheduler_loop.py` — calls `scheduler.run_forever(poll_seconds=10)`. Heavy work runs on the task_worker, never inside the tick.

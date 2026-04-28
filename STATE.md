@@ -4,10 +4,10 @@
 16
 
 ## Current Task
-16.6 Wake word voice activation
+16.7 Performance Guardian
 
 ## Last Completed Task
-16.5 Task scheduler
+16.6 Wake word voice activation
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

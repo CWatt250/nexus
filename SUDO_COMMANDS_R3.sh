@@ -81,4 +81,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-scheduler.service
 systemctl status nexus-scheduler.service --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 16.6 — wake word listener.
+# (1) install deps in the Nexus venv. NO sudo needed for pip:
+~/AI_Agent/venv/bin/pip install openwakeword sounddevice numpy
+~/AI_Agent/venv/bin/python3 -c "import openwakeword; openwakeword.utils.download_models()"
+# (2) optional: train a custom 'hey_nexus' model and replace WAKE_MODELS in
+# workers/wakeword_listener.py — see docs/wakeword-setup.md (TBD).
+# (3) install the service:
+sudo cp /tmp/nexus-wakeword.service /etc/systemd/system/nexus-wakeword.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-wakeword.service
+journalctl -u nexus-wakeword.service -n 20 --no-pager
+
 
