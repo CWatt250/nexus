@@ -2,6 +2,12 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.3 Task retrospective generator — DONE
+- New `memory/retros.py` reads `task_metrics.jsonl` + `tool_metrics.jsonl` for a given `task_id`, asks qwen3:4b for 1-3 bullet lessons, and writes `memory/retros/retro_<task_id>.md` with goal / outcome / tool calls / wall time / tokens / lessons.
+- "Interesting" filter: skips fast/no-tool-call/<5s/successful turns so trivial greetings don't bury the pile.
+- `generate_retro_async(task_id)` fires on a daemon thread after `record_agent_turn` in both CLI and API paths.
+- Verified on the smoke-test record `test-task-001`: file written under `memory/retros/`, lessons section populated.
+
 ### 14.2 Task metrics logging — DONE
 - New `memory/metrics.py` writes two append-only JSONL streams:
   - `memory/task_metrics.jsonl` — one record per agent turn (task_id, wall_seconds, route, model, tokens_in/out, tool_calls, success, error, previews).

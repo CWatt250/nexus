@@ -40,6 +40,7 @@ from nexus import (  # noqa: E402
 )
 from tools.sparky_state import instant_ack  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
+from memory import retros as agent_retros  # noqa: E402
 
 MODEL_NAME = "nexus"
 HOST = "0.0.0.0"
@@ -269,6 +270,7 @@ async def _stream_agent(
         success=ok,
         error=err_msg,
     )
+    agent_retros.generate_retro_async(task_id)
     try:
         delattr(agent_metrics._TASK_CTX, "id")
     except AttributeError:
@@ -346,6 +348,7 @@ async def chat_completions(req: ChatRequest):
         success=ok,
         error=err_msg,
     )
+    agent_retros.generate_retro_async(task_id)
     _spawn_reflection(user_text, reply, msgs, route, model)
     return _completion_envelope(reply)
 

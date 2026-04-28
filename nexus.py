@@ -59,6 +59,7 @@ from tools.coding_agent import CODING_AGENT_TOOLS, solve_coding_task  # noqa: E4
 from tools.parallel_tools import PARALLEL_TOOLS  # noqa: E402
 from tools.truncate import wrap_tools  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
+from memory import retros as agent_retros  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -571,6 +572,7 @@ def interactive_loop() -> None:
                     success=turn_ok,
                     error=turn_err,
                 )
+                agent_retros.generate_retro_async(task_id)
         reply = strip_thinking("".join(parts))
         sessions.touch_session(thread_id, source="nexus", first_msg=user if not resumed and result["messages"] else None)
         sessions.set_current_thread(thread_id)

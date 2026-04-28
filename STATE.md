@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.3 Task retrospective generator
+14.4 Weekly LESSONS.md aggregator
 
 ## Last Completed Task
-14.2 Task metrics logging
+14.3 Task retrospective generator
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
