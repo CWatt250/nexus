@@ -4,10 +4,10 @@
 19
 
 ## Current Task
-19.4 Calendar prep briefs
+19.5 Multi-agent speech bubbles
 
 ## Last Completed Task
-19.3 Daily end-of-day auto-summary
+19.4 Calendar prep briefs
 
 ## Phase Status
 - Phase 12: SKIPPED

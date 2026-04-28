@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
+### 19.4 Calendar prep briefs — DONE
+- New `tools/calendar_prep.py:calendar_prep_run(window_minutes=30)` reads a local .ics file (path from `NEXUS_ICS_PATH` env, default `~/.local/share/nexus-calendar.ics`) — no Google OAuth dependency. For each event starting in the window, pulls RAG context for the title and posts a prep brief to Sparky bubble + Telegram.
+- Dedup via `memory/calendar-briefed.jsonl` so we don't re-fire on every poll.
+- Designed to be called by a Phase 16.5 scheduler `interval` row (5 minutes) once Colton drops a calendar feed.
+- Smoke test: with no .ics present, returns `no events in the next 60 minutes.` (graceful no-op).
+
 ### 19.3 Daily end-of-day auto-summary — DONE
 - New `tools/eod_summary.py:eod_summary_run()` reads today's `task_metrics.jsonl`, `agent-events.jsonl`, and reminders due in the next 24h, then asks qwen3:4b for a 4-6 sentence brief covering shipped / broken / pending. Push to Sparky bubble + Telegram via best-effort `proactive_send`.
 - New `/tmp/nexus-eod-summary.{service,timer}` — fires Mon-Fri 17:00 local. Sudo install lines added.
