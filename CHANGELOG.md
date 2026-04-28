@@ -2,6 +2,13 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.5 Regression test suite — DONE
+- New `tests/` package with `conftest.py` (sys.path), `test_tools.py` (16 golden-path tool tests), and `test_agent_e2e.py` (5 end-to-end agent tests).
+- Coverage: file_read/write/edit, glob, grep, sandbox.run_guarded (safe + hard-block + soft-destructive dry-run), destructive.is_destructive patterns, router.classify_and_model, truncate_tool_result passthrough, instant_ack heuristic, parallel_tools.repo_inspect, metrics.record_tool_call, lessons_aggregator helpers, plus 5 e2e: fast greeting through agent, router classification, fast_mode_messages, static-prefix stability, all tools metrics-wrapped.
+- `run_tests.sh` runs the full suite. New `/tmp/nexus-test.{service,timer}` fires nightly at 3am with persistent catch-up.
+- Bug fix: `safety/destructive.py` `rm -r` regex now matches `rm -rf /path` (flag bundle position-agnostic). Test surfaced it.
+- Final: **21/21 passing (100%)**, exceeding the 90% bar in the exit criteria.
+
 ### 14.4 Weekly LESSONS.md aggregator — DONE
 - New `memory/lessons_aggregator.py` scans `memory/retros/retro_*.md` from the last 7 days, extracts the bullet list from each `## Lessons` section, dedupes, and asks qwen3:4b to cluster the survivors into 5 actionable bullets. Stripped to bullet-only output so qwen3:4b's narrative preamble doesn't pollute the file. Idempotent re-runs in the same week replace that week's section.
 - Output appended at top of evergreen `~/AI_Agent/LESSONS.md`.

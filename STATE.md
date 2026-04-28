@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.5 Regression test suite
+14.6 GLM-5.1 escalation path
 
 ## Last Completed Task
-14.4 Weekly LESSONS.md aggregator
+14.5 Regression test suite (21/21 passing)
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

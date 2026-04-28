@@ -38,7 +38,7 @@ _DESTRUCTIVE: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bDROP\s+(TABLE|DATABASE|SCHEMA|INDEX)\b", re.IGNORECASE), "SQL DROP"),
     (re.compile(r"\bTRUNCATE\s+TABLE\b", re.IGNORECASE), "SQL TRUNCATE"),
     (re.compile(r"\bDELETE\s+FROM\b(?!\s+\w+\s+WHERE)", re.IGNORECASE), "DELETE FROM without WHERE"),
-    (re.compile(r"\brm\s+(?!.*--help).*\s+-[a-zA-Z]*r"), "rm with -r (recursive)"),
+    (re.compile(r"\brm\s+(?!.*--help)(\S*\s+)*-[a-zA-Z]*r[a-zA-Z]*\b"), "rm with -r (recursive)"),
     (re.compile(r"\brmdir\s+.*-p\b"), "rmdir -p"),
     (re.compile(r"\bmv\s+\S+\s+/dev/null\b"), "mv to /dev/null"),
     (re.compile(r">\s*/dev/sd[a-z]"), "redirect to /dev/sd*"),

@@ -34,4 +34,13 @@ sudo systemctl enable --now nexus-lessons.timer
 # Verify next firing:
 systemctl list-timers nexus-lessons.timer --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 14.5 — install the nightly regression-test timer (3am).
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-test.service /etc/systemd/system/nexus-test.service
+sudo cp /tmp/nexus-test.timer /etc/systemd/system/nexus-test.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-test.timer
+systemctl list-timers nexus-test.timer --no-pager
+
 
