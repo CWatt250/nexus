@@ -2,6 +2,16 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.2 Task metrics logging — DONE
+- New `memory/metrics.py` writes two append-only JSONL streams:
+  - `memory/task_metrics.jsonl` — one record per agent turn (task_id, wall_seconds, route, model, tokens_in/out, tool_calls, success, error, previews).
+  - `memory/tool_metrics.jsonl` — one record per tool call (task_id, tool, latency_ms, tokens_in/out, success, error).
+- `wrap_tools_with_metrics(TOOLS)` retrofits every registered tool. Idempotent (won't double-wrap). Threads attribution via thread-local `task_context`.
+- Wired into both transports:
+  - CLI (`nexus.interactive_loop`) wraps the streaming block with `task_context(uuid)`, counts ToolMessages from final state, records the turn even on error.
+  - API (`nexus_api.chat_completions`) does the same for both streaming and non-streaming paths.
+- All writes are best-effort — log failures never break the agent. Verified end-to-end: `tool_metrics.jsonl` and `task_metrics.jsonl` both got entries from the smoke test.
+
 ### 14.1 Dry-run mode for destructive tools — DONE
 - New `safety/destructive.py` with `is_destructive(cmd) -> (bool, reason)`, `needs_approval`, `strip_approval`, `dry_run_summary`. Patterns cover: git force-push / reset --hard / clean -fdx / branch -D / rebase --root / filter-*, SQL DROP/TRUNCATE/DELETE-without-WHERE, rm -r, mv to /dev/null, redirects to /dev/sd*, docker prune --all, kubectl delete, supabase db reset, npm publish, vercel remove, etc.
 - `safety.sandbox.run_guarded` and `run_guarded_async` both now default `dry_run=True`. When the command matches a destructive pattern and lacks an `APPROVED:` prefix, they return a dry-run summary instead of executing. `APPROVED:` prefix is stripped before the command reaches the shell.

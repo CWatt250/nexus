@@ -58,6 +58,7 @@ from tools.diff_tool import DIFF_TOOLS  # noqa: E402
 from tools.coding_agent import CODING_AGENT_TOOLS, solve_coding_task  # noqa: E402
 from tools.parallel_tools import PARALLEL_TOOLS  # noqa: E402
 from tools.truncate import wrap_tools  # noqa: E402
+from memory import metrics as agent_metrics  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -117,6 +118,9 @@ TOOLS = [
 # which summarises payloads larger than ~500 tokens via qwen3:4b. Already
 # bounded outputs (memory_*, router_*, etc.) are skipped inside wrap_tools.
 wrap_tools(TOOLS, max_tokens=500)
+# Phase 14.2 — record per-tool latency / tokens / success after the
+# truncation wrapper so the metric line reflects what the model actually saw.
+agent_metrics.wrap_tools_with_metrics(TOOLS)
 
 
 def extend_tools_with_mcp() -> int:
@@ -507,41 +511,66 @@ def interactive_loop() -> None:
             "configurable": {"thread_id": thread_id},
             "callbacks": [sparky_cb],
         }
-        try:
-            print("nexus> ", end="", flush=True)
-            stripper = ThinkStripper()
-            parts: list[str] = []
-            for event in agent.stream(
-                {"messages": fast_mode_messages(user, route=route)},
-                config=config,
-                stream_mode="messages",
-            ):
-                msg = event[0] if isinstance(event, tuple) and event else event
-                content = getattr(msg, "content", None)
-                if not content:
-                    continue
-                text = "".join(
-                    p.get("text", "") if isinstance(p, dict) else str(p) for p in content
-                ) if isinstance(content, list) else str(content)
-                if not text:
-                    continue
-                visible = stripper.feed(text)
-                if visible:
-                    parts.append(visible)
-                    print(visible, end="", flush=True)
-            tail = stripper.flush()
-            if tail:
-                parts.append(tail)
-                print(tail, end="", flush=True)
-            print()
+        task_id = uuid.uuid4().hex[:12]
+        turn_started = time.monotonic()
+        turn_ok = True
+        turn_err = ""
+        result = {"messages": []}
+        parts: list[str] = []
+        with agent_metrics.task_context(task_id):
             try:
-                snap = agent.get_state(config)
-                result = {"messages": getattr(snap, "values", {}).get("messages", [])}
-            except Exception:
-                result = {"messages": []}
-        except Exception as exc:
-            post_state("error", message=f"{type(exc).__name__}: {exc}")
-            raise
+                print("nexus> ", end="", flush=True)
+                stripper = ThinkStripper()
+                for event in agent.stream(
+                    {"messages": fast_mode_messages(user, route=route)},
+                    config=config,
+                    stream_mode="messages",
+                ):
+                    msg = event[0] if isinstance(event, tuple) and event else event
+                    content = getattr(msg, "content", None)
+                    if not content:
+                        continue
+                    text = "".join(
+                        p.get("text", "") if isinstance(p, dict) else str(p) for p in content
+                    ) if isinstance(content, list) else str(content)
+                    if not text:
+                        continue
+                    visible = stripper.feed(text)
+                    if visible:
+                        parts.append(visible)
+                        print(visible, end="", flush=True)
+                tail = stripper.flush()
+                if tail:
+                    parts.append(tail)
+                    print(tail, end="", flush=True)
+                print()
+                try:
+                    snap = agent.get_state(config)
+                    result = {"messages": getattr(snap, "values", {}).get("messages", [])}
+                except Exception:
+                    result = {"messages": []}
+            except Exception as exc:
+                turn_ok = False
+                turn_err = f"{type(exc).__name__}: {exc}"
+                post_state("error", message=turn_err)
+                raise
+            finally:
+                tool_calls = sum(
+                    1 for m in result.get("messages", [])
+                    if m.__class__.__name__ == "ToolMessage"
+                )
+                agent_metrics.record_agent_turn(
+                    task_id=task_id,
+                    started_at=turn_started,
+                    ended_at=time.monotonic(),
+                    route=route,
+                    model=model,
+                    user_text=user,
+                    reply_text="".join(parts),
+                    tool_calls=tool_calls,
+                    success=turn_ok,
+                    error=turn_err,
+                )
         reply = strip_thinking("".join(parts))
         sessions.touch_session(thread_id, source="nexus", first_msg=user if not resumed and result["messages"] else None)
         sessions.set_current_thread(thread_id)

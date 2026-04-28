@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.2 Task metrics logging
+14.3 Task retrospective generator
 
 ## Last Completed Task
-14.1 Dry-run mode for destructive tools
+14.2 Task metrics logging
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

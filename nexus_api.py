@@ -39,6 +39,7 @@ from nexus import (  # noqa: E402
     strip_thinking,
 )
 from tools.sparky_state import instant_ack  # noqa: E402
+from memory import metrics as agent_metrics  # noqa: E402
 
 MODEL_NAME = "nexus"
 HOST = "0.0.0.0"
@@ -185,7 +186,7 @@ def _chunk_bytes(chunk_id: str, created: int, delta: dict, finish: str | None = 
 
 
 async def _stream_agent(
-    agent, lc_msgs, config, user_msg: str, route: str, model: str
+    agent, lc_msgs, config, user_msg: str, route: str, model: str, *, task_id: str
 ) -> AsyncIterator[bytes]:
     """Stream agent output token-by-token as OpenAI SSE chunks.
 
@@ -202,6 +203,10 @@ async def _stream_agent(
     stripper = ThinkStripper()
     full_text_parts: list[str] = []
     final_messages = None
+    started = time.monotonic()
+    ok = True
+    err_msg = ""
+    agent_metrics._TASK_CTX.id = task_id
 
     try:
         async for event in agent.astream(
@@ -235,8 +240,10 @@ async def _stream_agent(
             full_text_parts.append(tail)
             yield _chunk_bytes(chunk_id, created, {"content": tail})
     except Exception as exc:
+        ok = False
+        err_msg = f"{type(exc).__name__}: {exc}"
         yield _chunk_bytes(
-            chunk_id, created, {"content": f"\n[stream error: {type(exc).__name__}: {exc}]"}
+            chunk_id, created, {"content": f"\n[stream error: {err_msg}]"}
         )
 
     yield _chunk_bytes(chunk_id, created, {}, finish="stop")
@@ -247,6 +254,25 @@ async def _stream_agent(
         final_messages = getattr(snap, "values", {}).get("messages") if snap else None
     except Exception:
         final_messages = None
+    tool_calls = sum(
+        1 for m in (final_messages or []) if m.__class__.__name__ == "ToolMessage"
+    )
+    agent_metrics.record_agent_turn(
+        task_id=task_id,
+        started_at=started,
+        ended_at=time.monotonic(),
+        route=route,
+        model=model,
+        user_text=user_msg,
+        reply_text="".join(full_text_parts),
+        tool_calls=tool_calls,
+        success=ok,
+        error=err_msg,
+    )
+    try:
+        delattr(agent_metrics._TASK_CTX, "id")
+    except AttributeError:
+        pass
     _spawn_reflection(user_msg, "".join(full_text_parts), final_messages, route, model)
 
 
@@ -282,15 +308,45 @@ async def chat_completions(req: ChatRequest):
     # Phase 13.8: pre-baked Sparky bubble within ~ms on heavy turns.
     instant_ack(user_text, route=route)
 
+    task_id = uuid.uuid4().hex[:12]
+
     if req.stream:
         return StreamingResponse(
-            _stream_agent(agent, lc_msgs, config, user_text, route, model),
+            _stream_agent(agent, lc_msgs, config, user_text, route, model, task_id=task_id),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
-    result = await agent.ainvoke({"messages": lc_msgs}, config=config)
-    reply = _extract_reply(result)
-    _spawn_reflection(user_text, reply, result.get("messages"), route, model)
+    started = time.monotonic()
+    ok = True
+    err_msg = ""
+    agent_metrics._TASK_CTX.id = task_id
+    try:
+        result = await agent.ainvoke({"messages": lc_msgs}, config=config)
+    except Exception as exc:
+        ok = False
+        err_msg = f"{type(exc).__name__}: {exc}"
+        result = {"messages": []}
+    finally:
+        try:
+            delattr(agent_metrics._TASK_CTX, "id")
+        except AttributeError:
+            pass
+    reply = _extract_reply(result) if ok else f"[error: {err_msg}]"
+    msgs = result.get("messages", [])
+    tool_calls = sum(1 for m in msgs if m.__class__.__name__ == "ToolMessage")
+    agent_metrics.record_agent_turn(
+        task_id=task_id,
+        started_at=started,
+        ended_at=time.monotonic(),
+        route=route,
+        model=model,
+        user_text=user_text,
+        reply_text=reply,
+        tool_calls=tool_calls,
+        success=ok,
+        error=err_msg,
+    )
+    _spawn_reflection(user_text, reply, msgs, route, model)
     return _completion_envelope(reply)
 
 
