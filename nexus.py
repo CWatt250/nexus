@@ -69,7 +69,20 @@ CHECKPOINT_DB = MEMORY_DIR / "checkpoints.db"
 LESSONS_MAX_LINES = 60
 
 MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-_checkpoint_conn = sqlite3.connect(str(CHECKPOINT_DB), check_same_thread=False)
+
+
+def _open_checkpoint_conn() -> sqlite3.Connection:
+    """Open the sync checkpoint connection with WAL + low-friction defaults
+    so it shares the file cleanly with the async saver from the API path."""
+    conn = sqlite3.connect(str(CHECKPOINT_DB), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.commit()
+    return conn
+
+
+_checkpoint_conn = _open_checkpoint_conn()
 _CHECKPOINTER = SqliteSaver(_checkpoint_conn)
 
 TOOLS = [
@@ -317,10 +330,18 @@ def build_agent(model: str | None = None):
 async def _get_async_checkpointer() -> AsyncSqliteSaver:
     """Lazy singleton: one aiosqlite connection shared by every async
     agent. Must be awaited — aiosqlite's Connection ctor is itself a
-    coroutine and the saver needs a live connection to run setup()."""
+    coroutine and the saver needs a live connection to run setup().
+
+    Enforces WAL + busy_timeout so concurrent sync (CLI) and async (API)
+    accesses don't trip over the writer lock — the Phase 15 task worker
+    + conversation handler will both share this saver."""
     global _ASYNC_CHECKPOINTER
     if _ASYNC_CHECKPOINTER is None:
         conn = await aiosqlite.connect(str(CHECKPOINT_DB), check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA synchronous=NORMAL")
+        await conn.execute("PRAGMA busy_timeout=5000")
+        await conn.commit()
         saver = AsyncSqliteSaver(conn)
         # Ensure the schema exists — no-op if the sync saver already ran it.
         try:

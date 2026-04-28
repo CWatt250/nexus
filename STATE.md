@@ -4,10 +4,10 @@
 15
 
 ## Current Task
-15.1 SqliteSaver -> AsyncSqliteSaver migration
+15.2 SQLite task queue
 
 ## Last Completed Task
-14.8 Phase 14 verification (PASS — 21/21 tests, 6 task records, 5 retros)
+15.1 SqliteSaver -> AsyncSqliteSaver migration
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

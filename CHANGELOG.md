@@ -1,5 +1,12 @@
 # Nexus Build Changelog
 
+## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
+
+### 15.1 SqliteSaver -> AsyncSqliteSaver migration — DONE
+- Backed up `memory/checkpoints.db` → `memory/checkpoints.pre-phase15.db` (49 MB) before any structural change.
+- Audit confirmed the dual-saver split was already in place (sync `SqliteSaver` for the CLI/voice path, `AsyncSqliteSaver` for the FastAPI / async paths). What was missing was explicit WAL + busy_timeout pragmas on both, so concurrent sync+async writers can land safely without a writer-lock crash. Both connection openers (`_open_checkpoint_conn`, `_get_async_checkpointer`) now set `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`.
+- Test suite still 21/21 after the change.
+
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
 ### 14.8 Phase 14 verification — PASS
