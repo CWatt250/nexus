@@ -57,6 +57,7 @@ from tools.test_runner_tool import TEST_RUNNER_TOOLS  # noqa: E402
 from tools.diff_tool import DIFF_TOOLS  # noqa: E402
 from tools.coding_agent import CODING_AGENT_TOOLS, solve_coding_task  # noqa: E402
 from tools.parallel_tools import PARALLEL_TOOLS  # noqa: E402
+from tools.truncate import wrap_tools  # noqa: E402
 
 OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
@@ -111,6 +112,11 @@ TOOLS = [
     *CODING_AGENT_TOOLS,
     *PARALLEL_TOOLS,
 ]
+
+# Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
+# which summarises payloads larger than ~500 tokens via qwen3:4b. Already
+# bounded outputs (memory_*, router_*, etc.) are skipped inside wrap_tools.
+wrap_tools(TOOLS, max_tokens=500)
 
 
 def extend_tools_with_mcp() -> int:

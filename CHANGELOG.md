@@ -2,6 +2,12 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.7 Tool result truncation helper — DONE
+- New `tools/truncate.py` with `truncate_tool_result(output, max_tokens=500)` and `wrap_tool / wrap_tools` retrofitters. Outputs ≤500t pass through; longer outputs are summarised by qwen3:4b with a prompt that preserves paths, error messages, line numbers, and exit codes verbatim.
+- `nexus.TOOLS` is run through `wrap_tools(TOOLS, max_tokens=500)` after assembly. Skip list excludes already-bounded tools (memory_*, mem0_*, router_*, glob_tool, telegram_*).
+- Pre-existing bug exposed and fixed in `tools/terminal_tool.py` — `run_guarded` was referenced but never imported. Added `from safety.sandbox import run_guarded`.
+- Verified: short terminal output passes through; `yes | head -n 1000` (~3500t) collapses to ~540t with the `[truncated from ~3505t to ~538t via qwen3:4b]` header.
+
 ### 13.6 Async tool audit (top 10) — DONE
 - New `docs/async-tool-audit.md` with the full ranking + decisions. Run-log shows `terminal` is the hottest tool by far (72/108 entries).
 - New `safety.sandbox.run_guarded_async` — async sibling of `run_guarded` using `asyncio.create_subprocess_shell` + `asyncio.wait_for`. Same return shape. Phase 15 worker will use this.

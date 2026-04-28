@@ -4,10 +4,10 @@
 13
 
 ## Current Task
-13.7 Tool result truncation helper
+13.8 Instant acknowledgment pattern
 
 ## Last Completed Task
-13.6 Async tool audit (top 10)
+13.7 Tool result truncation helper
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
