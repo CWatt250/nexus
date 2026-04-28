@@ -2,6 +2,11 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.4 BidWatt integration (read-only) — DONE
+- New `tools/bidwatt_tool.py`: `bidwatt_list_bids(limit, status)`, `bidwatt_get_bid(id)`, `bidwatt_search_bids(query, limit)`. Calls Supabase PostgREST directly via httpx — no `supabase-py` dependency. **Strictly read-only**: no INSERT / UPDATE / DELETE in this phase.
+- Reads `BIDWATT_SUPABASE_URL` / `BIDWATT_SUPABASE_ANON_KEY` from `~/AI_Agent/.env`, then falls back to `NEXT_PUBLIC_SUPABASE_*` in `~/Dev/cwatt-bidboard/.env.local`. Graceful "creds not found" message when both are missing — verified.
+- Registered in `nexus.TOOLS`. Placeholders added to `.env.example`.
+
 ### 16.3 Research agent — DONE
 - Rewrote `agents/researcher_agent.py:_run` to use the full research toolchain: `brave_search` + `brave_search_news` + RAG `memory_search` + `browser_tool` for a deep-dive on the first hit (2KB cap). Output is a structured markdown report (`# Research: <topic>` with `## Summary`, `## Details`, `## Sources`) and citations are pulled from URLs actually returned by the searches — no fabrication.
 - Orchestrator routing already covers `research / search / find / lookup` keywords (`agents/orchestrator.py:44`), so no router change needed.
