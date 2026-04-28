@@ -43,4 +43,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-test.timer
 systemctl list-timers nexus-test.timer --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 15.3 — install the Nexus task worker (Restart=always background loop).
+# Pull the API restart line ABOVE this block first so the worker links against
+# the new code.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-task-worker.service /etc/systemd/system/nexus-task-worker.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-task-worker.service
+sudo systemctl status nexus-task-worker.service --no-pager
+
 

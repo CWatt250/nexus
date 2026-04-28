@@ -4,10 +4,10 @@
 15
 
 ## Current Task
-15.3 Task worker process
+15.4 Conversation handler process
 
 ## Last Completed Task
-15.2 SQLite task queue
+15.3 Task worker process
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

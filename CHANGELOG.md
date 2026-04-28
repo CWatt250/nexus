@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.3 Task worker process — DONE
+- New `workers/task_worker.py` standalone script. Polls `core.task_queue.claim_next()` every 1s, runs the row through `nexus.build_agent_async` with the task's own thread_id (15.6 isolation), records metrics + retro after each turn, writes `done` / `failed` / crashed back to the queue, and appends one snapshot per state change to `memory/active_tasks.jsonl`.
+- SIGTERM / SIGINT handler finishes the current task before exiting (clean systemd stop).
+- New `/tmp/nexus-task-worker.service` (Type=simple, Restart=always, RestartSec=5). Sudo install appended to `SUDO_COMMANDS_R3.sh`.
+- Light smoke test verified queue claim atomicity and `active_tasks.jsonl` writes; full end-to-end with Ollama is exercised by Phase 15.7 verification.
+
 ### 15.2 SQLite task queue — DONE
 - New `core/task_queue.py` backed by `memory/tasks.db` (WAL, busy_timeout=5000). Schema covers task_id, status, kind, priority, thread_id, input/output, error, modifications history, owner, full timeline (created/updated/started/finished). Indexes on `status` and `(priority DESC, created_at ASC)` so `claim_next` is O(log n).
 - API: `enqueue`, `claim_next` (atomic pending → running with owner pid), `update_status`, `append_modification`, `cancel`, `pause`, `resume`, `get_task`, `list_tasks`.
