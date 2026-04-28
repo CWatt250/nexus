@@ -28,6 +28,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 BRIDGE = "http://localhost:11437"
 STATE_URL = f"{BRIDGE}/state"
 CARD_URL = f"{BRIDGE}/card"
+MESSAGE_URL = f"{BRIDGE}/message"
 POST_TIMEOUT = 2.0
 
 log = logging.getLogger("nexus.sparky")
@@ -69,6 +70,56 @@ def post_state(state: str, message: str | None = None) -> None:
     if message:
         body["message"] = str(message)[:200]
     _post(STATE_URL, body)
+
+
+def post_bubble(text: str) -> None:
+    """Push a speech bubble above Sparky. Fire-and-forget on a daemon thread
+    so the caller returns within milliseconds even if the bridge is down."""
+    if not text:
+        return
+    _post(MESSAGE_URL, {"text": str(text)[:280]})
+
+
+_HEAVY_HINT_RE = re.compile(
+    r"\b(build|implement|refactor|design|create|generate|debug|investigate|"
+    r"fix|deploy|migrate|index|reindex|scaffold|integrate|wire|review)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_long_running(message: str, route: str | None = None) -> bool:
+    """Heuristic for 'expected >5s'. Triggers when the router pegs the turn as
+    heavy/code/design, or when the user's message contains a verb that almost
+    always launches multi-step work."""
+    if route in {"heavy", "code", "design"}:
+        return True
+    if not message:
+        return False
+    if len(message) > 240:
+        return True
+    return bool(_HEAVY_HINT_RE.search(message))
+
+
+# Pool of pre-baked acknowledgments used so the user sees motion within 200ms.
+_ACK_TEMPLATES = (
+    "Got it, starting now.",
+    "On it.",
+    "Working on it now.",
+    "Picking that up — be right back.",
+    "Got it. Spinning it up.",
+)
+
+
+def instant_ack(message: str, route: str | None = None) -> str | None:
+    """Return a pre-baked ack string and push it to the Sparky bubble if the
+    turn looks heavy. Returns None if no ack was warranted (caller can skip
+    rendering)."""
+    if not looks_long_running(message, route=route):
+        return None
+    import random
+    text = random.choice(_ACK_TEMPLATES)
+    post_bubble(text)
+    return text
 
 
 def post_card(

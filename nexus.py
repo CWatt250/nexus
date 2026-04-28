@@ -28,7 +28,7 @@ from memory import sessions  # noqa: E402
 from safety import circuit_breaker, guardrails  # noqa: E402,F401
 from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools import context_compressor  # noqa: E402
-from tools.sparky_state import SparkyCallbackHandler, post_state  # noqa: E402
+from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  # noqa: E402
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
@@ -500,6 +500,9 @@ def interactive_loop() -> None:
         fast = is_fast_route(route)
         tag = " FAST" if fast else ""
         print(f"[router: {route} → {model}{tag}]")
+        ack = instant_ack(user, route=route)
+        if ack:
+            print(f"[sparky: {ack}]")
         config = {
             "configurable": {"thread_id": thread_id},
             "callbacks": [sparky_cb],

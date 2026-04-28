@@ -2,6 +2,14 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.8 Instant acknowledgment pattern — DONE
+- New helpers in `tools/sparky_state.py`:
+  - `looks_long_running(message, route)`: heuristic — heavy/code/design route, long message, or imperative verbs (build/implement/refactor/...).
+  - `post_bubble(text)`: fire-and-forget POST to `:11437/message` on a daemon thread.
+  - `instant_ack(message, route)`: picks one of five pre-baked acks ("On it.", "Got it, starting now.", ...) and pushes it to the Sparky bubble. Returns `None` when no ack is warranted.
+- Wired into `nexus_api.chat_completions` (before agent.astream begins) and `nexus.interactive_loop` (after the router prints).
+- Latency measured at 1ms — well under the 200ms budget. No LLM call.
+
 ### 13.7 Tool result truncation helper — DONE
 - New `tools/truncate.py` with `truncate_tool_result(output, max_tokens=500)` and `wrap_tool / wrap_tools` retrofitters. Outputs ≤500t pass through; longer outputs are summarised by qwen3:4b with a prompt that preserves paths, error messages, line numbers, and exit codes verbatim.
 - `nexus.TOOLS` is run through `wrap_tools(TOOLS, max_tokens=500)` after assembly. Skip list excludes already-bounded tools (memory_*, mem0_*, router_*, glob_tool, telegram_*).

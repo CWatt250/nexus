@@ -38,6 +38,7 @@ from nexus import (  # noqa: E402
     set_system_prompt,
     strip_thinking,
 )
+from tools.sparky_state import instant_ack  # noqa: E402
 
 MODEL_NAME = "nexus"
 HOST = "0.0.0.0"
@@ -277,6 +278,9 @@ async def chat_completions(req: ChatRequest):
 
     first_msg = last.content if last else None
     sessions.touch_session(thread_id, source="api", first_msg=first_msg)
+
+    # Phase 13.8: pre-baked Sparky bubble within ~ms on heavy turns.
+    instant_ack(user_text, route=route)
 
     if req.stream:
         return StreamingResponse(
