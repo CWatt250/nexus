@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import requests
+import httpx
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 
@@ -58,18 +58,18 @@ def generate_image(
 
     try:
         # Make API request to ERNIE
-        response = requests.post(
-            f"{ERNIE_API_URL}?access_token={ERNIE_API_KEY}",
-            json={
-                "prompt": prompt,
-                "style": style,
-                "width": width,
-                "height": height,
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-        data = response.json()
+        with httpx.Client(timeout=120) as client:
+            response = client.post(
+                f"{ERNIE_API_URL}?access_token={ERNIE_API_KEY}",
+                json={
+                    "prompt": prompt,
+                    "style": style,
+                    "width": width,
+                    "height": height,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
 
         # Check for errors in response
         if "error_code" in data:
@@ -92,9 +92,10 @@ def generate_image(
 
         # Download or decode the image
         if image_url:
-            img_response = requests.get(image_url, timeout=60)
-            img_response.raise_for_status()
-            filepath.write_bytes(img_response.content)
+            with httpx.Client(timeout=60) as client:
+                img_response = client.get(image_url)
+                img_response.raise_for_status()
+                filepath.write_bytes(img_response.content)
         elif image_b64:
             import base64
             img_data = base64.b64decode(image_b64)
@@ -102,9 +103,9 @@ def generate_image(
 
         return f"Image saved: {filepath}"
 
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException:
         return "Error: Image generation timed out"
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         return f"Error calling ERNIE API: {e}"
     except Exception as e:
         return f"Error generating image: {type(e).__name__}: {e}"

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-import requests
+import httpx
 from langchain_core.tools import tool
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
@@ -112,18 +112,18 @@ Transcript:
 Summary:"""
 
     try:
-        response = requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": "qwen3:4b",
-                "prompt": prompt,
-                "stream": False,
-                "options": {"num_predict": 500},
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        result = response.json()
+        with httpx.Client(timeout=60) as client:
+            response = client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": "qwen3:4b",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 500},
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
         summary = result.get("response", "").strip()
 
         # Strip thinking tags if present (qwen3 sometimes outputs these)
@@ -131,9 +131,9 @@ Summary:"""
 
         return f"Video Summary:\n\n{summary}"
 
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException:
         return "Error: Summarization timed out"
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         return f"Error calling Ollama for summarization: {e}"
     except Exception as e:
         return f"Error during summarization: {type(e).__name__}: {e}"

@@ -2,6 +2,12 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.6 Async tool audit (top 10) — DONE
+- New `docs/async-tool-audit.md` with the full ranking + decisions. Run-log shows `terminal` is the hottest tool by far (72/108 entries).
+- New `safety.sandbox.run_guarded_async` — async sibling of `run_guarded` using `asyncio.create_subprocess_shell` + `asyncio.wait_for`. Same return shape. Phase 15 worker will use this.
+- `tools/youtube_tool.py` and `tools/image_gen_tool.py`: migrated `requests` → `httpx` so they expose both sync and async paths from the same package.
+- Skipped (with reasons in the audit): aiofiles for file_tool, AsyncClient for brave_search, PyGithub migration. ToolNode already offloads sync tools to a thread pool, so the rest is churn without wins.
+
 ### 13.5 Parallel tool execution — DONE
 - New `tools/parallel_tools.py` exposes three composite tools that run paired lookups in a `ThreadPoolExecutor` for guaranteed parallelism:
   - `quick_lookup(query)` → `brave_search` + `memory_search`
