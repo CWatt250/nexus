@@ -1,30 +1,28 @@
-"""Conversation handler (Phase 15.4).
+"""Conversation handler (Phase 15.4 + 15.5).
 
 A small, fast surface that answers Telegram / API messages about *running*
-tasks without ever pulling a heavy model into the request path. It uses
-qwen3:4b only (router model, pinned via Phase 13.1) and exposes five
-tools that read/modify the task queue:
+tasks without ever pulling a heavy model into the request path.
 
-  - get_task_status(task_id?)   → status snapshot or list
-  - pause_task(task_id)
-  - cancel_task(task_id)
-  - modify_task(task_id, note)
-  - queue_new_task(input, priority?)
+Two layers:
 
-Long-running work is never executed here — `queue_new_task` enqueues to
+  1. Pattern-based intent classifier (`classify_intent`) handles the four
+     status/modify/cancel/new-task shapes deterministically — no LLM in
+     the loop. These are the operations the spec requires under <5s.
+  2. Free-form chat falls through to a tiny ReAct agent on qwen3:4b that
+     can still call any HANDLER_TOOLS, but with a short timeout so it
+     never blocks Telegram.
+
+Long-running work is never executed here. `queue_new_task` enqueues to
 the task_worker (Phase 15.3). The handler keeps its own LangGraph
 checkpointer namespace (`thread_id="handler:..."`) so its conversation
-state stays separate from any in-flight task's state.
-
-Used as a library (`HANDLER_TOOLS`) by the Telegram bot and any other
-fast-path entrypoint. Also exposes `handle_async(message, thread_id)` for
-direct calls.
+state stays isolated from any task's state.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -135,10 +133,35 @@ def get_agent():
     return _handler_agent
 
 
+_HANDLER_SAVER = None
+
+
+async def _get_handler_saver():
+    """Build a dedicated AsyncSqliteSaver on its own aiosqlite connection
+    so handler turns don't queue behind the task worker's heavy checkpoint
+    writes. Both connections share the same WAL'd checkpoints.db file."""
+    global _HANDLER_SAVER
+    if _HANDLER_SAVER is None:
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        conn = await aiosqlite.connect(str(nexus.CHECKPOINT_DB), check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA synchronous=NORMAL")
+        await conn.execute("PRAGMA busy_timeout=5000")
+        await conn.commit()
+        saver = AsyncSqliteSaver(conn)
+        try:
+            await saver.setup()
+        except Exception:
+            pass
+        _HANDLER_SAVER = saver
+    return _HANDLER_SAVER
+
+
 async def _build_handler_agent_async():
     from langgraph.prebuilt import create_react_agent
     from langchain_ollama import ChatOllama
-    saver = await nexus._get_async_checkpointer()
+    saver = await _get_handler_saver()
     llm = ChatOllama(model=HANDLER_MODEL, base_url=nexus.OLLAMA_URL, reasoning=False)
     return create_react_agent(llm, HANDLER_TOOLS, prompt=HANDLER_PROMPT, checkpointer=saver)
 
@@ -153,8 +176,139 @@ async def get_agent_async():
     return _handler_agent_async
 
 
+_TASK_ID_RE = re.compile(r"\b([0-9a-f]{8,16})\b", re.IGNORECASE)
+_STATUS_VERB_RE = re.compile(
+    r"\b(status|state|progress|how[\s_-]*is|what'?s|where['\s_-]*is|check|where stand)\b",
+    re.IGNORECASE,
+)
+_CANCEL_VERB_RE = re.compile(r"\b(cancel|abort|kill|stop)\b", re.IGNORECASE)
+_PAUSE_VERB_RE = re.compile(r"\b(pause|hold)\b", re.IGNORECASE)
+_LIST_VERB_RE = re.compile(r"\b(list|show|recent|what.*tasks?|all\s+tasks?)\b", re.IGNORECASE)
+_QUEUE_VERB_RE = re.compile(
+    r"^(queue|enqueue|new\s+task|add\s+task|launch|run|please)\b[: ]?\s*(.*)",
+    re.IGNORECASE,
+)
+_MODIFY_VERB_RE = re.compile(
+    r"\b(modify|note|update|append|add\s+note|annotate)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_intent(message: str) -> dict:
+    """Cheap pattern-based intent classifier. Returns one of:
+      {kind: 'status', task_id}
+      {kind: 'list'}
+      {kind: 'cancel', task_id} | 'pause'
+      {kind: 'modify', task_id, note}
+      {kind: 'queue', input}
+      {kind: 'chat'}
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return {"kind": "chat"}
+    tid_match = _TASK_ID_RE.search(msg)
+    tid = tid_match.group(1) if tid_match else None
+    if _CANCEL_VERB_RE.search(msg) and tid:
+        return {"kind": "cancel", "task_id": tid}
+    if _PAUSE_VERB_RE.search(msg) and tid:
+        return {"kind": "pause", "task_id": tid}
+    if _MODIFY_VERB_RE.search(msg) and tid:
+        note = _TASK_ID_RE.sub("", msg)
+        for re_ in (_MODIFY_VERB_RE, _STATUS_VERB_RE):
+            note = re_.sub("", note, count=1)
+        note = note.strip(" :,.;-")
+        if note:
+            return {"kind": "modify", "task_id": tid, "note": note}
+    if tid and (_STATUS_VERB_RE.search(msg) or len(msg) < 40):
+        return {"kind": "status", "task_id": tid}
+    if _LIST_VERB_RE.search(msg) and not tid:
+        return {"kind": "list"}
+    qm = _QUEUE_VERB_RE.match(msg)
+    if qm:
+        body = qm.group(2).strip(" :")
+        if body:
+            return {"kind": "queue", "input": body}
+    return {"kind": "chat"}
+
+
+def _format_status(row: dict | None, task_id: str) -> str:
+    if not row:
+        return f"no task with id {task_id}"
+    bits = [f"task {row['task_id']} → {row['status']}", f"created {row['created_at']}"]
+    if row.get("started_at"):
+        bits.append(f"started {row['started_at']}")
+    if row.get("finished_at"):
+        bits.append(f"finished {row['finished_at']}")
+    if row.get("output"):
+        bits.append("output: " + (row["output"] or "")[:200].replace("\n", " "))
+    if row.get("error"):
+        bits.append(f"error: {row['error']}")
+    return "\n".join(bits)
+
+
+def _busy_summary() -> str:
+    """One-line summary of any running task; empty string if idle."""
+    rows = task_queue.list_tasks(limit=10)
+    running = [r for r in rows if r["status"] == "running"]
+    if not running:
+        return ""
+    r = running[0]
+    return f"running: {r['task_id']} ({(r['input'] or '')[:60]})"
+
+
+def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
+    """Synchronous, no-LLM fast path. Returns a reply for status/list/
+    cancel/pause/modify/queue intents in microseconds. For chat with a
+    running task, returns a busy-with-task template (still <5s).
+
+    Returns None only when the caller has set `allow_llm_chat=True` AND
+    the queue is idle — in which case the LLM fallback is allowed to
+    answer free-form chat. With the default allow_llm_chat=True we keep
+    that escape hatch; for Telegram-bot path the caller passes False so
+    chat never blocks on a contended LLM."""
+    intent = classify_intent(message)
+    kind = intent["kind"]
+    if kind == "list":
+        rows = task_queue.list_tasks(limit=10)
+        if not rows:
+            return "Queue is empty."
+        return "\n".join(
+            f"- {r['task_id']} [{r['status']}] {(r['input'] or '')[:60]}" for r in rows
+        )
+    if kind == "status":
+        return _format_status(task_queue.get_task(intent["task_id"]), intent["task_id"])
+    if kind == "cancel":
+        ok = task_queue.cancel(intent["task_id"], note="cancelled via handler")
+        return "cancelled." if ok else "already finished — nothing to cancel."
+    if kind == "pause":
+        ok = task_queue.pause(intent["task_id"])
+        return "paused." if ok else "not running — nothing to pause."
+    if kind == "modify":
+        task_queue.append_modification(intent["task_id"], intent["note"])
+        return f"noted on task {intent['task_id']}."
+    if kind == "queue":
+        tid = task_queue.enqueue(intent["input"])
+        return f"queued task {tid}."
+    # kind == 'chat'
+    busy = _busy_summary()
+    if busy:
+        return (
+            f"I'm here. A task is in flight — {busy}. "
+            "For free-form chat without contention, wait until it finishes "
+            "or send: 'queue: <your task>' to enqueue."
+        )
+    return None if allow_llm_chat else (
+        "I'm here. The queue is idle. Send 'queue: <your task>' to launch one, "
+        "or '<task_id>' to check a specific task's status."
+    )
+
+
 def handle_sync(message: str, *, thread_id: str = "handler:default") -> str:
-    """Sync handler entrypoint. Returns the assistant reply text."""
+    """Sync handler entrypoint. Tries the no-LLM fast path first; falls
+    back to the qwen3:4b ReAct agent for free-form chat."""
+    fast = fast_handle(message)
+    if fast is not None:
+        return fast
     agent = get_agent()
     config = {"configurable": {"thread_id": thread_id}}
     result = agent.invoke({"messages": [HumanMessage(content=message)]}, config=config)
@@ -166,7 +320,10 @@ def handle_sync(message: str, *, thread_id: str = "handler:default") -> str:
 
 
 async def handle_async(message: str, *, thread_id: str = "handler:default") -> str:
-    """Async handler entrypoint."""
+    """Async handler entrypoint. Same two-tier strategy as handle_sync."""
+    fast = fast_handle(message)
+    if fast is not None:
+        return fast
     agent = await get_agent_async()
     config = {"configurable": {"thread_id": thread_id}}
     result = await agent.ainvoke({"messages": [HumanMessage(content=message)]}, config=config)

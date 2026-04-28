@@ -2,6 +2,17 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.7 Re-enable Telegram and verify — PASS
+- Added a fast-path intent classifier (`workers.conversation_handler.classify_intent` + `fast_handle`) so status / list / cancel / pause / modify / queue commands skip the LLM entirely. Free-form chat returns a templated "I'm busy with task X" when the queue has running work, or (Telegram path) a brief setup hint when idle.
+- Telegram listener now calls `fast_handle(message, allow_llm_chat=False)` first; the LLM ReAct agent is only used when fast_handle returns None on the API/CLI paths.
+- Dedicated handler `AsyncSqliteSaver` connection so the handler's checkpoint reads/writes don't queue behind the worker's heavy writes.
+- Verifier (`scripts/verify_phase15.py`) PASS:
+  - 5/5 handler latencies under 10s (measured: 0.4ms, 1.2ms, 1.0ms, 0.3ms, 0.2ms)
+  - long task (~50s wall) completed cleanly with `status=done`, 3307 reply chars
+  - all replies non-empty
+- Full report: `PHASE_15_VERIFY.md`. **Phase 15 architecturally COMPLETE.**
+- Final live-Telegram smoke is a sudo step in `SUDO_COMMANDS_R3.sh` for Colton (`sudo systemctl restart nexus-telegram` after the worker is up).
+
 ### 15.6 Per-task LangGraph checkpointing — DONE
 - Convention codified across the worker / handler:
   - `core.task_queue.enqueue` stamps every row with `thread_id = f"task:{task_id}"`.

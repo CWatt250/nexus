@@ -53,4 +53,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-task-worker.service
 sudo systemctl status nexus-task-worker.service --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 15.7 — Telegram bot back on. Run ONLY after Phase 15 verification
+# (PHASE_15_VERIFY.md) shows PASS and the worker is up.
+# Reload the listener code first so it picks up the conversation_handler
+# routing and the fast-path intent classifier added in 15.4 / 15.5.
+# ---------------------------------------------------------------------------
+sudo systemctl daemon-reload
+sudo systemctl enable nexus-telegram.service
+sudo systemctl restart nexus-telegram.service
+journalctl -u nexus-telegram.service -n 30 --no-pager
+
 

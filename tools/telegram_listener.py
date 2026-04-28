@@ -114,6 +114,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     thread_id = f"handler:tg:{chat_id}"
     try:
         from workers import conversation_handler
+        # Telegram path runs without LLM-chat fallback so the bot never
+        # blocks behind a contended Ollama call. fast_handle covers all
+        # task-management intents and templates the chat case.
+        fast = conversation_handler.fast_handle(user_message, allow_llm_chat=False)
+        if fast is not None:
+            await update.message.reply_text(fast[:4000])
+            return
         reply = await asyncio.wait_for(
             conversation_handler.handle_async(user_message, thread_id=thread_id),
             timeout=20,
