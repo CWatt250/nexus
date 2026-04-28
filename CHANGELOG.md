@@ -2,6 +2,15 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.9 Phase 16 verification — PASS
+- New `scripts/verify_phase16.py` runs three architectural gates:
+  - Scheduler fires a 30s-out 'once' trigger → task lands in queue (PASS).
+  - Perf-guardian writes a sample + pinned-model report (PASS, 2 records).
+  - Conversation handler list-intent under 1ms with no LLM (PASS, 0.3 ms).
+- Regression suite still 24/24 passing.
+- Live two-way Telegram round-trip is a Colton-side step (`sudo systemctl restart nexus-telegram` after the worker is up).
+- Full report: `PHASE_16_VERIFY.md`. **Phase 16 architecturally COMPLETE; Phase 17 unblocked.**
+
 ### 16.8 Sparky auto-start on login — DONE
 - Verified `~/.config/autostart/sparky.desktop` already exists with `X-GNOME-Autostart-enabled=true` and the right `Exec=…sparky/overlay/start.sh` invocation. No changes needed.
 - `start.sh` launches `state_bridge.py` then `npx electron .`, killing the bridge when the overlay closes.

@@ -1,21 +1,21 @@
 # Nexus Build State
 
 ## Current Phase
-16
+17
 
 ## Current Task
-16.9 Phase 16 verification
+17.1 Websocket infrastructure
 
 ## Last Completed Task
-16.8 Sparky auto-start on login
+16.9 Phase 16 verification (PASS — scheduler fires, perf guardian samples, handler <1ms)
 
 ## Phase Status
-- Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
-- Phase 13: COMPLETE (verified 2026-04-27, 82.8% mean / 84.8% median TTF reduction)
-- Phase 14: COMPLETE (verified 2026-04-27, 21/21 tests, metrics + retros generating)
-- Phase 15: COMPLETE (verified 2026-04-28, 5/5 handler <10s, long task done concurrent. Live Telegram restart pending Colton sudo.)
-- Phase 16: IN_PROGRESS
-- Phase 17: BLOCKED (requires Phase 16)
+- Phase 12: SKIPPED
+- Phase 13: COMPLETE (2026-04-27, 82.8% mean TTF reduction)
+- Phase 14: COMPLETE (2026-04-27, 21/21 tests, metrics + retros generating)
+- Phase 15: COMPLETE (2026-04-28, 5/5 handler <10s, long task done concurrent)
+- Phase 16: COMPLETE (2026-04-28, scheduler+guardian+handler gates PASS, live Telegram pending Colton sudo)
+- Phase 17: IN_PROGRESS
 - Phase 18: BLOCKED (requires Phase 17)
 - Phase 19: BLOCKED (requires Phase 18)
 
