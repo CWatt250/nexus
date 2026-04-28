@@ -467,12 +467,41 @@ def interactive_loop() -> None:
             "callbacks": [sparky_cb],
         }
         try:
-            result = agent.invoke({"messages": [HumanMessage(content=user)]}, config=config)
+            print("nexus> ", end="", flush=True)
+            stripper = ThinkStripper()
+            parts: list[str] = []
+            for event in agent.stream(
+                {"messages": [HumanMessage(content=user)]},
+                config=config,
+                stream_mode="messages",
+            ):
+                msg = event[0] if isinstance(event, tuple) and event else event
+                content = getattr(msg, "content", None)
+                if not content:
+                    continue
+                text = "".join(
+                    p.get("text", "") if isinstance(p, dict) else str(p) for p in content
+                ) if isinstance(content, list) else str(content)
+                if not text:
+                    continue
+                visible = stripper.feed(text)
+                if visible:
+                    parts.append(visible)
+                    print(visible, end="", flush=True)
+            tail = stripper.flush()
+            if tail:
+                parts.append(tail)
+                print(tail, end="", flush=True)
+            print()
+            try:
+                snap = agent.get_state(config)
+                result = {"messages": getattr(snap, "values", {}).get("messages", [])}
+            except Exception:
+                result = {"messages": []}
         except Exception as exc:
             post_state("error", message=f"{type(exc).__name__}: {exc}")
             raise
-        reply = _extract_reply(result)
-        print(f"nexus> {reply}")
+        reply = strip_thinking("".join(parts))
         sessions.touch_session(thread_id, source="nexus", first_msg=user if not resumed and result["messages"] else None)
         sessions.set_current_thread(thread_id)
         _spawn_reflection(user, reply, result.get("messages"), route, model)

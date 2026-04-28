@@ -2,6 +2,13 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.3 Streaming everywhere — DONE
+- API path (`nexus_api._stream_agent`) was already streaming via `agent.astream(stream_mode='messages')`. Verified.
+- CLI path (`nexus.interactive_loop`): converted from blocking `agent.invoke` to `agent.stream(stream_mode='messages')`. Tokens print as they arrive, ThinkStripper drops `<think>` blocks on the fly. Smoke test passed.
+- Sparky overlay already has a typewriter render in `sparky/overlay/index.html` (lines 513-532) — no change needed.
+- Telegram streaming intentionally deferred to Phase 16.1 per Rule 10 (Telegram disabled until Phase 15 verified).
+- Router is intentionally non-streaming — it returns a 64-token JSON object; streaming would just add latency.
+
 ### 13.2 Prompt caching via static prefix — DONE
 - `nexus.load_static_prefix()` returns SOUL.md + STYLE.md + tool hint + NEXUS.md, cached at module level so it hashes byte-stable every call (verified: 11787c, sha256 stable across calls).
 - `nexus.load_dynamic_suffix()` returns the volatile tail: lessons + project ctx.

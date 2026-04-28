@@ -4,10 +4,10 @@
 13
 
 ## Current Task
-13.3 Streaming everywhere
+13.4 fast_mode flag
 
 ## Last Completed Task
-13.2 Prompt caching via static prefix
+13.3 Streaming everywhere
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
