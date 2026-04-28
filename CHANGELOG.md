@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 18 (Polish + Advanced Features) starting
 
+### 18.5 Auto model watcher — DONE
+- New `tools/model_watcher.py:model_watcher_run()`. Reads `/api/tags` for local models, scrapes the public `ollama.com/library` page for the published catalog (regex over href links — no HTML parser dep), reports new candidates whose name contains an interesting family (qwen3, qwen2.5, qwen3.6, glm, llama3, deepseek, mistral). **Does not auto-pull.**
+- Records each run to `memory/model-watcher.jsonl`. Best-effort Telegram notification with the candidate list via `proactive_send`.
+- New `/tmp/nexus-model-watcher.{service,timer}` — fires Monday 09:00 UTC (staggered from `nexus-lessons.timer` at 08:00 and `nexus-perf-guardian.service` continuous). Sudo install lines added.
+- Registered in `nexus.TOOLS`. Verified `_local_models()` reads the live tags (5 models) and `_candidates()` math is correct.
+
 ### 18.2-18.4 Notion / Obsidian / chat-history import — DONE
 - `tools/notion_sync.py:notion_sync(database_id, limit)` queries Notion REST directly via httpx, flattens block rich-text to markdown, seeds into RAG with tag='notion'. Reads `NOTION_API_KEY` (or `NOTION_TOKEN`) and optional `NOTION_DATABASE_ID` from `~/AI_Agent/.env`. Graceful "creds not found" when missing.
 - `tools/obsidian_sync.py:obsidian_sync(root)` walks `~/Obsidian/`, indexes every `.md` (cap 100KB/file) into RAG with tag='obsidian'. No-op message when the vault dir doesn't exist. Daily refresh is a one-liner via the Phase 16.5 scheduler.

@@ -111,4 +111,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-dashboard.service
 echo "open http://localhost:11438/ (or http://100.124.210.84:11438/ via Tailscale)"
 
+# ---------------------------------------------------------------------------
+# Phase 18.5 — install the weekly Ollama model watcher (Mon 09:00).
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-model-watcher.service /etc/systemd/system/nexus-model-watcher.service
+sudo cp /tmp/nexus-model-watcher.timer /etc/systemd/system/nexus-model-watcher.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-model-watcher.timer
+systemctl list-timers nexus-model-watcher.timer --no-pager
+
 
