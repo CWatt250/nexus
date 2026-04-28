@@ -2,6 +2,12 @@
 
 ## 2026-04-27 — Phase 13 (Speed Layer) starting
 
+### 13.2 Prompt caching via static prefix — DONE
+- `nexus.load_static_prefix()` returns SOUL.md + STYLE.md + tool hint + NEXUS.md, cached at module level so it hashes byte-stable every call (verified: 11787c, sha256 stable across calls).
+- `nexus.load_dynamic_suffix()` returns the volatile tail: lessons + project ctx.
+- `load_system_prompt()` composes `[STATIC][DYNAMIC]` and logs `[prompt] static=Xc/~Yt dynamic=Xc/~Yt` to stderr at startup.
+- Deviation from spec: CLAUDE.md is the autonomous-build playbook for Claude Code, not Nexus's identity. Including it would rewrite Nexus's persona on every turn and bloat the cache. Used STYLE.md instead — the user-facing style guide is the analogue.
+
 ### 13.1 KEEP_ALIVE=-1 + prewarm service — DONE
 - New `tools/prewarm.py`: pins router (`qwen3:4b`) with `keep_alive=-1`, warms heavy (`qwen3.6`) with 30m. Tested: router 0.7s, heavy 2.55s.
 - New `/tmp/nexus-prewarm.service` (oneshot, After=ollama+nexus-api). Sudo install lines added to `SUDO_COMMANDS_R3.sh`.

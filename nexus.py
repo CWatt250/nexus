@@ -169,44 +169,92 @@ def load_lessons() -> str:
     return "# LESSONS LEARNED (from past sessions)\n" + "\n".join(bullets)
 
 
-def load_system_prompt() -> str:
-    soul = (ROOT / "SOUL.md").read_text()
-    style = (ROOT / "STYLE.md").read_text()
-    tool_hint = (
-        "# TOOLS\n"
-        "You have a full tool belt. Use it proactively — don't ask permission "
-        "for read-only work, just do it.\n"
-        "- `terminal(command)`: run shell commands (30s timeout).\n"
-        "- `file_read_tool(path)`: read any file on disk (~ expands).\n"
-        "- `file_write_tool(path, content)`: create or overwrite a file.\n"
-        "- `file_edit_tool(path, old_string, new_string)`: find/replace in a file.\n"
-        "- `glob_tool(pattern, root='.')`: list files matching a glob (supports **).\n"
-        "- `grep_tool(pattern, root='.', glob='**/*')`: regex search file contents.\n"
-        "- `browser_tool(url)`: fetch a URL with headless Chromium and return text.\n"
-        "- `memory_search(query_text, k=4)`: query long-term memory (Chroma RAG).\n"
-        "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
-        "- `memory_seed_file(path, tag)`: seed an entire file into RAG (splits into chunks).\n"
-        "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
-        "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
-        "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
-        "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
-        "- `brave_search(query, count)` / `brave_search_news(query, count)`: web and news search via Brave (needs BRAVE_SEARCH_API_KEY).\n"
-        "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
-        "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
-        "Guidelines:\n"
-        "- Read files before editing them.\n"
-        "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
-        "- Use `browser_tool` when the user cites a URL or you need current info the model doesn't have.\n"
-        "- After completing a task, consider `memory_add` to record anything useful for future sessions.\n"
-    )
-    ctx = load_project_context()
+_TOOL_HINT = (
+    "# TOOLS\n"
+    "You have a full tool belt. Use it proactively — don't ask permission "
+    "for read-only work, just do it.\n"
+    "- `terminal(command)`: run shell commands (30s timeout).\n"
+    "- `file_read_tool(path)`: read any file on disk (~ expands).\n"
+    "- `file_write_tool(path, content)`: create or overwrite a file.\n"
+    "- `file_edit_tool(path, old_string, new_string)`: find/replace in a file.\n"
+    "- `glob_tool(pattern, root='.')`: list files matching a glob (supports **).\n"
+    "- `grep_tool(pattern, root='.', glob='**/*')`: regex search file contents.\n"
+    "- `browser_tool(url)`: fetch a URL with headless Chromium and return text.\n"
+    "- `memory_search(query_text, k=4)`: query long-term memory (Chroma RAG).\n"
+    "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
+    "- `memory_seed_file(path, tag)`: seed an entire file into RAG (splits into chunks).\n"
+    "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
+    "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
+    "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
+    "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
+    "- `brave_search(query, count)` / `brave_search_news(query, count)`: web and news search via Brave (needs BRAVE_SEARCH_API_KEY).\n"
+    "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
+    "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
+    "Guidelines:\n"
+    "- Read files before editing them.\n"
+    "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
+    "- Use `browser_tool` when the user cites a URL or you need current info the model doesn't have.\n"
+    "- After completing a task, consider `memory_add` to record anything useful for future sessions.\n"
+)
+
+_STATIC_PREFIX_CACHE: str | None = None
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def load_static_prefix() -> str:
+    """Return the byte-stable identity prefix: SOUL + STYLE + tool hint + NEXUS.
+
+    This is the part of the system prompt that must hash identically across
+    requests so Ollama's prompt cache stays warm. CLAUDE.md is intentionally
+    excluded — it is the autonomous-build playbook for Claude Code, not
+    Nexus's own instruction set, and dragging it in would rewrite Nexus's
+    persona at every turn.
+    """
+    global _STATIC_PREFIX_CACHE
+    if _STATIC_PREFIX_CACHE is not None:
+        return _STATIC_PREFIX_CACHE
+    soul = _read_text(ROOT / "SOUL.md")
+    style = _read_text(ROOT / "STYLE.md")
+    nexus_md = _read_text(ROOT / "NEXUS.md")
+    sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", _TOOL_HINT]
+    if nexus_md:
+        sections.append(f"# REPO MAP (NEXUS.md)\n{nexus_md}")
+    _STATIC_PREFIX_CACHE = "\n\n".join(sections)
+    return _STATIC_PREFIX_CACHE
+
+
+def load_dynamic_suffix() -> str:
+    """Return the volatile tail: lessons + current-project context. Empty if none."""
+    parts: list[str] = []
     lessons = load_lessons()
-    sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", tool_hint]
     if lessons:
-        sections.append(lessons)
+        parts.append(lessons)
+    ctx = load_project_context()
     if ctx:
-        sections.append(ctx)
-    return "\n\n".join(sections)
+        parts.append(ctx)
+    return "\n\n".join(parts)
+
+
+def load_system_prompt() -> str:
+    """Compose [STATIC_PREFIX][DYNAMIC_SUFFIX] and log token counts once."""
+    static_part = load_static_prefix()
+    dynamic_part = load_dynamic_suffix()
+    composed = static_part if not dynamic_part else f"{static_part}\n\n{dynamic_part}"
+    static_tokens = max(1, len(static_part) // 4)
+    dynamic_tokens = max(0, len(dynamic_part) // 4)
+    print(
+        f"[prompt] static={len(static_part)}c/~{static_tokens}t  "
+        f"dynamic={len(dynamic_part)}c/~{dynamic_tokens}t  "
+        f"total=~{static_tokens + dynamic_tokens}t",
+        file=sys.stderr,
+    )
+    return composed
 
 
 # Agent cache is keyed by (model, is_async) so sync and async variants

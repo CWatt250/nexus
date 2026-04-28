@@ -4,10 +4,10 @@
 13
 
 ## Current Task
-13.2 Prompt caching via static prefix
+13.3 Streaming everywhere
 
 ## Last Completed Task
-13.1 KEEP_ALIVE=-1 + prewarm service
+13.2 Prompt caching via static prefix
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
