@@ -2,6 +2,12 @@
 
 ## 2026-04-28 — Phase 15 (Concurrent Conversation + Task) starting
 
+### 15.2 SQLite task queue — DONE
+- New `core/task_queue.py` backed by `memory/tasks.db` (WAL, busy_timeout=5000). Schema covers task_id, status, kind, priority, thread_id, input/output, error, modifications history, owner, full timeline (created/updated/started/finished). Indexes on `status` and `(priority DESC, created_at ASC)` so `claim_next` is O(log n).
+- API: `enqueue`, `claim_next` (atomic pending → running with owner pid), `update_status`, `append_modification`, `cancel`, `pause`, `resume`, `get_task`, `list_tasks`.
+- Schema init is lazy + thread-safe (`_INIT_LOCK`).
+- Smoke test verified: priority ordering, claim atomicity, modifications history, status transitions.
+
 ### 15.1 SqliteSaver -> AsyncSqliteSaver migration — DONE
 - Backed up `memory/checkpoints.db` → `memory/checkpoints.pre-phase15.db` (49 MB) before any structural change.
 - Audit confirmed the dual-saver split was already in place (sync `SqliteSaver` for the CLI/voice path, `AsyncSqliteSaver` for the FastAPI / async paths). What was missing was explicit WAL + busy_timeout pragmas on both, so concurrent sync+async writers can land safely without a writer-lock crash. Both connection openers (`_open_checkpoint_conn`, `_get_async_checkpointer`) now set `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`.
