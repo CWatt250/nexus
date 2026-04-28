@@ -2,6 +2,14 @@
 
 ## 2026-04-28 — Phase 17 (Unified Observability Dashboard) starting
 
+### 17.11 Phase 17 verification — PASS
+- New `scripts/verify_phase17.py` spins up the dashboard FastAPI on a sandbox port and the API on a second sandbox port (so it doesn't fight the live `nexus-api` on :11435), then runs three gates:
+  - `GET /` returns the dashboard HTML containing `Live Ops` and `ws-state` markers — **PASS** (11083 chars).
+  - `event_bus.emit` → in-process subscriber receives the event — **PASS** (replay=5, live=1).
+  - `publish_remote` → `/events/publish` → bus subscriber — **PASS**.
+- Full report: `PHASE_17_VERIFY.md`. **Phase 17 architecturally COMPLETE; Phase 18 unblocked.**
+- Mobile-via-Tailscale check is a Colton-side step (open the IP on phone, swipe between tabs).
+
 ### 17.3-17.10 Dashboard UI (minimal-viable) — DONE
 - New `dashboard/server.py` (FastAPI on `0.0.0.0:11438`) serves `dashboard/dashboard.html`.
 - Single-page app, vanilla JS + flex CSS, mobile-responsive at <900px. Four tabs (Live, Activity, Performance, History). Pause-on-hover on the live stream.
