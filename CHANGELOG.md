@@ -2,6 +2,10 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.3 Research agent — DONE
+- Rewrote `agents/researcher_agent.py:_run` to use the full research toolchain: `brave_search` + `brave_search_news` + RAG `memory_search` + `browser_tool` for a deep-dive on the first hit (2KB cap). Output is a structured markdown report (`# Research: <topic>` with `## Summary`, `## Details`, `## Sources`) and citations are pulled from URLs actually returned by the searches — no fabrication.
+- Orchestrator routing already covers `research / search / find / lookup` keywords (`agents/orchestrator.py:44`), so no router change needed.
+
 ### 16.2 Full computer use with vision — DONE
 - New `tools/computer_use_tool.find_on_screen_vision(description, vision_model='qwen2.5vl:7b')`. Captures a fresh full-screen screenshot, asks the VL model to return `x,y` coords for a natural-language UI description. Graceful fallback message when the VL model isn't pulled yet (`ollama pull qwen2.5vl:7b` line added to `SUDO_COMMANDS_R3.sh`).
 - New safety gate `_click_safe`: `mouse_click` now refuses to fire when the active window title is outside the approved-app whitelist (firefox/chrome/code/terminals/file managers/nexus). Model must explicitly set `approve=True` to bypass for unfamiliar windows.

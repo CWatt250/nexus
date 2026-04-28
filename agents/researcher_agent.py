@@ -38,28 +38,60 @@ When given a research task:
         )
 
     async def _run(self, task: Task) -> str:
-        """Execute a research task."""
-        # Try to use Brave Search if available
-        search_results = ""
+        """Execute a research task and return a markdown report with cited
+        sources (Phase 16.3). Uses Brave web + news search, RAG memory, and
+        browser_tool for the most-promising hit."""
+        import re
+
+        query = task.description[:200]
+
+        web_results = "_(Brave search unavailable)_"
+        news_results = ""
+        rag_results = "_(RAG search unavailable)_"
         try:
-            from tools.brave_search_tool import brave_search
-            query = task.description[:100]
-            search_results = brave_search.invoke(query)
+            from tools.brave_search_tool import brave_search, brave_search_news
+            web_results = brave_search.invoke({"query": query, "count": 5})
+            try:
+                news_results = brave_search_news.invoke({"query": query, "count": 3})
+            except Exception:
+                news_results = ""
         except Exception:
-            search_results = "Web search not available."
+            pass
+        try:
+            from tools.rag_tool import memory_search
+            rag_results = memory_search.invoke({"query_text": query, "k": 4})
+        except Exception:
+            pass
 
-        prompt = f"""Research Task: {task.description}
+        # Pull the first URL from web results and grab its text body for
+        # deeper context. Cap to 2KB so we don't blow the prompt budget.
+        deep_dive = ""
+        urls = re.findall(r"https?://\S+", web_results or "")
+        urls = [u.rstrip(").,;\"' ") for u in urls]
+        if urls:
+            primary = urls[0]
+            try:
+                from tools.browser_tool import browser_tool
+                body = browser_tool.invoke({"url": primary})
+                if isinstance(body, str):
+                    deep_dive = f"\n\n## Primary source ({primary})\n{body[:2000]}"
+            except Exception:
+                deep_dive = ""
 
-Web Search Results:
-{search_results}
-
-Based on the search results and your knowledge, please provide:
-1. Key findings
-2. Relevant details
-3. Sources and references
-4. Conclusions and recommendations
-
-Additional context:
-{task.metadata.get('details', 'No additional details provided.')}
-"""
-        return self.call_llm(prompt, max_tokens=2000)
+        report_prompt = (
+            f"You are Researcher in the Nexus system. Write a concise markdown "
+            f"research report on the topic below. Use the supplied web hits, "
+            f"news snippets, RAG context, and primary-source excerpt. The report "
+            f"MUST follow this layout:\n\n"
+            f"# Research: <topic>\n"
+            f"## Summary\n(3-5 bullet key findings)\n"
+            f"## Details\n(1-2 short paragraphs)\n"
+            f"## Sources\n(numbered list of URLs actually used)\n\n"
+            f"Topic: {task.description}\n\n"
+            f"## WEB\n{web_results}\n\n"
+            f"## NEWS\n{news_results or '_(none)_'}\n\n"
+            f"## MEMORY\n{rag_results}{deep_dive}\n\n"
+            f"Write the report now. Cite by linking the URLs you actually pulled "
+            f"from above. Do not invent sources."
+        )
+        return self.call_llm(report_prompt, max_tokens=2000)

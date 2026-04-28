@@ -4,10 +4,10 @@
 16
 
 ## Current Task
-16.3 Research agent
+16.4 BidWatt integration (read-only)
 
 ## Last Completed Task
-16.2 Full computer use with vision
+16.3 Research agent
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)
