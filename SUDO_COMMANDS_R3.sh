@@ -94,4 +94,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-wakeword.service
 journalctl -u nexus-wakeword.service -n 20 --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 16.7 — performance guardian. 60s tick, hysteresis 30 min.
+# ---------------------------------------------------------------------------
+~/AI_Agent/venv/bin/pip install psutil  # falls back to /proc if missing
+sudo cp /tmp/nexus-perf-guardian.service /etc/systemd/system/nexus-perf-guardian.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-perf-guardian.service
+journalctl -u nexus-perf-guardian.service -n 20 --no-pager
+
 

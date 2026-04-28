@@ -4,10 +4,10 @@
 16
 
 ## Current Task
-16.7 Performance Guardian
+16.8 Sparky auto-start on login
 
 ## Last Completed Task
-16.6 Wake word voice activation
+16.7 Performance Guardian
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

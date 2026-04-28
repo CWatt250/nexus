@@ -2,6 +2,15 @@
 
 ## 2026-04-28 — Phase 16 (Capability Expansion) starting
 
+### 16.7 Performance Guardian — DONE
+- New `safety/perf_guardian.py`. Per-tick sample (RAM, swap, CPU 5-min, load/CPU, GPU VRAM via `/api/ps`). Thresholds: ram 85%, swap 50%, gpu 90%, cpu 90%, load/CPU 1.5. Hysteresis 30 min — `memory/perf-guardian.state.json` records last-fire time per metric so we never re-alert the same condition within that window.
+- LRU rule: `protect_pinned_models()` checks `/api/ps` every tick and reports if `qwen3:4b` or `qwen3.6` falls out of resident memory. Fail-loud, not auto-fix — the prewarm service is what re-warms.
+- `psutil` preferred when installed; falls back to `/proc/meminfo` + `/proc/loadavg` reads when not.
+- Telegram alerts via `proactive_send`. Records every tick to `memory/perf-guardian.jsonl`.
+- `weekly_digest()` aggregates the last 7 days for the Monday report.
+- New `workers/perf_guardian_loop.py` + `/tmp/nexus-perf-guardian.service` (Restart=always RestartSec=15). Sudo install lines added.
+- Smoke test verified: tick records, breaches list empty under nominal load, pinned check correctly flagged that `qwen3.6` had aged out (router still pinned).
+
 ### 16.6 Wake word voice activation — DONE
 - New `workers/wakeword_listener.py`. Uses `openwakeword` (optional dep) to listen on the default mic for the wake words listed in `WAKE_MODELS` (currently `hey_jarvis` + `alexa` as placeholders for `hey_nexus` / `hey_sparky` until a custom model is trained — same hand-off path).
 - On detection: triggers `whisper_record(12s)`, then routes via `fast_handle` first; if fast_handle defers, the transcript is enqueued as a heavy task for the worker.
