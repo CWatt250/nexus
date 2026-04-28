@@ -1,5 +1,15 @@
 # Nexus Build Changelog
 
+## 2026-04-27 — Phase 13 (Speed Layer) starting
+
+### 13.1 KEEP_ALIVE=-1 + prewarm service — DONE
+- New `tools/prewarm.py`: pins router (`qwen3:4b`) with `keep_alive=-1`, warms heavy (`qwen3.6`) with 30m. Tested: router 0.7s, heavy 2.55s.
+- New `/tmp/nexus-prewarm.service` (oneshot, After=ollama+nexus-api). Sudo install lines added to `SUDO_COMMANDS_R3.sh`.
+- `router.py:classify` now passes `keep_alive=-1` so per-call requests don't override the pin.
+- Verified `GET /api/ps` shows qwen3:4b expires 2318 (effectively never).
+
+
+
 ## 2026-04-21 — Phase 2 Complete (Session 2)
 
 ### Completed

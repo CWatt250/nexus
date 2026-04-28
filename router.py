@@ -130,6 +130,7 @@ def classify(message: str, *, log: bool = True) -> str:
             think=False,
             format="json",
             options={"temperature": 0.0, "num_predict": 64, "num_ctx": 2048},
+            keep_alive=-1,
         )
     except Exception as exc:
         route = DEFAULT_ROUTE
