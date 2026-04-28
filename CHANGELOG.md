@@ -2,6 +2,13 @@
 
 ## 2026-04-27 — Phase 14 (Reliability Scaffolding) starting
 
+### 14.4 Weekly LESSONS.md aggregator — DONE
+- New `memory/lessons_aggregator.py` scans `memory/retros/retro_*.md` from the last 7 days, extracts the bullet list from each `## Lessons` section, dedupes, and asks qwen3:4b to cluster the survivors into 5 actionable bullets. Stripped to bullet-only output so qwen3:4b's narrative preamble doesn't pollute the file. Idempotent re-runs in the same week replace that week's section.
+- Output appended at top of evergreen `~/AI_Agent/LESSONS.md`.
+- New systemd files at `/tmp/nexus-lessons.{service,timer}` — Mondays 8am, oneshot, persistent. Sudo install + enable lines added to `SUDO_COMMANDS_R3.sh`.
+- `nexus.load_static_prefix()` now reads `LESSONS.md` and injects it as `# WEEKLY LESSONS`. Verified: prefix contains the section, byte size ~12.5KB.
+- Seeded `LESSONS.md` from the existing test retro to confirm the pipeline works end-to-end.
+
 ### 14.3 Task retrospective generator — DONE
 - New `memory/retros.py` reads `task_metrics.jsonl` + `tool_metrics.jsonl` for a given `task_id`, asks qwen3:4b for 1-3 bullet lessons, and writes `memory/retros/retro_<task_id>.md` with goal / outcome / tool calls / wall time / tokens / lessons.
 - "Interesting" filter: skips fast/no-tool-call/<5s/successful turns so trivial greetings don't bury the pile.

@@ -236,9 +236,12 @@ def load_static_prefix() -> str:
     soul = _read_text(ROOT / "SOUL.md")
     style = _read_text(ROOT / "STYLE.md")
     nexus_md = _read_text(ROOT / "NEXUS.md")
+    weekly_lessons = _read_text(ROOT / "LESSONS.md")
     sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", _TOOL_HINT]
     if nexus_md:
         sections.append(f"# REPO MAP (NEXUS.md)\n{nexus_md}")
+    if weekly_lessons:
+        sections.append(f"# WEEKLY LESSONS (from LESSONS.md)\n{weekly_lessons}")
     _STATIC_PREFIX_CACHE = "\n\n".join(sections)
     return _STATIC_PREFIX_CACHE
 

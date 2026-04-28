@@ -4,10 +4,10 @@
 14
 
 ## Current Task
-14.4 Weekly LESSONS.md aggregator
+14.5 Regression test suite
 
 ## Last Completed Task
-14.3 Task retrospective generator
+14.4 Weekly LESSONS.md aggregator
 
 ## Phase Status
 - Phase 12: SKIPPED (done manually via Tel disable + Part 1-2)

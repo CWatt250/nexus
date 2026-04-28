@@ -24,4 +24,14 @@ sudo systemctl restart nexus-api.service
 # Tail logs briefly to confirm startup is clean:
 journalctl -u nexus-api.service -n 30 --no-pager
 
+# ---------------------------------------------------------------------------
+# Phase 14.4 — install the weekly LESSONS.md aggregator (Mondays 8am).
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-lessons.service /etc/systemd/system/nexus-lessons.service
+sudo cp /tmp/nexus-lessons.timer /etc/systemd/system/nexus-lessons.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-lessons.timer
+# Verify next firing:
+systemctl list-timers nexus-lessons.timer --no-pager
+
 
