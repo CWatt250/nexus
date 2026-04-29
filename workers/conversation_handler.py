@@ -73,6 +73,40 @@ class Intent(BaseModel):
     raw: str = Field(default="", description="Raw model output for debugging.")
 
 
+QUICK_CHAT_SYSTEM_PROMPT = (
+    "You are Nexus — a fast, warm, terse personal assistant for Colton on his "
+    "WattBott workstation. Reply in 2-3 sentences, conversational tone, no "
+    "preamble, no <think> tags, no meta-commentary about how you'll answer. "
+    "If the user is small-talking, banter back lightly. If they ask a quick "
+    "factual question, answer directly. If you're not sure whether they want "
+    "you to take action, end with a short offer like 'want me to dig into "
+    "that?' so they can opt in to a real task."
+)
+
+
+def quick_chat(message: str) -> str:
+    """Inline conversational reply on qwen3.6 for CHAT and QUERY intents.
+
+    2-3 sentences, no tools, no agent loop, no checkpoint state. ~1-2s
+    warm. Strips any leaked <think> blocks defensively.
+    """
+    try:
+        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+            model=QUICK_CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": QUICK_CHAT_SYSTEM_PROMPT},
+                {"role": "user", "content": message},
+            ],
+            options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 250},
+            keep_alive=-1,
+            think=False,
+        )
+    except Exception as exc:
+        return f"(quick_chat error: {type(exc).__name__}: {exc})"
+    body = (resp.get("message", {}) or {}).get("content", "").strip()
+    return nexus.strip_thinking(body) if hasattr(nexus, "strip_thinking") else body
+
+
 def classify_intent_llm(message: str) -> Intent:
     """LLM-based intent classifier on qwen3.6. ~500ms warm.
 
