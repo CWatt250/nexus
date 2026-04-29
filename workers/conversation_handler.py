@@ -25,6 +25,10 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Literal
+
+import ollama  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -37,6 +41,67 @@ from langchain_core.tools import tool  # noqa: E402
 log = logging.getLogger("nexus.conversation_handler")
 
 HANDLER_MODEL = "qwen3:4b"
+
+# qwen3.6 outperforms qwen3:4b on intent classification by ~18x latency
+# (517ms vs 9190ms mean) and is more accurate (10/10 vs 9/10 on the test
+# set). qwen3:4b's chain-of-thought blows through num_predict on every
+# call even with think=False. qwen3.6 follows the bare-label instruction
+# directly. Both models are pinned by prewarm, so picking the better one
+# is free.
+CLASSIFIER_MODEL = "qwen3.6"
+QUICK_CHAT_MODEL = "qwen3.6"
+
+INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label: CHAT, QUERY, TASK, or STATUS.
+
+CHAT   — greetings, small talk, no real question or task. (hi, hey, what's up, thanks, how are you)
+QUERY  — factual question answerable in 1-2 sentences without tools. (what's 7+8, what does Phase 15 do)
+TASK   — research, multi-step work, file edits, builds, or >5s of execution. (research X, fix bug, build Y, summarize repo)
+STATUS — asking about an existing task or queue state. (queue status, is task abc done, any updates)
+
+If you cannot tell the category, choose CHAT (Nexus prefers conversational over spawning unwanted tasks).
+
+Output the label only — one word, nothing else."""
+
+_LABEL_RE = re.compile(r"\b(CHAT|QUERY|TASK|STATUS)\b")
+
+
+class Intent(BaseModel):
+    """Result of LLM intent classification."""
+    kind: Literal["CHAT", "QUERY", "TASK", "STATUS"] = Field(
+        description="CHAT|QUERY|TASK|STATUS"
+    )
+    raw: str = Field(default="", description="Raw model output for debugging.")
+
+
+def classify_intent_llm(message: str) -> Intent:
+    """LLM-based intent classifier on qwen3.6. ~500ms warm.
+
+    Returns an `Intent` Pydantic object. Defaults to CHAT on parse failure
+    so the user gets a conversational reply instead of an unwanted task.
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return Intent(kind="CHAT", raw="")
+    try:
+        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+            model=CLASSIFIER_MODEL,
+            messages=[
+                {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+                {"role": "user", "content": msg},
+            ],
+            options={"temperature": 0, "num_ctx": 2048, "num_predict": 50},
+            keep_alive=-1,
+            think=False,
+        )
+    except Exception as exc:
+        log.warning("classify_intent_llm failed (%s); defaulting to CHAT", exc)
+        return Intent(kind="CHAT", raw=f"error: {exc}")
+    raw = (resp.get("message", {}) or {}).get("content", "").strip()
+    matches = _LABEL_RE.findall(raw.upper())
+    if not matches:
+        log.info("classify_intent_llm: no label in %r; defaulting to CHAT", raw[:80])
+        return Intent(kind="CHAT", raw=raw)
+    return Intent(kind=matches[-1], raw=raw)  # type: ignore[arg-type]
 HANDLER_PROMPT = (
     "You are Nexus's conversation handler. You only manage tasks — you do "
     "NOT run them. Use tools to inspect the task queue, pause, cancel, or "
