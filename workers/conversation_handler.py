@@ -402,6 +402,74 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
     )
 
 
+_QUEUE_PREFIX_RE = re.compile(r"^\s*queue\s*[:>]\s*(.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _route_status(message: str) -> str:
+    """STATUS branch: if message contains a task_id, return that task's
+    detail; otherwise list the recent queue."""
+    tid_match = _TASK_ID_RE.search(message)
+    if tid_match:
+        tid = tid_match.group(1)
+        row = task_queue.get_task(tid)
+        if row:
+            return _format_status(row, tid)
+    rows = task_queue.list_tasks(limit=10)
+    if not rows:
+        return "Queue is empty — no recent tasks."
+    return "Recent tasks:\n" + "\n".join(
+        f"- {r['task_id']} [{r['status']}] {(r['input'] or '')[:60]}" for r in rows
+    )
+
+
+def route_message(message: str) -> dict:
+    """Top-level Telegram/API router (Phase-15 conversation UX rewrite).
+
+    Returns {kind, reply, meta}:
+      - kind: 'queue' | 'chat' | 'query' | 'task' | 'status' | 'empty'
+      - reply: the text to send back to the user
+      - meta: {'task_id', 'classifier_raw', ...} for logging
+
+    Flow:
+      1. Empty input -> nudge reply.
+      2. 'queue: <text>' prefix -> enqueue immediately (power-user override).
+      3. LLM intent classifier runs once.
+      4. Route on intent:
+         - CHAT / QUERY  -> qwen3.6 inline reply via quick_chat()
+         - TASK          -> enqueue, reply "On it. task_id=xxx"
+         - STATUS        -> task_id lookup or queue list
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return {"kind": "empty", "reply": "(empty message)", "meta": {}}
+
+    # Power-user override: "queue: <task>"
+    qm = _QUEUE_PREFIX_RE.match(msg)
+    if qm:
+        body = qm.group(1).strip()
+        if not body:
+            return {"kind": "queue", "reply": "queue: needs a task body.", "meta": {}}
+        tid = task_queue.enqueue(body)
+        log.info("route: queue-prefix override -> task %s", tid)
+        return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
+
+    # LLM classifier
+    intent = classify_intent_llm(msg)
+    meta = {"classifier_raw": intent.raw}
+    log.info("route: classified %r as %s", msg[:60], intent.kind)
+
+    if intent.kind == "TASK":
+        tid = task_queue.enqueue(msg)
+        return {"kind": "task", "reply": f"On it. task_id={tid}", "meta": {**meta, "task_id": tid}}
+
+    if intent.kind == "STATUS":
+        return {"kind": "status", "reply": _route_status(msg), "meta": meta}
+
+    # CHAT or QUERY: inline reply on qwen3.6
+    reply = quick_chat(msg)
+    return {"kind": intent.kind.lower(), "reply": reply, "meta": meta}
+
+
 def handle_sync(message: str, *, thread_id: str = "handler:default") -> str:
     """Sync handler entrypoint. Tries the no-LLM fast path first; falls
     back to the qwen3:4b ReAct agent for free-form chat."""

@@ -111,24 +111,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.chat.send_action("typing")
 
     chat_id = update.effective_chat.id
-    thread_id = f"handler:tg:{chat_id}"
     try:
         from workers import conversation_handler
-        # Telegram path runs without LLM-chat fallback so the bot never
-        # blocks behind a contended Ollama call. fast_handle covers all
-        # task-management intents and templates the chat case.
-        fast = conversation_handler.fast_handle(user_message, allow_llm_chat=False)
-        if fast is not None:
-            await update.message.reply_text(fast[:4000])
-            return
-        reply = await asyncio.wait_for(
-            conversation_handler.handle_async(user_message, thread_id=thread_id),
-            timeout=20,
+        # New 4-way LLM router: CHAT/QUERY -> qwen3.6 inline reply,
+        # TASK -> enqueue, STATUS -> task lookup. "queue: <text>" remains
+        # a power-user prefix that bypasses classification. Run the
+        # blocking router off the event loop so the bot stays responsive.
+        result = await asyncio.wait_for(
+            asyncio.to_thread(conversation_handler.route_message, user_message),
+            timeout=25,
         )
+        reply = result.get("reply", "")
+        logger.info("route kind=%s chat_id=%s", result.get("kind"), chat_id)
     except asyncio.TimeoutError:
         await update.message.reply_text(
-            "Took >20s — the handler is supposed to be fast. Falling back to queue:\n"
-            "use /tasks to inspect or send 'queue: <task>' to enqueue."
+            "Took >25s to route — Ollama may be busy. Try again, or send "
+            "'queue: <task>' to bypass classification."
         )
         return
     except Exception as e:
