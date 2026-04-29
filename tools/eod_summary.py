@@ -11,8 +11,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
+
+_THINK_RE = re.compile(r"<think>.*?</think>", flags=re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    """qwen3:4b ignores `think=False` and emits chain-of-thought wrapped in
+    <think>...</think>. Strip those blocks (and any unterminated trailing one)
+    so only the brief lands in journalctl / Telegram / the .md file."""
+    text = _THINK_RE.sub("", text)
+    if "<think>" in text.lower():
+        text = re.split(r"</?think>", text, flags=re.IGNORECASE)[-1]
+    return text.strip()
 
 import ollama  # noqa: F401  — used inline below
 from langchain_core.tools import tool
@@ -153,6 +166,7 @@ def _todays_summary() -> str:
     else:
         m = getattr(resp, "message", None)
         body = (getattr(m, "content", "") or "").strip()
+    body = _strip_think(body)
     return body or f"## EOD\n{today_one_liner}"
 
 
