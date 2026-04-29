@@ -54,6 +54,52 @@ _TIMEOUT_TAG_RE = _re.compile(r"\[timeout=(\d+)\]\s*", _re.IGNORECASE)
 
 log = logging.getLogger("nexus.task_worker")
 
+# Heartbeat ping interval. First heartbeat fires at HEARTBEAT_INTERVAL_S
+# of elapsed time, then every HEARTBEAT_INTERVAL_S after that — so a
+# 90s task gets none, a 5-minute task gets 2 pings (at 2m and 4m).
+HEARTBEAT_INTERVAL_S = 120
+
+
+async def _heartbeat_loop(task_id: str, started: float, tool_counter: list) -> None:
+    """Sends `notify_heartbeat` every HEARTBEAT_INTERVAL_S until cancelled.
+
+    `tool_counter` is a single-element list mutated by the callback
+    handler. Reading [-1] is cheap and avoids a Lock for one int + str.
+    Cancelled with CancelledError when _run_one finishes — we eat the
+    cancel and exit silently.
+    """
+    from workers import task_notifier  # noqa: PLC0415
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_S)
+            elapsed = time.monotonic() - started
+            count, last_tool = (tool_counter[0], tool_counter[1]) if tool_counter else (0, "")
+            try:
+                await task_notifier.notify_heartbeat(
+                    task_id, elapsed_s=elapsed,
+                    step=last_tool, tool_calls=count,
+                )
+            except Exception as exc:
+                log.warning("heartbeat send failed: %s", exc)
+    except asyncio.CancelledError:
+        return
+
+
+def _make_tool_tracker():
+    """Tiny LangChain callback handler that bumps a counter + records the
+    most recent tool name. Used by the heartbeat loop for content."""
+    from langchain_core.callbacks import BaseCallbackHandler  # noqa: PLC0415
+
+    state = [0, ""]  # [count, last_tool_name]
+
+    class ToolTracker(BaseCallbackHandler):
+        def on_tool_start(self, serialized, input_str, **kwargs):  # noqa: D401
+            name = (serialized or {}).get("name") or "(tool)"
+            state[0] += 1
+            state[1] = name
+
+    return ToolTracker(), state
+
 
 def _resolve_timeout(user_text: str) -> tuple[int, str]:
     """Pick a hard timeout for this task. Returns (seconds, cleaned_text).
@@ -109,8 +155,13 @@ async def _run_one(row: dict) -> None:
         input_preview=user_text[:200],
     )
 
-    config = {"configurable": {"thread_id": thread_id}}
+    tracker, tool_state = _make_tool_tracker()
+    config = {"configurable": {"thread_id": thread_id}, "callbacks": [tracker]}
     lc_msgs = nexus.fast_mode_messages(user_text, route=route)
+
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_loop(task_id, started, tool_state)
+    )
 
     ok = True
     err = ""
@@ -137,6 +188,11 @@ async def _run_one(row: dict) -> None:
         ok = False
         err = f"{type(exc).__name__}: {exc}"
     finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except (asyncio.CancelledError, Exception):
+            pass
         try:
             delattr(agent_metrics._TASK_CTX, "id")
         except AttributeError:
