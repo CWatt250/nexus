@@ -410,6 +410,9 @@ def classify_intent(message: str) -> dict:
     return {"kind": "chat"}
 
 
+_STATUS_OUTPUT_PREVIEW = 800
+
+
 def _format_status(row: dict | None, task_id: str) -> str:
     if not row:
         return f"no task with id {task_id}"
@@ -418,8 +421,25 @@ def _format_status(row: dict | None, task_id: str) -> str:
         bits.append(f"started {row['started_at']}")
     if row.get("finished_at"):
         bits.append(f"finished {row['finished_at']}")
-    if row.get("output"):
-        bits.append("output: " + (row["output"] or "")[:200].replace("\n", " "))
+    output = row.get("output") or ""
+    if output:
+        # Stop mid-sentence cutoff. Show a clean preview + total length so
+        # the user knows there's more, then say how to ask for it.
+        if len(output) > _STATUS_OUTPUT_PREVIEW:
+            preview = output[:_STATUS_OUTPUT_PREVIEW].rstrip()
+            # Cut on a sentence/word boundary if one is nearby.
+            for sep in ("\n", ". ", "; ", ", ", " "):
+                cut = preview.rfind(sep)
+                if cut >= _STATUS_OUTPUT_PREVIEW - 80:
+                    preview = preview[:cut]
+                    break
+            bits.append(
+                f"output preview ({_STATUS_OUTPUT_PREVIEW} of {len(output)} chars):\n{preview}\n"
+                f"…full output: {len(output)} chars. "
+                f"Send 'full output {row['task_id']}' to get the rest."
+            )
+        else:
+            bits.append("output:\n" + output)
     if row.get("error"):
         bits.append(f"error: {row['error']}")
     return "\n".join(bits)
@@ -483,6 +503,26 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
 
 
 _QUEUE_PREFIX_RE = re.compile(r"^\s*queue\s*[:>]\s*(.+)$", re.IGNORECASE | re.DOTALL)
+_FULL_OUTPUT_RE = re.compile(
+    r"^\s*(?:full|whole|complete|show)\s+(?:output|result)\s+([0-9a-f]{8,16})\s*$",
+    re.IGNORECASE,
+)
+
+
+def _full_output_reply(task_id: str) -> str:
+    row = task_queue.get_task(task_id)
+    if not row:
+        return f"no task with id {task_id}"
+    output = row.get("output") or ""
+    if not output:
+        return f"task {task_id} has no output yet (status={row['status']})"
+    if len(output) <= 3500:
+        return f"task {task_id} full output ({len(output)} chars):\n\n{output}"
+    return (
+        f"task {task_id} full output is {len(output)} chars — too big for a single Telegram "
+        f"message. First 3500 chars below; ask again for the next chunk if needed.\n\n"
+        f"{output[:3500]}"
+    )
 
 
 def _route_status(message: str) -> str:
@@ -532,6 +572,13 @@ def route_message(message: str) -> dict:
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
+
+    # Deterministic: "full output <task_id>" — return the unchunked
+    # output from the row, since STATUS replies preview at 800 chars.
+    fm = _FULL_OUTPUT_RE.match(msg)
+    if fm:
+        tid = fm.group(1).lower()
+        return {"kind": "status", "reply": _full_output_reply(tid), "meta": {"task_id": tid}}
 
     # LLM classifier
     intent = classify_intent_llm(msg)
