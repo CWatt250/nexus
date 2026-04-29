@@ -22,6 +22,7 @@ TASK_LOG = ROOT / "memory" / "task_metrics.jsonl"
 EVENT_LOG = ROOT / "memory" / "agent-events.jsonl"
 REMINDERS = ROOT / "memory" / "reminders.jsonl"
 TQ_DB = ROOT / "memory" / "tasks.db"
+EOD_DIR = ROOT / "memory" / "eod"
 OLLAMA_URL = "http://localhost:11434"
 SUMMARY_MODEL = "qwen3:4b"
 
@@ -155,11 +156,25 @@ def _todays_summary() -> str:
     return body or f"## EOD\n{today_one_liner}"
 
 
+def _persist(summary: str) -> Path:
+    """Write today's brief to memory/eod/YYYY-MM-DD.md (overwrite-safe)."""
+    EOD_DIR.mkdir(parents=True, exist_ok=True)
+    path = EOD_DIR / f"{datetime.now().date().isoformat()}.md"
+    header = f"# EOD brief — {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}\n\n"
+    path.write_text(header + summary + "\n", encoding="utf-8")
+    return path
+
+
 @tool
 def eod_summary_run() -> str:
-    """Generate today's EOD brief, push to Sparky bubble + Telegram.
+    """Generate today's EOD brief, persist to memory/eod/, push to Sparky + Telegram.
     Returns the text for inspection."""
     summary = _todays_summary()
+    try:
+        path = _persist(summary)
+        log.info("EOD brief persisted to %s", path)
+    except Exception as exc:
+        log.warning("EOD persist failed: %s", exc)
     # Sparky bubble — best-effort.
     try:
         from tools.sparky_state import post_bubble
