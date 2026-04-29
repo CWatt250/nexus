@@ -30,6 +30,7 @@ from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools import context_compressor  # noqa: E402
 from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  # noqa: E402
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
+from tools.capabilities_tool import CAPABILITIES_TOOLS  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
@@ -91,6 +92,7 @@ _checkpoint_conn = _open_checkpoint_conn()
 _CHECKPOINTER = SqliteSaver(_checkpoint_conn)
 
 TOOLS = [
+    *CAPABILITIES_TOOLS,
     terminal,
     file_read_tool,
     file_write_tool,
@@ -262,7 +264,14 @@ def load_static_prefix() -> str:
     style = _read_text(ROOT / "STYLE.md")
     nexus_md = _read_text(ROOT / "NEXUS.md")
     weekly_lessons = _read_text(ROOT / "LESSONS.md")
+    tools_md = _read_text(ROOT / "TOOLS.md")
     sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", _TOOL_HINT]
+    # TOOLS.md is the canonical, auto-refreshed inventory. Inject it so any
+    # agent path (worker, CLI, voice) knows the full tool surface and stops
+    # hallucinating "I can't browse the web" when it has browser_tool +
+    # web_fetch + brave_search etc.
+    if tools_md:
+        sections.append(tools_md)
     if nexus_md:
         sections.append(f"# REPO MAP (NEXUS.md)\n{nexus_md}")
     if weekly_lessons:

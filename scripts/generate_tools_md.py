@@ -57,6 +57,7 @@ MODULE_CATEGORY: dict[str, str] = {
     "tools.parallel_tools":     "Meta & Telemetry",
     "tools.router_telemetry":   "Meta & Telemetry",
     "tools.model_watcher":      "Meta & Telemetry",
+    "tools.capabilities_tool":  "Meta & Telemetry",
 }
 
 # Stable display order for categories.
