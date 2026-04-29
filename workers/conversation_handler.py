@@ -24,6 +24,7 @@ import json
 import logging
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -73,7 +74,7 @@ class Intent(BaseModel):
     raw: str = Field(default="", description="Raw model output for debugging.")
 
 
-QUICK_CHAT_SYSTEM_PROMPT = (
+QUICK_CHAT_SYSTEM_PROMPT_BASE = (
     "You are Nexus — a fast, warm, terse personal assistant for Colton on his "
     "WattBott workstation. Reply in 2-3 sentences, conversational tone, no "
     "preamble, no <think> tags, no meta-commentary about how you'll answer. "
@@ -84,17 +85,37 @@ QUICK_CHAT_SYSTEM_PROMPT = (
 )
 
 
+def _datetime_context() -> str:
+    """Real wall-clock context block for prompt injection.
+
+    Models have no clock and will hallucinate dates from training data
+    (e.g. qwen3.6 has been observed making up 'May 24, 2024'). Always
+    inject this before any chat/query/task path that might reference
+    'now', 'today', 'this week'.
+    """
+    now = datetime.now().astimezone()
+    return (
+        f"Current date and time: {now.isoformat(timespec='seconds')}. "
+        f"Current day of week: {now.strftime('%A')}. "
+        "When asked about the current time, date, or day, use ONLY the "
+        "datetime above. Never guess or use training data."
+    )
+
+
 def quick_chat(message: str) -> str:
     """Inline conversational reply on qwen3.6 for CHAT and QUERY intents.
 
     2-3 sentences, no tools, no agent loop, no checkpoint state. ~1-2s
-    warm. Strips any leaked <think> blocks defensively.
+    warm. Strips any leaked <think> blocks defensively. Real datetime is
+    injected into the system prompt every call so the model can answer
+    "what time is it" correctly instead of hallucinating from training data.
     """
+    system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{_datetime_context()}"
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
             model=QUICK_CHAT_MODEL,
             messages=[
-                {"role": "system", "content": QUICK_CHAT_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ],
             options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 250},
@@ -459,7 +480,10 @@ def route_message(message: str) -> dict:
     log.info("route: classified %r as %s", msg[:60], intent.kind)
 
     if intent.kind == "TASK":
-        tid = task_queue.enqueue(msg)
+        # Prepend real datetime so the spawned agent doesn't hallucinate
+        # "today" / "this week" from training data.
+        enqueued_input = f"[{_datetime_context()}]\n\n{msg}"
+        tid = task_queue.enqueue(enqueued_input)
         return {"kind": "task", "reply": f"On it. task_id={tid}", "meta": {**meta, "task_id": tid}}
 
     if intent.kind == "STATUS":
