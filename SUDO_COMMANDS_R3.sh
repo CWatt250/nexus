@@ -129,4 +129,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-eod-summary.timer
 systemctl list-timers nexus-eod-summary.timer --no-pager
 
+# ---------------------------------------------------------------------------
+# Tool inventory — regenerate TOOLS.md daily at 04:00 so the capability
+# block in every agent prompt stays current as new tools land.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-tools-refresh.service /etc/systemd/system/nexus-tools-refresh.service
+sudo cp /tmp/nexus-tools-refresh.timer /etc/systemd/system/nexus-tools-refresh.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-tools-refresh.timer
+systemctl list-timers nexus-tools-refresh.timer --no-pager
+
 
