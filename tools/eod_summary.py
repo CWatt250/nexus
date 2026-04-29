@@ -37,7 +37,12 @@ REMINDERS = ROOT / "memory" / "reminders.jsonl"
 TQ_DB = ROOT / "memory" / "tasks.db"
 EOD_DIR = ROOT / "memory" / "eod"
 OLLAMA_URL = "http://localhost:11434"
-SUMMARY_MODEL = "qwen3:4b"
+SUMMARY_MODEL = "qwen3.6"  # heavy; pinned by prewarm — better instruction-following
+SYSTEM_PROMPT = (
+    "You output ONLY the final markdown brief. Plain prose. "
+    "No preamble, no reasoning, no <think> tags, no meta-commentary. "
+    "4-6 sentences total."
+)
 
 log = logging.getLogger("nexus.eod_summary")
 
@@ -155,9 +160,12 @@ def _todays_summary() -> str:
     try:
         resp = ollama.Client(host=OLLAMA_URL).chat(
             model=SUMMARY_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
             stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.2, "num_predict": 350, "num_ctx": 8192},
+            options={"temperature": 0.2, "num_predict": 400, "num_ctx": 8192},
         )
     except Exception as exc:
         return f"## EOD\n{today_one_liner}\n\n_(LLM unavailable: {exc})_"
