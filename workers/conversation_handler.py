@@ -54,12 +54,37 @@ QUICK_CHAT_MODEL = "qwen3.6"
 
 INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label: CHAT, QUERY, TASK, or STATUS.
 
-CHAT   — greetings, small talk, no real question or task. (hi, hey, what's up, thanks, how are you)
-QUERY  — factual question answerable in 1-2 sentences without tools. (what's 7+8, what does Phase 15 do)
-TASK   — research, multi-step work, file edits, builds, or >5s of execution. (research X, fix bug, build Y, summarize repo)
-STATUS — asking about an existing task or queue state. (queue status, is task abc done, any updates)
+CHAT   — greetings, small talk, no real question or task.
+         Examples: "hi", "hey", "what's up", "thanks", "how are you", "lol nice"
 
-If you cannot tell the category, choose CHAT (Nexus prefers conversational over spawning unwanted tasks).
+QUERY  — factual question answerable in 1-2 sentences from general knowledge,
+         WITHOUT fetching anything from the real world.
+         Examples: "what's 7+8", "what does dependency injection mean",
+                   "explain a B-tree in one sentence"
+
+TASK   — anything requiring tools, real-world lookup, or >5s of execution.
+         INCLUDES (route these to TASK, NOT CHAT or QUERY):
+         - Any URL in the message (https://..., http://..., github.com/...)
+         - References to a real-world account, profile, repo, channel, or domain
+         - Verbs like 'view', 'look at', 'check', 'fetch', 'browse', 'open',
+           'visit', 'pull up', 'read this' applied to external content
+         - Real-world data the model can't know: weather, news, prices, current
+           events, GitHub repos, web pages, live API output, current commits
+         - The user's own files, projects, repos, or system state
+           ("read my file", "what's in my Downloads folder", "list my repos")
+         - Multi-step work: research, build, fix, refactor, summarize a repo
+         Examples: "FYI my GitHub is https://github.com/CWatt250 — can you view it?"
+                   "what's the weather", "fix the bug in eod_summary.py",
+                   "research top 5 AI agent frameworks", "summarize this repo",
+                   "do I have an open PR on the cli repo"
+
+STATUS — asking about an existing Nexus task or the queue state.
+         Examples: "queue status", "is task abc12345 done", "any updates",
+                   "what's running right now"
+
+If you cannot tell the category, choose CHAT.
+But if the message contains a URL or asks Nexus to look at/fetch external
+content, ALWAYS choose TASK.
 
 Output the label only — one word, nothing else."""
 
@@ -81,8 +106,42 @@ QUICK_CHAT_SYSTEM_PROMPT_BASE = (
     "If the user is small-talking, banter back lightly. If they ask a quick "
     "factual question, answer directly. If you're not sure whether they want "
     "you to take action, end with a short offer like 'want me to dig into "
-    "that?' so they can opt in to a real task."
+    "that?' so they can opt in to a real task.\n\n"
+    "CAPABILITY RULES (critical):\n"
+    "- You DO have tools — browser_tool, web search, GitHub, file read/write, "
+    "  terminal, RAG memory, computer use, and ~85 more. Never say 'I can't "
+    "  browse the web' or 'I don't have access to GitHub' or 'I can't view "
+    "  files'. Those are wrong.\n"
+    "- If the user asks you to do something that requires real-world data or "
+    "  tool calls (browse a URL, look up live data, fetch external info, view "
+    "  files, query a database, run a command), do NOT deny capability and do "
+    "  NOT pretend to do it. Reply EXACTLY: 'Let me dig into that properly — "
+    "  one sec' (and the system will re-route to the full agent).\n"
+    "- For 'what can you do' / 'what tools do you have' / 'do you have "
+    "  access to X', answer concretely from what you know about Nexus's tool "
+    "  surface (web/GitHub/files/code/memory/computer-use/audio/image/etc.) "
+    "  rather than reciting AI-assistant boilerplate."
 )
+
+
+# Phrases that flag a capability denial we want to retract. If any of
+# these appear in quick_chat output, route_message will discard the reply
+# and re-issue the message as a TASK so the agent can actually use tools.
+_DENIAL_PATTERNS = [
+    r"\bi can(?:not|'?t)\b",
+    r"\bi do(?:n'?t| not) have (?:access|the ability)\b",
+    r"\bi'?m (?:not able|unable)\b",
+    r"\bi (?:lack|don'?t have) tools?\b",
+    r"\bi (?:cannot|can'?t) (?:browse|access|view|fetch|open|read)\b",
+    r"\bas an? (?:ai|language model|assistant), i (?:can'?t|cannot|don'?t)\b",
+]
+_DENIAL_RE = re.compile("|".join(_DENIAL_PATTERNS), re.IGNORECASE)
+
+
+def _looks_like_denial(text: str) -> bool:
+    """True if the model-generated reply contains a capability denial that
+    Nexus actually has tools for. Used by route_message to recover."""
+    return bool(_DENIAL_RE.search(text or ""))
 
 
 def _datetime_context() -> str:
@@ -491,6 +550,25 @@ def route_message(message: str) -> dict:
 
     # CHAT or QUERY: inline reply on qwen3.6
     reply = quick_chat(msg)
+
+    # Capability self-check: qwen3.6 sometimes denies tool access despite
+    # the capability rules in the system prompt. If the reply reads like a
+    # denial, treat it as a misclassified TASK — re-route, enqueue, and
+    # discard the bad text so the user gets a real answer instead.
+    if _looks_like_denial(reply):
+        log.warning(
+            "quick_chat produced denial — recovering as TASK. "
+            "denial_text=%r intent_was=%s msg=%r",
+            reply[:160], intent.kind, msg[:120],
+        )
+        enqueued_input = f"[{_datetime_context()}]\n\n{msg}"
+        tid = task_queue.enqueue(enqueued_input)
+        return {
+            "kind": "task",
+            "reply": f"On it. task_id={tid}",
+            "meta": {**meta, "task_id": tid, "recovered_from": "denial"},
+        }
+
     return {"kind": intent.kind.lower(), "reply": reply, "meta": meta}
 
 
