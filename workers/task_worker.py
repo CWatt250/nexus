@@ -34,7 +34,45 @@ from memory import retros as agent_retros  # noqa: E402
 
 ACTIVE_LOG = ROOT / "memory" / "active_tasks.jsonl"
 POLL_SECONDS = 1.0
+
+# Per-task hard timeout (seconds). 5 minutes is the user-spec default
+# for simple URL/file tasks; research/build/research-sweep types get
+# bumped via TIMEOUT_OVERRIDES below. Override per-task by including a
+# `[timeout=600]` tag in the input — _resolve_timeout strips and parses.
+DEFAULT_TIMEOUT_S = 300
+
+# Crude keyword routing for default budgets — short-circuits the parse
+# tag for common shapes. The override tag still wins.
+TIMEOUT_OVERRIDES = (
+    (("research", "deep dive", "investigate", "comprehensive"), 900),
+    (("build", "deploy", "scaffold", "implement", "refactor"), 900),
+    (("index", "seed", "ingest", "import"), 900),
+)
+
+import re as _re  # noqa: E402
+_TIMEOUT_TAG_RE = _re.compile(r"\[timeout=(\d+)\]\s*", _re.IGNORECASE)
+
 log = logging.getLogger("nexus.task_worker")
+
+
+def _resolve_timeout(user_text: str) -> tuple[int, str]:
+    """Pick a hard timeout for this task. Returns (seconds, cleaned_text).
+
+    Priority: explicit `[timeout=N]` tag > keyword bucket > default.
+    """
+    m = _TIMEOUT_TAG_RE.search(user_text or "")
+    if m:
+        try:
+            secs = max(30, min(int(m.group(1)), 7200))
+            cleaned = _TIMEOUT_TAG_RE.sub("", user_text, count=1).strip()
+            return secs, cleaned
+        except ValueError:
+            pass
+    lower = (user_text or "").lower()
+    for keywords, secs in TIMEOUT_OVERRIDES:
+        if any(k in lower for k in keywords):
+            return secs, user_text
+    return DEFAULT_TIMEOUT_S, user_text
 
 
 def _now() -> str:
@@ -54,7 +92,8 @@ def _publish(snapshot: dict) -> None:
 async def _run_one(row: dict) -> None:
     task_id = row["task_id"]
     thread_id = row["thread_id"] or f"task:{task_id}"
-    user_text = row["input"]
+    raw_input = row["input"]
+    timeout_s, user_text = _resolve_timeout(raw_input)
     started = time.monotonic()
 
     route, model = router.classify_and_model(user_text)
@@ -63,7 +102,7 @@ async def _run_one(row: dict) -> None:
     _publish({
         "ts": _now(), "event": "started", "task_id": task_id,
         "thread_id": thread_id, "route": route, "model": model,
-        "input_preview": user_text[:200],
+        "input_preview": user_text[:200], "timeout_s": timeout_s,
     })
     event_bus.publish_remote(
         "task_started", task_id=task_id, route=route, model=model,
@@ -77,14 +116,23 @@ async def _run_one(row: dict) -> None:
     err = ""
     reply = ""
     msgs: list = []
+    timed_out = False
     agent_metrics._TASK_CTX.id = task_id
     try:
-        result = await agent.ainvoke({"messages": lc_msgs}, config=config)
+        result = await asyncio.wait_for(
+            agent.ainvoke({"messages": lc_msgs}, config=config),
+            timeout=timeout_s,
+        )
         msgs = result.get("messages", [])
         for m in reversed(msgs):
             if m.__class__.__name__ == "AIMessage" and getattr(m, "content", ""):
                 reply = nexus.strip_thinking(m.content)
                 break
+    except asyncio.TimeoutError:
+        ok = False
+        timed_out = True
+        err = f"TimeoutError: exceeded {timeout_s}s budget"
+        log.warning("task %s timed out after %ds", task_id, timeout_s)
     except Exception as exc:
         ok = False
         err = f"{type(exc).__name__}: {exc}"
@@ -113,6 +161,8 @@ async def _run_one(row: dict) -> None:
 
     if ok:
         task_queue.update_status(task_id, "done", output=reply)
+    elif timed_out:
+        task_queue.update_status(task_id, "failed", output=reply, error=err)
     else:
         task_queue.update_status(task_id, "failed", output=reply, error=err)
 
@@ -132,8 +182,16 @@ async def _run_one(row: dict) -> None:
     # chunking + Markdown fallback. Best-effort: never raises.
     try:
         from workers import task_notifier  # noqa: PLC0415
+        last_step = ""
+        if msgs:
+            for m in reversed(msgs):
+                if m.__class__.__name__ == "ToolMessage":
+                    last_step = getattr(m, "name", "") or "(tool)"
+                    break
         if ok:
             await task_notifier.notify_done(task_id, reply or "", elapsed_s=elapsed)
+        elif timed_out:
+            await task_notifier.notify_timeout(task_id, elapsed_s=elapsed, last_step=last_step)
         else:
             await task_notifier.notify_failed(task_id, err, elapsed_s=elapsed,
                                                output=reply or None)
