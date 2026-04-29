@@ -55,7 +55,8 @@ def main() -> int:
 
     targets = [
         (router, -1),     # pin router resident forever
-        (heavy, "30m"),   # heavy model: keep mapped 30 min after warmup
+        (heavy, -1),      # pin heavy too — perf-guardian flags it as missing
+                          # if it unloads, and we have headroom (128GB UMA)
     ]
     seen = set()
     failures = 0
