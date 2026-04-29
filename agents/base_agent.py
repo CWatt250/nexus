@@ -40,6 +40,26 @@ class Task:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+_TOOLS_MD_PATH = Path(__file__).resolve().parent.parent / "TOOLS.md"
+
+
+def _tool_inventory_block() -> str:
+    """Append TOOLS.md to every sub-agent's system prompt so the model
+    never denies a capability that exists in the live registry. Returns
+    empty string if TOOLS.md isn't generated yet (first-boot guard)."""
+    if not _TOOLS_MD_PATH.exists():
+        return ""
+    try:
+        body = _TOOLS_MD_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return (
+        "\n\n# AVAILABLE TOOLS\n"
+        "You have access to these tools — use them, don't deny capability:\n\n"
+        + body
+    )
+
+
 class BaseAgent(ABC):
     """Base class for all Nexus sub-agents."""
 
@@ -52,7 +72,8 @@ class BaseAgent(ABC):
         self.id = str(uuid.uuid4())[:8]
         self.name = name
         self.model = model
-        self.system_prompt = system_prompt or self._default_system_prompt()
+        base_prompt = system_prompt or self._default_system_prompt()
+        self.system_prompt = base_prompt + _tool_inventory_block()
         self.status = AgentStatus.IDLE
         self.current_task: Optional[Task] = None
         self.task_history: List[Task] = []

@@ -14,12 +14,32 @@ API:
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 import ollama
 
 OLLAMA_URL = "http://localhost:11434"
 PLANNER_MODEL = "qwen3:4b"
+
+_ROOT = Path(__file__).resolve().parent.parent
+_TOOLS_MD_PATH = _ROOT / "TOOLS.md"
+
+
+def _tool_inventory_block() -> str:
+    """Return TOOLS.md contents wrapped for prompt injection. Empty if the
+    file doesn't exist yet (first run before the generator has fired)."""
+    if not _TOOLS_MD_PATH.exists():
+        return ""
+    try:
+        body = _TOOLS_MD_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return (
+        "\n\nNexus has the following tools available — plan steps that USE "
+        "these tools, never claim you 'can't' do something the inventory "
+        "covers:\n\n" + body
+    )
 
 _VAGUE_HINTS = re.compile(
     r"^\s*(build me|make me|do something|help me|build a|make a)\b",
@@ -102,7 +122,8 @@ def _short_plan(msg: str) -> str:
         "Give a numbered plan (3-6 steps) for the user task below. Each step "
         "must be actionable and have a verification check. End with a one-line "
         "effort estimate (small / medium / large) and the suggested route "
-        "(fast / mid / heavy / code / design). No preamble.\n\n"
+        "(fast / mid / heavy / code / design). No preamble."
+        f"{_tool_inventory_block()}\n\n"
         f"User task: {msg}\n\nPlan:"
     )
     try:
