@@ -37,21 +37,34 @@ _KNOWN_SECRET_KEYS = (
 
 def _split_kv(line: str) -> tuple[str, str] | None:
     """Parse one line into (key, value). Tolerates yaml-mapping
-    (`KEY: v`), no-space (`KEY:v`), and env-style (`KEY=v`)."""
+    (`KEY: v`), no-space (`KEY:v`), and env-style (`KEY=v`).
+
+    The separator is whichever of `=` or `:` appears FIRST in the line
+    — never both blindly. That matters because real-world values often
+    contain `:` themselves (Telegram bot tokens are `<bot_id>:<auth>`,
+    URLs have `://`, etc.). Splitting on `:` before `=` would corrupt
+    the key for any `.env` line whose value contains a colon.
+    """
     line = line.strip()
     if not line or line.startswith("#"):
         return None
-    for sep in (":", "="):
-        if sep in line:
-            k, v = line.split(sep, 1)
-            k = k.strip()
-            v = v.strip()
-            if not k:
-                return None
-            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                v = v[1:-1]
-            return k, v
-    return None
+    eq = line.find("=")
+    co = line.find(":")
+    if eq == -1 and co == -1:
+        return None
+    if eq == -1:
+        sep_idx = co
+    elif co == -1:
+        sep_idx = eq
+    else:
+        sep_idx = min(eq, co)
+    k = line[:sep_idx].strip()
+    v = line[sep_idx + 1:].strip()
+    if not k:
+        return None
+    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+        v = v[1:-1]
+    return k, v
 
 
 def _parse_kv_file(path: Path) -> dict[str, str]:

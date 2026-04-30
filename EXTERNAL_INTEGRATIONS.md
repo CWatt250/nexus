@@ -1,6 +1,18 @@
 # Nexus External Integrations — Master Map
 
-_Last audited: 2026-04-29 (R5 / SearXNG bring-up)_
+_Last audited: 2026-04-29 (R5 / SearXNG bring-up; corrected after Telegram-active feedback)_
+
+> **Audit correction (2026-04-29 second pass):** the first pass marked
+> `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as missing because
+> `core/secrets.py` had a parser bug — it tried `:` as the key/value
+> separator before `=`, so any `.env` line whose value contained a
+> colon (Telegram bot tokens are `<bot_id>:<auth>`) had its key
+> corrupted. `tools/telegram_listener.py` and `tools/telegram_tool.py`
+> use `python-dotenv` directly so they were never affected — the
+> Telegram surface has been live the whole time. Parser fixed in this
+> pass; all four `.env` keys now resolve correctly via
+> `core.secrets.get()`. github-mcp also re-rated OPTIONAL given the 9
+> native authenticated GitHub tools cover the same ground.
 
 Single source of truth for every external service, API key, MCP server, CLI tool, and local service Nexus depends on — across current functionality and the locked roadmap.
 
@@ -16,9 +28,10 @@ Stored in `~/AI_Agent/config/secrets.yaml` (preferred, gitignored), with fallbac
 
 | Key | Service | Status | Tier | Used by | Free tier | Get it from | Cost @ Colton load |
 |---|---|---|---|---|---|---|---|
-| `GITHUB_PAT` | GitHub | ✅ Configured | CRITICAL | All `github_*` tools, github-mcp, future PR/issue automation | Free unlimited (auth'd: 5k req/h) | github.com/settings/personal-access-tokens (fine-grained) | $0 |
-| `TELEGRAM_BOT_TOKEN` | Telegram | ❌ Missing (`.env` has key, value empty) | CRITICAL | telegram_tool, telegram_listener, task_notifier — no Telegram I/O without it | Free | message @BotFather → /newbot | $0 |
-| `TELEGRAM_CHAT_ID` | Telegram | ❌ Missing | CRITICAL | All Telegram message routing | Free | message @userinfobot for your chat ID | $0 |
+| `GITHUB_PAT` | GitHub | ✅ Configured (`config/secrets.yaml`, 93 chars) | CRITICAL | All `github_*` tools, future PR/issue automation | Free unlimited (auth'd: 5k req/h) | github.com/settings/personal-access-tokens (fine-grained) | $0 |
+| `GITHUB_TOKEN` | GitHub | ✅ Configured (`.env`, 40 chars — classic PAT) | OPTIONAL | Legacy fallback path in `tools/github_tool.py` (PAT preferred). Keep both wired so a fine-grained-token failure can fall through to the classic. | Free | same | $0 |
+| `TELEGRAM_BOT_TOKEN` | Telegram | ✅ Configured (`.env`, 46 chars — actively serving Telegram chats from phone) | CRITICAL | telegram_tool, telegram_listener, task_notifier | Free | message @BotFather → /newbot | $0 |
+| `TELEGRAM_CHAT_ID` | Telegram | ✅ Configured (`.env`, 10 chars) | CRITICAL | All Telegram message routing | Free | message @userinfobot for your chat ID | $0 |
 | `BRAVE_SEARCH_API_KEY` | Brave Search | ❌ Missing (deprecated by SearXNG) | OPTIONAL | `brave_search`, fallback in `web_search()` chain | 2k queries/mo free | brave.com/search/api/ | $0 / ~$5 if you hit free tier |
 | `TAVILY_API_KEY` | Tavily | ❌ Missing (stub only — no client wired) | OPTIONAL | First slot in `web_search()` priority chain (overrides Brave + SearXNG) | 1k req/mo free | tavily.com (signup) | $0 free, then $30/mo |
 | `Z_AI_API_KEY` | Zhipu / Z.ai (GLM) | ❌ Missing (`.env` has key, empty) | IMPORTANT | `glm_tool` (Phase 14.6 escalation when local fails 3 retries) | Trial credits | open.bigmodel.cn / z.ai console | ~$0.60/M in, $2.20/M out — typically <$5/mo |
@@ -37,25 +50,24 @@ Stored in `~/AI_Agent/config/secrets.yaml` (preferred, gitignored), with fallbac
 | `YOUTUBE_API_KEY` | YouTube | ✅ Not needed | n/a | `youtube_transcript_api` doesn't require a key — it scrapes transcript pages | n/a | n/a | $0 |
 | `SPARKY_VOICE` | n/a | ⚠️ Optional | OPTIONAL | TTS voice selection (`tts_tool.py:78`) — defaults to `af_heart` if unset | n/a | n/a (just a string) | $0 |
 
-### Secrets file shape today
+### Secrets file shape today (verified via `core.secrets.get()` after parser fix)
 
 ```
-~/AI_Agent/config/secrets.yaml      ← only GITHUB_PAT
-~/AI_Agent/.env                     ← keys present but VALUES EMPTY:
-                                       BRAVE_SEARCH_API_KEY=
-                                       GITHUB_TOKEN=
-                                       TAILSCALE_API_KEY=
-                                       TELEGRAM_BOT_TOKEN=    ← critical gap
-                                       TELEGRAM_CHAT_ID=      ← critical gap
-                                       Z_AI_API_KEY=          ← important gap
+~/AI_Agent/config/secrets.yaml      ← GITHUB_PAT (set, 93 chars)
+~/AI_Agent/.env                     ← keys present:
+                                       GITHUB_TOKEN          (set, 40 chars)
+                                       TELEGRAM_BOT_TOKEN    (set, 46 chars) ✅
+                                       TELEGRAM_CHAT_ID      (set, 10 chars) ✅
+                                       BRAVE_SEARCH_API_KEY  (empty placeholder)
+                                       TAILSCALE_API_KEY     (empty placeholder)
+                                       Z_AI_API_KEY          (empty placeholder) ← top remaining gap
 ```
 
-### Recommended priority for filling these
+### Recommended priority for filling the remaining gaps
 
-1. **TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID** — without these the entire Telegram conversation surface is dead. Do today.
-2. **Z_AI_API_KEY** — unblocks Phase 14.6 escalation (when local model fails 3 retries). Do this week.
-3. **BIDWATT_SUPABASE_URL/KEY** — unblocks Phase 16.4 BidWatt tools. Do when you start that phase.
-4. **Everything else** — fill as the matching phase comes up.
+1. **Z_AI_API_KEY** (or DeepSeek key — see Section 6) — unblocks Phase 14.6 escalation (when local model fails 3 retries). Do this week.
+2. **BIDWATT_SUPABASE_URL/KEY** — unblocks Phase 16.4 BidWatt tools. Do when you start that phase.
+3. **Everything else** — fill as the matching phase comes up.
 
 ---
 
@@ -63,10 +75,10 @@ Stored in `~/AI_Agent/config/secrets.yaml` (preferred, gitignored), with fallbac
 
 Configured in `~/AI_Agent/mcp/servers.json`. Loaded by `mcp/client.py` at agent startup.
 
-| Server | Status | Tools provided | Required env | Phase |
-|---|---|---|---|---|
-| `markitdown` | ✅ Connected (1 tool loaded per nexus-agent journal) | document → markdown conversion | none | currently active |
-| `github` | ⚠️ Configured but auto-skipped — env empty | issue/PR/repo ops via @modelcontextprotocol/server-github | `GITHUB_TOKEN` and/or `GITHUB_PERSONAL_ACCESS_TOKEN` (servers.json hardcodes the empty placeholder) | currently active once env is set |
+| Server | Status | Tier | Tools provided | Required env | Phase |
+|---|---|---|---|---|---|
+| `markitdown` | ✅ Connected (1 tool loaded per nexus-agent journal) | KEEP | document → markdown conversion | none | currently active |
+| `github` | ⚠️ Configured but auto-skipped — env empty | **OPTIONAL** (downgraded from CRITICAL) | issue/PR/repo ops via @modelcontextprotocol/server-github | `GITHUB_TOKEN` and/or `GITHUB_PERSONAL_ACCESS_TOKEN` (servers.json hardcodes the empty placeholder) | re-evaluate before wiring — see note below |
 | Filesystem MCP | ❌ Not configured | sandboxed file ops | n/a (path arg) | Phase 16.10 |
 | Obsidian MCP | ❌ Not configured | Obsidian vault read/write | `OBSIDIAN_VAULT_PATH` | Phase 18.7 |
 | Excel MCP | ❌ Not configured | xlsx read/write | n/a | Phase 18.8 |
@@ -74,9 +86,21 @@ Configured in `~/AI_Agent/mcp/servers.json`. Loaded by `mcp/client.py` at agent 
 | Stripe MCP | ❌ Not configured | payments / customer ops | `STRIPE_API_KEY` | Phase 23.2 |
 | Supabase MCP | ❌ Not configured | DB schema / row ops | `SUPABASE_ACCESS_TOKEN` + project ref | Phase 23.2 |
 
-### Action to wire github-mcp
+### Re-evaluation: do we actually want github-mcp?
 
-Edit `~/AI_Agent/mcp/servers.json` and replace the empty token values with your fine-grained PAT (or a `${GITHUB_PAT}` reference if you add envsubst). After that, restart `nexus-agent` and you should see `[mcp] loaded 2 external tools` (markitdown + github).
+Nexus already has 9 native authenticated GitHub tools (`github_auth_status`, `github_commit_file`, `github_create_issue`, `github_create_pr`, `github_create_repo`, `github_get_file`, `github_list_issues`, `github_list_my_repos`, `github_list_repos`) all wired through `core.secrets.get("GITHUB_PAT")`. They cover Colton's day-to-day surface: read a file, push a commit, open a PR, list repos/issues, check auth.
+
+What `@modelcontextprotocol/server-github` *adds* beyond that (per its tool list): code search across all accessible repos, PR file diffs and PR review comments, workflow run inspection, fork-repo, user search, repo-level branch protection edits. Real but niche — not load-bearing for current or near-term work.
+
+Recommendation: **don't wire github-mcp now**. Reasons:
+
+- 100 % feature overlap with native tools for routine ops; pulling in two surfaces just doubles the agent's tool-selection space (more wrong picks, longer prompts, slower routing).
+- Native tools pass through `core.secrets.redact()` for log scrubbing. The MCP server doesn't — it logs to its own stderr.
+- Wiring it requires either copy-pasting the PAT into `mcp/servers.json` or adding envsubst-style indirection. Both are footguns.
+
+**When to revisit:** the moment you actually need code-search-across-repos, PR-file-diff inspection, or workflow-run inspection. Add a single native `github_search_code` tool then if it's the only missing capability — cheaper than spinning up the whole MCP server.
+
+If you decide to wire it anyway: edit `~/AI_Agent/mcp/servers.json`, paste the PAT into both `GITHUB_TOKEN` and `GITHUB_PERSONAL_ACCESS_TOKEN`, restart `nexus-agent`. You'll see `[mcp] loaded 2 external tools`.
 
 ---
 
@@ -223,8 +247,7 @@ No new failing imports surfaced.
 
 | Gap | Unlocks | Fix | Cost / time |
 |---|---|---|---|
-| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Telegram conversation surface (the entire Phase 15 user-facing channel) | message @BotFather → /newbot, then @userinfobot → fill in `~/AI_Agent/.env` | $0 / 5 min |
-| `ffmpeg` system binary | Pydub / Whisper audio I/O, future TTS pipelines (currently silently broken — pydub warns at import) | `sudo apt install ffmpeg` (added to `SUDO_INTEGRATIONS.sh`) | $0 / 30 sec |
+| `ffmpeg` system binary | Pydub / Whisper audio I/O, future TTS pipelines (currently silently broken — pydub warns at import) | `sudo apt install ffmpeg` (in `SUDO_INTEGRATIONS.sh`) | $0 / 30 sec |
 | `qwen2.5vl:7b` ROCm OOM | Vision path (`find_on_screen_vision`, Phase 16.2 full computer use) | Configuration: drop `qwen3:14b` from keep-alive list; teach Performance Guardian to unload qwen3.6 when vision is requested | $0 / 30 min code |
 
 ### IMPORTANT (blocks queued roadmap)
@@ -232,7 +255,6 @@ No new failing imports surfaced.
 | Gap | Phase | Fix | Cost / time |
 |---|---|---|---|
 | `Z_AI_API_KEY` (or DeepSeek key — pick one) | Phase 14.6 escalation | sign up at z.ai or platform.deepseek.com → fill `.env` | $0 trial / 10 min |
-| github-mcp env not wired | Currently active feature stays dark | Edit `mcp/servers.json` so the GITHUB_TOKEN values reference your PAT, restart nexus-agent | $0 / 5 min |
 | `BIDWATT_SUPABASE_URL` + `BIDWATT_SUPABASE_ANON_KEY` | Phase 16.4 BidWatt tools | Copy from your existing BidWatt project's API settings → `~/AI_Agent/.env` | $0 / 2 min |
 | `VERCEL_TOKEN` | Phase 7.4 / 24 deploys | vercel.com/account/tokens → `~/AI_Agent/.env` | $0 / 3 min |
 | `supabase` CLI | Phase 16.4 / Phase 23.2 | `sudo npm install -g supabase` (added to `SUDO_INTEGRATIONS.sh`) | $0 / 1 min |
@@ -260,36 +282,30 @@ No new failing imports surfaced.
 
 - ✅ Patched `searxng_health()` — bumped timeout, added `/healthz` fast path. Test suite green (10/10).
 - ✅ Generated `SUDO_INTEGRATIONS.sh` with `ffmpeg` + `gh` + `supabase` + `pnpm` + `uv` (uv is no-sudo but documented anyway).
-- ✅ Three smoke searches against the live SearXNG container — all returned real results in <3s. (`weather Pasco WA` → weather.com + accuweather; `nori l1 robot price` → noril1.com $988; `python LangGraph tutorial` → langchain academy.)
+- ✅ Three smoke searches against the live SearXNG container — all returned real results in <3s.
 - ✅ Updated `DEPENDENCIES.md` indirectly through this doc (Section 3 corrects the ffmpeg / fd-find false positives).
+- ✅ Fixed `core/secrets.py` parser bug — was splitting on `:` before `=`, corrupting any `.env` line whose value contained a colon (Telegram bot tokens, URLs). All four currently-set keys now resolve correctly through `core.secrets.get()`.
 
 ### B) What you (Colton) need to do
 
-**Today (5–15 minutes total):**
+**Today (~30 sec):**
 
-1. Get Telegram online — message @BotFather → `/newbot`, save the token. Message @userinfobot, save the chat ID. Edit `~/AI_Agent/.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=<paste>
-   TELEGRAM_CHAT_ID=<paste>
-   ```
-   Then `sudo systemctl restart nexus-telegram`.
-
-2. Install ffmpeg + (optional) gh / supabase:
+1. Install ffmpeg + (optional) fd-find / gh / supabase CLI:
    ```bash
    bash ~/AI_Agent/SUDO_INTEGRATIONS.sh
    ```
 
-3. Wire github-mcp — open `~/AI_Agent/mcp/servers.json`, paste the GITHUB_PAT into both `GITHUB_TOKEN` and `GITHUB_PERSONAL_ACCESS_TOKEN` values (or refactor to read from `core.secrets`). Then `sudo systemctl restart nexus-agent`.
-
 **This week:**
 
-4. Pick GLM **or** DeepSeek for Phase 14.6 cloud escalation, sign up, drop key in `.env`. DeepSeek is cheaper; GLM has the working Python tool. If you want DeepSeek, ask me to wire it (clean swap on `glm_tool.py`).
+2. Pick GLM **or** DeepSeek for Phase 14.6 cloud escalation, sign up, drop key in `.env`. DeepSeek is cheaper; GLM has the working Python tool. If you want DeepSeek, ask me to wire it (clean swap on `glm_tool.py`).
 
-5. Drop the BidWatt Supabase URL + anon key when you're ready to start Phase 16.4.
+3. Drop the BidWatt Supabase URL + anon key when you're ready to start Phase 16.4.
 
 **Defer to phase start:**
 
-6. Notion / Vercel / Higgsfield / ERNIE / HF — only when the matching phase fires. No urgency.
+4. Notion / Vercel / Higgsfield / ERNIE / HF — only when the matching phase fires. No urgency.
+
+5. github-mcp — only if a real need surfaces that the 9 native tools can't cover. Default plan: leave it off and add a targeted native tool (e.g. `github_search_code`) if/when something specific comes up.
 
 ### C) Things to defer until specific phases
 
