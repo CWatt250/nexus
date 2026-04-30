@@ -1096,6 +1096,62 @@ def _looks_like_single_fast_tool(msg: str) -> bool:
     return bool(_FAST_TOOL_HARD_OVERRIDE_RE.search(msg or ""))
 
 
+# --- Phase 23.1 scaffolding intent detection -----------------------------
+# Trigger phrases for "create/scaffold/spin up a <type>" requests. The
+# matched recipe slug + project name get baked into a structured TASK
+# that the agent picks up and routes to scaffold_project.
+
+_SCAFFOLD_TRIGGER_RE = re.compile(
+    r"\b(?:scaffold|spin\s+up|create|build|start|set\s+up|generate)"
+    r"\s+(?:a\s+|an\s+|me\s+a\s+|me\s+an\s+|a\s+new\s+)?"
+    r"(?:new\s+)?(?:project\s+)?",
+    re.IGNORECASE,
+)
+
+# Map from natural-language hints to recipe slugs. Order matters —
+# more specific phrases first so "marketplace" wins over plain "next.js".
+_RECIPE_HINTS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(?:marketplace|multi[-\s]?sided|stripe[-\s]?connect)\b", re.I), "nextjs-marketplace"),
+    (re.compile(r"\b(?:saas|sass|subscription)\b", re.I), "nextjs-saas"),
+    (re.compile(r"\b(?:dashboard|admin\s+panel|analytics\s+app)\b", re.I), "nextjs-dashboard"),
+    (re.compile(r"\b(?:landing\s+page|landing|coming\s+soon|waitlist)\b", re.I), "nextjs-landing"),
+    (re.compile(r"\b(?:fastapi|python\s+api|rest\s+api)\b", re.I), "python-fastapi"),
+    (re.compile(r"\b(?:python\s+cli|click\s+cli|cli\s+tool)\b", re.I), "python-cli"),
+    # Generic Next.js fallback last — only if a specific subtype didn't match.
+    (re.compile(r"\b(?:next\.?js|nextjs|next\s+app)\b", re.I), "nextjs-landing"),
+]
+
+# Project-name extraction: "called X" / "named X" / "for X" / quoted X.
+_NAME_PATTERNS = [
+    re.compile(r"""(?:called|named)\s+["']?([a-z0-9][a-z0-9-]{1,40}[a-z0-9])["']?""", re.I),
+    re.compile(r"""["']([a-z0-9][a-z0-9-]{1,40}[a-z0-9])["']""", re.I),
+]
+
+
+def _detect_scaffold_intent(msg: str) -> dict | None:
+    """Return {recipe, name, missing} when the message looks like a
+    scaffolding request. `missing` is a list of fields the user didn't
+    specify — caller can ask a clarifying question or pick defaults.
+    Returns None for non-scaffolding messages."""
+    if not msg or not _SCAFFOLD_TRIGGER_RE.search(msg):
+        return None
+    recipe = None
+    for pat, slug in _RECIPE_HINTS:
+        if pat.search(msg):
+            recipe = slug
+            break
+    if recipe is None:
+        return None  # trigger present but no recipe hint — not actually a scaffold
+    name = None
+    for np in _NAME_PATTERNS:
+        m = np.search(msg)
+        if m:
+            name = m.group(1).lower()
+            break
+    missing = [f for f, v in (("name", name),) if not v]
+    return {"recipe": recipe, "name": name, "missing": missing}
+
+
 def _is_genuine_queue_status(msg: str) -> bool:
     """True if the message clearly references the Nexus task queue.
     False if it just happens to contain "status" applied to some other
@@ -1382,6 +1438,47 @@ def _route_message_inner(message: str) -> dict:
     if fm:
         tid = fm.group(1).lower()
         return {"kind": "status", "reply": _full_output_reply(tid), "meta": {"task_id": tid}}
+
+    # Phase 23.1 — scaffolding intent goes ahead of every other branch.
+    # "Scaffold a Next.js marketplace called shoppable" → enqueue a
+    # structured TASK so scaffold_project runs in the worker (with its
+    # own heartbeat thread) rather than blocking the conversation
+    # handler. If we can't extract a project name, ask for one.
+    sc = _detect_scaffold_intent(msg)
+    if sc is not None:
+        if sc["missing"]:
+            return {
+                "kind": "scaffold",
+                "reply": (
+                    f"Scaffolding request detected (recipe: {sc['recipe']}). "
+                    "What should I name the project? Reply with a slug "
+                    "(lowercase letters, digits, hyphens), e.g. "
+                    "'my-new-app'."
+                ),
+                "meta": {"scaffold_recipe": sc["recipe"], "needs_name": True},
+            }
+        agent_input = (
+            f"[scaffold:{sc['recipe']}] "
+            f"Use the scaffold_project tool with "
+            f'name="{sc["name"]}", recipe="{sc["recipe"]}", '
+            f"options={{}} — return only the tool's summary."
+        )
+        tid = task_queue.enqueue(agent_input)
+        log.info("scaffold intent → task %s recipe=%s name=%s",
+                 tid, sc["recipe"], sc["name"])
+        return {
+            "kind": "scaffold",
+            "reply": (
+                f"On it. Scaffolding `{sc['name']}` from recipe "
+                f"`{sc['recipe']}`. Heartbeats will land in Telegram every "
+                f"60s during long steps. task_id={tid}"
+            ),
+            "meta": {
+                "scaffold_recipe": sc["recipe"],
+                "scaffold_name": sc["name"],
+                "task_id": tid,
+            },
+        }
 
     # Deterministic short-circuit BEFORE the LLM classifier — saves a
     # round-trip on the high-confidence single-tool shapes the classifier
