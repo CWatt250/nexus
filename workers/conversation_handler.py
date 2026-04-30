@@ -1056,7 +1056,34 @@ def _route_status(message: str) -> str:
     return "Recent tasks:\n" + "\n".join(_line(r) for r in rows)
 
 
-def route_message(message: str) -> dict:
+_INTENT_LATENCIES = Path.home() / "AI_Agent" / "memory" / "intent_latencies.jsonl"
+_INTENT_LATENCIES_KEEP_HOURS = 30  # keep ~30h of history; we display 24h
+
+
+def _record_intent_latency(intent: str, elapsed_s: float, *, fast_format: str | None = None,
+                           tool: str | None = None) -> None:
+    """Append one latency observation. Best-effort, never raises.
+
+    Read by `nexus_api.GET /metrics/intent_latency` and the Performance
+    tab on the dashboard for the rolling 24h view."""
+    try:
+        _INTENT_LATENCIES.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "intent": intent,
+            "elapsed_s": round(elapsed_s, 3),
+        }
+        if fast_format:
+            entry["fast_format"] = fast_format
+        if tool:
+            entry["tool"] = tool
+        with _INTENT_LATENCIES.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        log.warning("intent latency log append failed: %s", exc)
+
+
+def _route_message_inner(message: str) -> dict:
     """Top-level Telegram/API router (Phase-15 conversation UX rewrite).
 
     Returns {kind, reply, meta}:
@@ -1108,7 +1135,11 @@ def route_message(message: str) -> dict:
             return {
                 "kind": "query_tool",
                 "reply": result["reply"],
-                "meta": {**meta_pre, "tool": result.get("tool", "")},
+                "meta": {
+                    **meta_pre,
+                    "tool": result.get("tool", ""),
+                    "fast_format": result.get("fast_format"),
+                },
             }
         log.info("hard-override lite_agent miss; falling to classifier path: %s",
                  result.get("reason"))
@@ -1143,7 +1174,11 @@ def route_message(message: str) -> dict:
             return {
                 "kind": "query_tool",
                 "reply": result["reply"],
-                "meta": {**meta, "tool": result.get("tool", "")},
+                "meta": {
+                    **meta,
+                    "tool": result.get("tool", ""),
+                    "fast_format": result.get("fast_format"),
+                },
             }
         log.info("lite_agent fell through to TASK: %s", result.get("reason"))
         meta["lite_agent_fallthrough"] = result.get("reason")
@@ -1182,6 +1217,26 @@ def route_message(message: str) -> dict:
         }
 
     return {"kind": intent.kind.lower(), "reply": reply, "meta": meta}
+
+
+def route_message(message: str) -> dict:
+    """Public router — wraps `_route_message_inner` with latency
+    telemetry. Every call appends one line to
+    `memory/intent_latencies.jsonl` so the dashboard's Performance tab
+    can render the rolling-24h average per intent.
+    """
+    import time as _time
+    t0 = _time.monotonic()
+    result = _route_message_inner(message)
+    elapsed = _time.monotonic() - t0
+    meta = result.get("meta", {}) or {}
+    _record_intent_latency(
+        intent=result.get("kind", "unknown"),
+        elapsed_s=elapsed,
+        fast_format=meta.get("fast_format"),
+        tool=meta.get("tool"),
+    )
+    return result
 
 
 def handle_sync(message: str, *, thread_id: str = "handler:default") -> str:

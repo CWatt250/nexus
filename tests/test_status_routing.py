@@ -89,25 +89,34 @@ def test_route_status_strips_datetime_in_recent_list(monkeypatch) -> None:
     assert "Current d" not in out  # the truncated leak from the bug report
 
 
-# --- 4. route_message: STATUS → TASK override fires for "X status" -------
-def test_route_message_overrides_github_auth_status_to_task(monkeypatch) -> None:
+# --- 4. route_message: 'github auth status' now caught by hard-override --
+def test_route_message_routes_github_auth_status_to_query_tool(monkeypatch) -> None:
+    """Fix #3 part 3 added a deterministic hard-override regex that
+    catches '<tool/domain> status' shapes BEFORE the classifier runs.
+    'what's my github auth status' should land on QUERY_TOOL via
+    lite_agent — not get enqueued as a TASK and not even reach the
+    STATUS-override branch."""
     from workers import conversation_handler as ch
     from workers.conversation_handler import Intent
-
-    monkeypatch.setattr(ch, "classify_intent_llm",
-                        lambda msg: Intent(kind="STATUS", raw="STATUS"))
 
     enq_calls: List[str] = []
     monkeypatch.setattr(
         ch.task_queue, "enqueue",
-        lambda input_text, **_: (enq_calls.append(input_text) or "newtask01"),
+        lambda input_text, **_: (enq_calls.append(input_text) or "shouldNotHappen"),
     )
+    monkeypatch.setattr(ch, "lite_agent", lambda m: {
+        "ok": True, "tool": "github_auth_status",
+        "reply": "Authenticated as CWatt250.",
+    })
+    # If something forces the classifier path, fail loudly.
+    monkeypatch.setattr(ch, "classify_intent_llm",
+                        lambda msg: Intent(kind="STATUS", raw="STATUS (should not fire)"))
 
     result = ch.route_message("what's my github auth status")
-    assert result["kind"] == "task"
-    assert result["meta"].get("status_override") is True
-    assert "task_id=newtask01" in result["reply"]
-    assert enq_calls and "github auth status" in enq_calls[0]
+    assert result["kind"] == "query_tool"
+    assert result["meta"].get("fast_tool_override") is True
+    assert "CWatt250" in result["reply"]
+    assert not enq_calls, "should not enqueue when hard-override succeeds"
 
 
 # --- 5. route_message: STATUS stays STATUS for "queue status" ------------

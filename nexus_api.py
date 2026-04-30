@@ -466,6 +466,98 @@ async def events_publish(req: PublishRequest):
     return {"ok": True}
 
 
+@app.get("/metrics/intent_latency")
+async def intent_latency(hours: int = 24):
+    """Rolling latency aggregate by intent over the last `hours` (default 24).
+
+    Reads `~/AI_Agent/memory/intent_latencies.jsonl` (one line per
+    routed message, written by `workers.conversation_handler.route_message`)
+    and returns count / mean / p50 / p95 / max per intent. Cheap —
+    file is bounded and we stream-parse line by line.
+
+    Shape:
+        {
+          "window_hours": 24,
+          "total": 87,
+          "by_intent": {
+            "query_inline": {"n": 30, "mean": 1.42, "p50": 1.31, "p95": 2.01, "max": 3.0},
+            "query_tool":   {"n": 12, "mean": 4.12, "p50": 3.85, "p95": 9.21, "max": 14.5},
+            "task":         {"n": 5,  "mean": 4.5,  "p50": 4.5,  "p95": 5.0,  "max": 5.0},
+            ...
+          },
+          "fast_format": {"clean_output": 8, "search_top_hit": 3, ...}
+        }
+    """
+    from datetime import datetime, timedelta, timezone
+    import json as _json
+    from pathlib import Path
+
+    log_path = Path.home() / "AI_Agent" / "memory" / "intent_latencies.jsonl"
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, min(hours, 24 * 30)))).timestamp()
+
+    by_intent: dict[str, list[float]] = {}
+    fast_format: dict[str, int] = {}
+    total = 0
+
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = _json.loads(raw)
+                    except _json.JSONDecodeError:
+                        continue
+                    ts = entry.get("ts", "")
+                    if not isinstance(ts, str):
+                        continue
+                    try:
+                        t = datetime.fromisoformat(ts).timestamp()
+                    except ValueError:
+                        continue
+                    if t < cutoff:
+                        continue
+                    intent = entry.get("intent") or "unknown"
+                    elapsed = entry.get("elapsed_s")
+                    if not isinstance(elapsed, (int, float)):
+                        continue
+                    by_intent.setdefault(intent, []).append(float(elapsed))
+                    total += 1
+                    ff = entry.get("fast_format")
+                    if ff:
+                        fast_format[ff] = fast_format.get(ff, 0) + 1
+        except OSError:
+            pass
+
+    def _percentile(values: list[float], pct: float) -> float:
+        if not values:
+            return 0.0
+        s = sorted(values)
+        idx = max(0, min(len(s) - 1, int(round(pct / 100 * (len(s) - 1)))))
+        return round(s[idx], 3)
+
+    summary = {}
+    for intent, vals in by_intent.items():
+        if not vals:
+            continue
+        summary[intent] = {
+            "n": len(vals),
+            "mean": round(sum(vals) / len(vals), 3),
+            "p50": _percentile(vals, 50),
+            "p95": _percentile(vals, 95),
+            "max": round(max(vals), 3),
+        }
+
+    return {
+        "window_hours": hours,
+        "total": total,
+        "by_intent": summary,
+        "fast_format": fast_format,
+    }
+
+
 @app.get("/agents")
 async def list_agents():
     """Get status of all running agents and their tasks."""

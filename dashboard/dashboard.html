@@ -114,6 +114,14 @@
   <!-- PERFORMANCE -->
   <section id="tab-perf" class="tab hidden">
     <div class="card">
+      <h3>Routing latency · last 24h <span id="lat-total" style="color:#91a0c8; font-weight:normal;"></span></h3>
+      <table>
+        <thead><tr><th>intent</th><th>n</th><th>mean</th><th>p50</th><th>p95</th><th>max</th></tr></thead>
+        <tbody id="lat-body"></tbody>
+      </table>
+      <div id="lat-fast-format" style="margin-top:10px; color:#91a0c8; font-size:12px;"></div>
+    </div>
+    <div class="card">
       <h3>Recent agent turns (avg latency, tools, tokens)</h3>
       <table>
         <thead><tr><th>ts</th><th>route</th><th>model</th><th>wall_s</th><th>tools</th><th>tokens in/out</th><th>ok</th></tr></thead>
@@ -248,6 +256,64 @@ document.getElementById('quick-task-go').addEventListener('click', async () => {
 
 // Initial load — fill activity + perf tabs from JSONL endpoints we'll add.
 // For now, fall back to "events from the websocket replay" only.
+
+// Routing latency widget — pulls /metrics/intent_latency every 60s.
+async function refreshLatency() {
+  try {
+    const resp = await fetch(`${API_BASE}/metrics/intent_latency?hours=24`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const body = document.getElementById('lat-body');
+    const total = document.getElementById('lat-total');
+    const ff = document.getElementById('lat-fast-format');
+    total.textContent = `· ${data.total} routed`;
+
+    const order = ['query_inline', 'query_tool', 'task', 'status', 'queue', 'chat'];
+    const rows = [];
+    const seen = new Set();
+    for (const intent of order) {
+      if (data.by_intent[intent]) {
+        rows.push([intent, data.by_intent[intent]]);
+        seen.add(intent);
+      }
+    }
+    for (const [intent, stats] of Object.entries(data.by_intent)) {
+      if (!seen.has(intent)) rows.push([intent, stats]);
+    }
+
+    body.innerHTML = rows.map(([intent, s]) => {
+      const target = {
+        query_inline: 2.0, query_tool: 5.0, task: 5.0, status: 1.0, queue: 1.0, chat: 2.0,
+      }[intent];
+      const pillStyle = target && s.mean > target
+        ? 'background:#5d2222;color:#ffb4b4'
+        : target && s.mean <= target * 0.7
+        ? 'background:#225d3a;color:#a4f2c0'
+        : '';
+      return `<tr>
+        <td><span class="pill" style="${pillStyle}">${intent}</span></td>
+        <td>${s.n}</td>
+        <td>${s.mean.toFixed(2)}s</td>
+        <td>${s.p50.toFixed(2)}s</td>
+        <td>${s.p95.toFixed(2)}s</td>
+        <td>${s.max.toFixed(2)}s</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:#91a0c8">no traffic in last 24h</td></tr>';
+
+    if (data.fast_format && Object.keys(data.fast_format).length) {
+      const parts = Object.entries(data.fast_format).map(
+        ([k, v]) => `<span class="pill">${k}: ${v}</span>`
+      );
+      ff.innerHTML = 'formatter shortcuts hit: ' + parts.join(' ');
+    } else {
+      ff.textContent = '';
+    }
+  } catch (e) {
+    /* dashboard is best-effort — silent on transient API errors */
+  }
+}
+refreshLatency();
+setInterval(refreshLatency, 60_000);
 </script>
 </body>
 </html>

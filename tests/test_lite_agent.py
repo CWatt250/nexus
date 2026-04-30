@@ -52,7 +52,10 @@ def test_lite_agent_happy_path(monkeypatch) -> None:
     assert out["ok"] is True
     assert out["tool"] == "searxng_search"
     assert "Sunny" in out["reply"]
-    assert calls["n"] == 2  # picker + formatter
+    # Fix #4 part B: SearXNG output triggers the search-top-hit shortcut,
+    # so only the picker LLM runs — the formatter is skipped. Hence n==1.
+    assert calls["n"] == 1
+    assert out.get("fast_format") == "search_top_hit"
     assert fake_tool_invocation["called_with"]["query"] == "weather Pasco WA"
 
 
