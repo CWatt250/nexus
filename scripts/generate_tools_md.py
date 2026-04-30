@@ -54,6 +54,7 @@ MODULE_CATEGORY: dict[str, str] = {
     "tools.obsidian_sync":      "Knowledge Sync",
     "tools.chat_history_import": "Knowledge Sync",
     "tools.glm_tool":           "External Models (escalation)",
+    "tools.scaffold_tool":      "Project Scaffolding",
     "tools.parallel_tools":     "Meta & Telemetry",
     "tools.router_telemetry":   "Meta & Telemetry",
     "tools.model_watcher":      "Meta & Telemetry",
@@ -64,6 +65,14 @@ MODULE_CATEGORY: dict[str, str] = {
 # this for cross-cutting notes (auth requirements, dependencies) the
 # per-tool docstrings can't capture.
 CATEGORY_PREAMBLE: dict[str, str] = {
+    "Project Scaffolding": (
+        "Phase 23.1. `scaffold_project(name, recipe, options)` writes a "
+        "complete project to `~/Dev/<name>` from one of six starter "
+        "recipes (see `~/AI_Agent/recipes/` and `docs/scaffolding.md`). "
+        "Requires `GITHUB_PAT` to push the initial commit unless "
+        "`options={skip_github: true}` is passed. SLOW tier — typical "
+        "wall-clock 5-10 min including install + dev-server smoke."
+    ),
     "GitHub": (
         "Auth: token resolved from `~/AI_Agent/config/secrets.yaml` "
         "(`GITHUB_PAT`, fine-grained — preferred), then env vars, then "
@@ -155,6 +164,10 @@ TOOL_TIER: dict[str, str] = {
     "glm_consult": "SLOW",
     "telegram_notify": "FAST",
     "telegram_send_file": "MEDIUM",
+
+    # Scaffolding (Phase 23.1)
+    "scaffold_project": "SLOW",   # 5-10 min full run with install + GitHub
+    "list_recipes": "FAST",
 }
 
 
@@ -174,6 +187,7 @@ CATEGORY_ORDER = [
     "Notifications",
     "BidWatt (read-only)",
     "External Models (escalation)",
+    "Project Scaffolding",
     "Meta & Telemetry",
     "Other",
 ]
