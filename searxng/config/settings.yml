@@ -1,0 +1,99 @@
+# SearXNG settings — Nexus loopback search backend.
+#
+# This file is bind-mounted into the container at /etc/searxng/settings.yml.
+# Tuned for: JSON API access from localhost only, curated engine list,
+# no public exposure. The container binds to 127.0.0.1:8888 so you can't
+# accidentally publish this to the LAN.
+#
+# Regenerate the secret_key with `openssl rand -hex 32` if this file ever
+# leaks.
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Nexus SearXNG"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json   # required for the searxng_search() tool
+
+server:
+  # Re-set inside the container by the entrypoint, but keep the value
+  # explicit so it's obvious what's bound where.
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "68c43d43aabd7dbb8c2293d0b1a7f8e099831acdab884c14811fd9c0a41c2065"
+  base_url: false
+  image_proxy: false
+  http_protocol_version: "1.0"
+  method: "GET"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+ui:
+  static_use_hash: true
+  default_locale: "en"
+  query_in_title: false
+  infinite_scroll: false
+  center_alignment: false
+  results_on_new_tab: false
+  theme_args:
+    simple_style: auto
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+
+# Curated engine list per Colton's spec: general (google/bing/ddg),
+# code (github/stackoverflow), reference (wikipedia), discussions
+# (reddit), videos (youtube), news (reuters/ap via the news category).
+# Anything not listed here inherits use_default_settings → defaults.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+
+  - name: github
+    disabled: false
+  - name: stackoverflow
+    disabled: false
+
+  - name: wikipedia
+    disabled: false
+
+  - name: reddit
+    disabled: false
+
+  - name: youtube
+    disabled: false
+
+  # News engines — SearXNG ships several. Reuters and AP don't have
+  # dedicated engines anymore (they cloak scrapers); the news category
+  # aggregates google news + bing news + ddg news + yahoo news, which
+  # surfaces those outlets transitively.
+  - name: google news
+    disabled: false
+  - name: bing news
+    disabled: false
+  - name: duckduckgo news
+    disabled: false
+  - name: yahoo news
+    disabled: false

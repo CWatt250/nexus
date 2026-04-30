@@ -30,6 +30,8 @@ from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools import context_compressor  # noqa: E402
 from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  # noqa: E402
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
+from tools.searxng_tool import SEARXNG_TOOLS  # noqa: E402
+from tools.search_router import WEB_SEARCH_TOOLS  # noqa: E402
 from tools.capabilities_tool import CAPABILITIES_TOOLS  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.browser_render import browser_render  # noqa: E402
@@ -117,6 +119,8 @@ TOOLS = [
     *GITHUB_TOOLS,
     brave_search,
     brave_search_news,
+    *SEARXNG_TOOLS,
+    *WEB_SEARCH_TOOLS,
     whisper_record,
     whisper_transcribe,
     tts_speak,
@@ -230,7 +234,10 @@ _TOOL_HINT = (
     "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
     "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
     "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
-    "- `brave_search(query, count)` / `brave_search_news(query, count)`: web and news search via Brave (needs BRAVE_SEARCH_API_KEY).\n"
+    "- `web_search(query, count)`: PREFER THIS for general web search. Picks the best backend automatically — Tavily > Brave > SearXNG (loopback Docker, free, always-on). No key needed.\n"
+    "- `searxng_search(query, count)` / `searxng_search_news(query, count)`: direct hit on the local SearXNG container (free, unlimited).\n"
+    "- `brave_search(query, count)` / `brave_search_news(query, count)`: direct Brave (paid, used as backup if you specifically want Brave's ranking).\n"
+    "- `searxng_health()`: probe the local SearXNG container, returns 'ok' or a reason string.\n"
     "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
     "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
     "Guidelines:\n"

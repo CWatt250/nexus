@@ -1,0 +1,22 @@
+[Unit]
+Description=Nexus SearXNG (self-hosted search backend)
+Documentation=https://github.com/searxng/searxng
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/cwatt250/AI_Agent/searxng
+# Pull-on-start is safe: docker compose is idempotent. If the image is
+# already cached the pull is a no-op.
+ExecStartPre=-/usr/bin/docker compose pull
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=180
+User=cwatt250
+Group=cwatt250
+
+[Install]
+WantedBy=multi-user.target

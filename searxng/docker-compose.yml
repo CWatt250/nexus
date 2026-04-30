@@ -1,0 +1,28 @@
+name: nexus-searxng
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: nexus-searxng
+    # Bind ONLY to the loopback so this never leaks to the LAN. If you
+    # want phone access, route it through Tailscale, not 0.0.0.0.
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./config:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+      - UWSGI_WORKERS=4
+      - UWSGI_THREADS=4
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
