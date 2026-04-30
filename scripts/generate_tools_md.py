@@ -75,6 +75,89 @@ CATEGORY_PREAMBLE: dict[str, str] = {
     ),
 }
 
+# Latency tier per tool — drives the FAST/MEDIUM/SLOW tag in the inventory.
+# FAST    : single API/HTTP call, <3 s typical, eligible for the QUERY_TOOL
+#           lite_agent path (see tools/lite_agent_tools.py).
+# MEDIUM  : 3–10 s typical (Playwright render, heavy doc conversion, OCR).
+# SLOW    : >10 s typical OR multi-step / cloud / sub-agent (full TASK only).
+# Anything not listed defaults to MEDIUM.
+TOOL_TIER: dict[str, str] = {
+    # FAST — eligible for QUERY_TOOL lite_agent
+    "web_search": "FAST",
+    "searxng_search": "FAST",
+    "searxng_search_news": "FAST",
+    "searxng_health": "FAST",
+    "brave_search": "FAST",
+    "brave_search_news": "FAST",
+    "github_auth_status": "FAST",
+    "github_list_repos": "FAST",
+    "github_list_my_repos": "FAST",
+    "github_list_issues": "FAST",
+    "github_get_file": "FAST",
+    "github_create_issue": "FAST",
+    "github_create_pr": "FAST",
+    "github_create_repo": "FAST",
+    "github_commit_file": "FAST",
+    "memory_search": "FAST",
+    "memory_add": "FAST",
+    "memory_list": "FAST",
+    "memory_delete": "FAST",
+    "memory_stats": "FAST",
+    "mem0_add": "FAST",
+    "mem0_search": "FAST",
+    "file_read_tool": "FAST",
+    "file_write_tool": "FAST",
+    "file_edit_tool": "FAST",
+    "glob_tool": "FAST",
+    "grep_tool": "FAST",
+    "router_telemetry": "FAST",
+    "router_stats": "FAST",
+    "get_current_time": "FAST",
+    "get_capabilities": "FAST",
+    "list_capabilities": "FAST",
+
+    # SLOW — heavy work, full TASK only
+    "browser_render": "MEDIUM",
+    "browser_tool": "MEDIUM",
+    "markitdown_tool": "MEDIUM",
+    "youtube_transcript": "MEDIUM",
+    "youtube_summary": "SLOW",
+    "memory_dedup": "MEDIUM",
+    "memory_compact": "MEDIUM",
+    "whisper_record": "MEDIUM",
+    "whisper_transcribe": "MEDIUM",
+    "tts_speak": "MEDIUM",
+    "tts_save": "MEDIUM",
+    "terminal": "MEDIUM",  # depends entirely on the command
+    "run_tests": "SLOW",
+    "run_specific_test": "SLOW",
+    "watch_tests": "SLOW",
+    "review_diff": "SLOW",
+    "approve_diff": "MEDIUM",
+    "get_diff": "FAST",
+    "index_codebase": "SLOW",
+    "search_codebase": "FAST",
+    "get_file_context": "FAST",
+    "list_repo_structure": "FAST",
+    "solve_task": "SLOW",
+    "solve_coding_task": "SLOW",
+    "audio_gen_speech": "SLOW",
+    "audio_gen_music": "SLOW",
+    "bark_voice": "SLOW",
+    "image_generate": "SLOW",
+    "opengame_create": "SLOW",
+    "godot_run_export": "SLOW",
+    "godot_create_project": "SLOW",
+    "godot_run_headless": "SLOW",
+    "vercel_deploy": "SLOW",
+    "vercel_list_deployments": "FAST",
+    "game_create": "SLOW",
+    "glm_consult": "SLOW",
+    "telegram_notify": "FAST",
+    "telegram_send_file": "MEDIUM",
+}
+
+
 # Stable display order for categories.
 CATEGORY_ORDER = [
     "Web & Search",
@@ -120,6 +203,13 @@ def _description(tool) -> str:
     return ""
 
 
+def _tier(tool) -> str:
+    """Return FAST / MEDIUM / SLOW for `tool`. Defaults to MEDIUM if
+    the tool isn't in TOOL_TIER — not a hard error so newly-added tools
+    don't break the generator."""
+    return TOOL_TIER.get(tool.name, "MEDIUM")
+
+
 def _category_for(tool) -> str:
     fn = getattr(tool, "func", None) or getattr(tool, "coroutine", None)
     mod = getattr(fn, "__module__", "") if fn else ""
@@ -145,6 +235,13 @@ def render() -> str:
         "`nexus-tools-refresh.timer`."
     )
     out.append("")
+    out.append(
+        "**Latency tiers** — `[FAST]` = single API call, <3 s typical, "
+        "eligible for the QUERY_TOOL `lite_agent` path; `[MEDIUM]` = 3–10 s "
+        "typical (browser rendering, doc conversion); `[SLOW]` = >10 s or "
+        "multi-step / cloud / sub-agent (full TASK only)."
+    )
+    out.append("")
 
     for cat in CATEGORY_ORDER:
         tools = by_cat.get(cat)
@@ -157,7 +254,7 @@ def render() -> str:
             out.append(f"_{preamble}_")
             out.append("")
         for t in sorted(tools, key=lambda x: x.name):
-            out.append(f"- {_signature(t)} — {_description(t)}")
+            out.append(f"- `[{_tier(t)}]` {_signature(t)} — {_description(t)}")
         out.append("")
 
     # Surface any uncategorized tools so a stale module mapping is obvious.
