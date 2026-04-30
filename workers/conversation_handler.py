@@ -50,7 +50,16 @@ HANDLER_MODEL = "qwen3:4b"
 # directly. Both models are pinned by prewarm, so picking the better one
 # is free.
 CLASSIFIER_MODEL = "qwen3.6"
-QUICK_CHAT_MODEL = "qwen3.6"
+
+# Quick-chat is the QUERY_INLINE / CHAT path — short factual answers,
+# no tools, no agent loop. qwen3:4b is ~5x faster wall-clock than
+# qwen3.6 (warm: ~1.5s vs ~8s). It denies capabilities slightly more
+# often, which we catch via _looks_like_denial and retry on the
+# heavier model exactly once. Net win: most turns land in 1-2s, the
+# rare denial pays the qwen3.6 round-trip but still produces a real
+# answer.
+QUICK_CHAT_MODEL = "qwen3:4b"
+QUICK_CHAT_DENIAL_FALLBACK_MODEL = "qwen3.6"
 
 INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label:
 CHAT, QUERY_INLINE, QUERY_TOOL, TASK, or STATUS.
@@ -187,30 +196,148 @@ def _datetime_context() -> str:
     )
 
 
-def quick_chat(message: str) -> str:
-    """Inline conversational reply on qwen3.6 for CHAT and QUERY intents.
+# Denial-counter persistence. Each entry: {"ts": iso, "msg": short, "model": str}.
+# Bounded — old lines pruned on append once the file passes ~10k entries.
+_DENIAL_LOG = Path.home() / "AI_Agent" / "memory" / "quick_chat_denials.jsonl"
+_DENIAL_24H_THRESHOLD = 5  # alert via Telegram when >= this many in 24h
+_DENIAL_ALERT_COOLDOWN_S = 6 * 3600  # don't re-alert more than every 6h
+_DENIAL_LAST_ALERT = Path.home() / "AI_Agent" / "memory" / "quick_chat_denial_last_alert"
 
-    2-3 sentences, no tools, no agent loop, no checkpoint state. ~1-2s
-    warm. Strips any leaked <think> blocks defensively. Real datetime is
-    injected into the system prompt every call so the model can answer
-    "what time is it" correctly instead of hallucinating from training data.
+
+def _record_denial(message: str, model: str) -> None:
+    """Append one line to the denial log. Best-effort, never raises."""
+    try:
+        _DENIAL_LOG.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "msg": (message or "")[:140],
+            "model": model,
+        }
+        with _DENIAL_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        log.warning("denial log append failed: %s", exc)
+
+
+def _denials_in_last_24h() -> int:
+    """Count entries in the last 24h. Cheap — file is bounded and we
+    short-circuit at the threshold."""
+    if not _DENIAL_LOG.exists():
+        return 0
+    cutoff = datetime.now().astimezone().timestamp() - 24 * 3600
+    n = 0
+    try:
+        for raw in _DENIAL_LOG.read_text(encoding="utf-8", errors="replace").splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                entry = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            ts = entry.get("ts", "")
+            if not isinstance(ts, str):
+                continue
+            try:
+                t = datetime.fromisoformat(ts).timestamp()
+            except ValueError:
+                continue
+            if t >= cutoff:
+                n += 1
+                if n >= _DENIAL_24H_THRESHOLD * 4:  # cap, don't scan whole file
+                    return n
+    except OSError:
+        return 0
+    return n
+
+
+def _maybe_alert_telegram(count_24h: int) -> None:
+    """Fire a Telegram alert if denials are spiking. Cooldown'd so we
+    don't spam the user once a regression starts."""
+    if count_24h < _DENIAL_24H_THRESHOLD:
+        return
+    try:
+        if _DENIAL_LAST_ALERT.exists():
+            last = float(_DENIAL_LAST_ALERT.read_text().strip() or "0")
+        else:
+            last = 0.0
+        now = datetime.now().astimezone().timestamp()
+        if now - last < _DENIAL_ALERT_COOLDOWN_S:
+            return
+        from tools.telegram_tool import telegram_notify  # noqa: PLC0415
+        msg = (
+            f"⚠️ quick_chat denial spike: {count_24h} in last 24h. "
+            f"qwen3:4b is denying capabilities Nexus actually has. "
+            f"Review ~/AI_Agent/memory/quick_chat_denials.jsonl. "
+            f"Consider reverting QUICK_CHAT_MODEL to qwen3.6 if it persists."
+        )
+        try:
+            telegram_notify.invoke({"message": msg})
+        except Exception as exc:
+            log.warning("denial telegram alert failed: %s", exc)
+        _DENIAL_LAST_ALERT.write_text(str(now))
+    except OSError as exc:
+        log.warning("denial alert bookkeeping failed: %s", exc)
+
+
+def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
+    """One-shot quick_chat call against any model. Centralised so the
+    primary + fallback paths stay byte-identical except for the model id."""
+    resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ],
+        options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 250},
+        keep_alive=-1,
+        think=False,
+    )
+    body = (resp.get("message", {}) or {}).get("content", "").strip()
+    return nexus.strip_thinking(body) if hasattr(nexus, "strip_thinking") else body
+
+
+def quick_chat(message: str) -> str:
+    """Inline conversational reply for CHAT and QUERY_INLINE intents.
+
+    Two-tier model strategy (Fix #4 part A):
+      1. qwen3:4b primary — ~1-2s warm, 5x faster than qwen3.6.
+      2. If the reply trips `_looks_like_denial` (4b sometimes refuses
+         tool capabilities Nexus actually has), log the denial and
+         retry ONCE on qwen3.6. Fallback latency is the worst case
+         (~8-10s) but it's rare. Five denials in 24h fires a Telegram
+         alert so we know to investigate or revert.
+
+    Real datetime is injected into the system prompt every call so the
+    model can answer "what time is it" correctly instead of
+    hallucinating from training data. Strips leaked <think> blocks.
     """
     system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{_datetime_context()}"
     try:
-        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-            model=QUICK_CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
-            ],
-            options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 250},
-            keep_alive=-1,
-            think=False,
-        )
+        primary = _ollama_quick_chat(QUICK_CHAT_MODEL, message, system_prompt)
     except Exception as exc:
         return f"(quick_chat error: {type(exc).__name__}: {exc})"
-    body = (resp.get("message", {}) or {}).get("content", "").strip()
-    return nexus.strip_thinking(body) if hasattr(nexus, "strip_thinking") else body
+
+    if not _looks_like_denial(primary):
+        return primary
+
+    # Primary denied — log + retry on the heavier model exactly once.
+    log.info("quick_chat denial on %s — retrying on %s. denial=%r msg=%r",
+             QUICK_CHAT_MODEL, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
+             primary[:120], message[:120])
+    _record_denial(message, QUICK_CHAT_MODEL)
+    _maybe_alert_telegram(_denials_in_last_24h())
+
+    try:
+        fallback = _ollama_quick_chat(
+            QUICK_CHAT_DENIAL_FALLBACK_MODEL, message, system_prompt,
+        )
+    except Exception as exc:
+        log.warning("quick_chat fallback failed: %s — returning primary reply", exc)
+        return primary
+
+    # If the fallback also denied, prefer the primary (shorter typically).
+    return fallback if not _looks_like_denial(fallback) else primary
 
 
 LITE_AGENT_TIMEOUT_S = 15.0
