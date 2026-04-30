@@ -32,6 +32,7 @@ from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  #
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.searxng_tool import SEARXNG_TOOLS  # noqa: E402
 from tools.search_router import WEB_SEARCH_TOOLS  # noqa: E402
+from tools.scaffold_tool import SCAFFOLD_TOOLS  # noqa: E402
 from tools.capabilities_tool import CAPABILITIES_TOOLS  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
 from tools.browser_render import browser_render  # noqa: E402
@@ -121,6 +122,7 @@ TOOLS = [
     brave_search_news,
     *SEARXNG_TOOLS,
     *WEB_SEARCH_TOOLS,
+    *SCAFFOLD_TOOLS,
     whisper_record,
     whisper_transcribe,
     tts_speak,

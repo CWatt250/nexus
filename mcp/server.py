@@ -33,6 +33,7 @@ from tools.file_tool import (  # noqa: E402
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.searxng_tool import SEARXNG_TOOLS  # noqa: E402
 from tools.search_router import WEB_SEARCH_TOOLS  # noqa: E402
+from tools.scaffold_tool import SCAFFOLD_TOOLS  # noqa: E402
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
 from tools.mem0_tool import mem0_add, mem0_search  # noqa: E402
@@ -65,6 +66,7 @@ TOOLS = [
     brave_search_news,
     *SEARXNG_TOOLS,
     *WEB_SEARCH_TOOLS,
+    *SCAFFOLD_TOOLS,
     whisper_record,
     whisper_transcribe,
     tts_speak,
