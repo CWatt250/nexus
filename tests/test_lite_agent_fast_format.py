@@ -68,6 +68,9 @@ def test_searxng_top_hit_returns_none_for_non_search_output() -> None:
     "Sunny, 72F in Pasco WA today.",
     "Queue is empty.",
     "Memory store has 1024 documents.",
+    # Multi-line, ends on a date (no sentence terminator) — still clean.
+    # github_auth_status produces exactly this shape.
+    "Authenticated as CWatt250\n  scopes: ...\n  rate limit: ...\n  expires 2027-04-29 07:00:00 UTC",
 ])
 def test_looks_like_clean_output_accepts_short_prose(text: str) -> None:
     from workers.conversation_handler import _looks_like_clean_output
@@ -78,11 +81,11 @@ def test_looks_like_clean_output_accepts_short_prose(text: str) -> None:
     "",
     "x" * 700,                                   # too long
     '{"results": [{"title": "x"}]}',              # JSON
-    "[item1, item2]",                             # list
+    "[item1, item2]",                             # list-prefixed
     "ERROR: something blew up",
     "(no clean answer extracted)",
     "Add BRAVE_SEARCH_API_KEY to .env",
-    "Authenticated as CWatt250\n  scopes: ...\n  rate limit: ...\n  expires"  # no terminator
+    "abc123deadbeef",                              # single token / id
 ])
 def test_looks_like_clean_output_rejects(text: str) -> None:
     from workers.conversation_handler import _looks_like_clean_output

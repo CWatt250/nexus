@@ -280,9 +280,47 @@ def _maybe_alert_telegram(count_24h: int) -> None:
         log.warning("denial alert bookkeeping failed: %s", exc)
 
 
+_QUICK_CHAT_JSON_HINT = (
+    "\n\nReturn ONLY a single-key JSON object: "
+    '{"reply": "<your 1-3 sentence answer here>"}. '
+    "No prose outside the JSON. No reasoning. No 'Okay,' / 'Let me think' / "
+    "'The user asked' preambles. Just the JSON."
+)
+
+
 def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
-    """One-shot quick_chat call against any model. Centralised so the
-    primary + fallback paths stay byte-identical except for the model id."""
+    """One-shot quick_chat call against any model. Forces JSON-mode
+    output ({"reply": "..."}) which has the side effect of
+    suppressing qwen3:4b's chain-of-thought leak — the model can't
+    emit "Okay, the user asked..." prose if its output schema is
+    locked to a single string field. Falls back to plain-text mode if
+    the JSON parse fails so a model that doesn't honour the format
+    flag still gets a chance.
+    """
+    try:
+        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT},
+                {"role": "user", "content": message},
+            ],
+            options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 200},
+            keep_alive=-1,
+            think=False,
+            format="json",
+        )
+        body = (resp.get("message", {}) or {}).get("content", "").strip()
+        try:
+            obj = json.loads(body)
+            reply = (obj or {}).get("reply", "") if isinstance(obj, dict) else ""
+            if reply:
+                return _clean_quick_chat(reply)
+        except json.JSONDecodeError:
+            pass  # fall through to plain-text retry
+    except Exception as exc:
+        log.warning("quick_chat json mode failed: %s — retrying plain", exc)
+
+    # Plain-text fallback if the JSON path returned nothing useful.
     resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
         model=model,
         messages=[
@@ -294,7 +332,63 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
         think=False,
     )
     body = (resp.get("message", {}) or {}).get("content", "").strip()
-    return nexus.strip_thinking(body) if hasattr(nexus, "strip_thinking") else body
+    return _clean_quick_chat(body)
+
+
+# qwen3:4b reliably leaks reasoning prose like:
+#   "Okay, the user asked X. That's a simple Y question. Let me think...
+#    7 plus 8 equals 15. I should reply directly with the answer."
+# JSON mode contains the OUTPUT shape but the CoT still ends up inside
+# the `reply` field. This regex matches sentence-by-sentence preambles
+# we can safely drop. Anything matching means "this sentence is the
+# model talking to itself, not to the user".
+_QUICK_CHAT_PREAMBLE_RE = re.compile(
+    r"^\s*("
+    r"okay[,.]?\s+(?:the\s+user|let|so|i|this|that|since|first)\b.*?(?:\.|\?|!)\s*"
+    r"|hmm[,.]?\s+.*?(?:\.|\?|!)\s*"
+    r"|wait[,.]?\s+.*?(?:\.|\?|!)\s*"
+    r"|alright[,.]?\s+.*?(?:\.|\?|!)\s*"
+    r"|let'?s?\s+(?:see|think|check|verify|calculate|figure)\b.*?(?:\.|\?|!)\s*"
+    r"|let\s+me\s+(?:see|think|check|verify|calculate|figure|recall).*?(?:\.|\?|!)\s*"
+    r"|the\s+user\s+(?:is\s+)?(?:asking|asked|wants|needs).*?(?:\.|\?|!)\s*"
+    r"|since\s+(?:this|the\s+user|i\b).*?(?:\.|\?|!)\s*"
+    r"|first[,.]?\s+let\s+me.*?(?:\.|\?|!)\s*"
+    r"|i\s+(?:should|need\s+to|will|can)\s+(?:reply|answer|respond|provide).*?(?:\.|\?|!)\s*"
+    r"|that'?s?\s+(?:a\s+)?(?:simple|quick|easy|straightforward).*?(?:\.|\?|!)\s*"
+    r"|so\s+(?:the|i|let)\b.*?(?:\.|\?|!)\s*"
+    r"|we\s+are\s+given.*?(?:\.|\?|!)\s*"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_reasoning_preamble(text: str) -> str:
+    """Drop reasoning-prose sentences that lead the response. Loops
+    because qwen3:4b stacks 2-3 of them in a row before getting to the
+    actual answer. Stops as soon as no preamble matches the head."""
+    if not text:
+        return text
+    for _ in range(6):  # cap loop — never strip more than 6 sentences
+        m = _QUICK_CHAT_PREAMBLE_RE.match(text)
+        if not m:
+            break
+        text = text[m.end():]
+        # qwen3:4b sometimes uses ellipses ("Let me think... 7+8 = 15"),
+        # so the previous sentence's trailing dots can lead the next
+        # iteration. Strip them so subsequent regex matches stay anchored.
+        text = text.lstrip(" .,;:")
+    return text.strip()
+
+
+def _clean_quick_chat(text: str) -> str:
+    """Strip <think> tags, the common reasoning-leak prose patterns
+    qwen3:4b emits even with think=False, and trailing 'I should...' /
+    'In summary...' meta-commentary. Belt-and-suspenders on top of the
+    JSON-mode output constraint."""
+    if hasattr(nexus, "strip_thinking"):
+        text = nexus.strip_thinking(text)
+    text = _strip_reasoning_preamble(text)
+    return text.strip()
 
 
 def quick_chat(message: str) -> str:
@@ -487,7 +581,12 @@ def _looks_like_clean_output(text: str) -> bool:
     - <= 600 chars (longer outputs are usually result lists / dumps)
     - doesn't start with JSON or list markers
     - doesn't start with ERROR (let the formatter explain those)
-    - ends with sentence punctuation or a closing quote/paren
+    - has at least one space (single-token outputs are usually IDs/codes)
+
+    Earlier version required a terminating punctuation char, but real
+    tool outputs commonly end on UTC dates, repo names, etc. — that
+    bounced github_auth_status into the formatter for no reason. Shape
+    checks (length + JSON/ERROR exclusion + word count) are enough.
     """
     if not text:
         return False
@@ -500,7 +599,9 @@ def _looks_like_clean_output(text: str) -> bool:
     head = text[:8].upper()
     if head.startswith("ERROR") or head.startswith("(NO ") or head.startswith("ADD "):
         return False
-    return text[-1] in ".!?'\")]}>:"
+    # Reject single-token outputs (ids, codes, single numbers). Multi-word
+    # output that fits the size budget is almost always readable.
+    return " " in text
 
 
 def _format_answer(message: str, tool_name: str, tool_result: str) -> str:
