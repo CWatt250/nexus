@@ -558,6 +558,79 @@ async def intent_latency(hours: int = 24):
     }
 
 
+@app.get("/metrics/quick_chat_cleanliness")
+async def quick_chat_cleanliness(hours: int = 24):
+    """Rolling cleanliness rate for the qwen3:4b quick_chat path
+    (Fix #4 v2). Reads `~/AI_Agent/memory/quick_chat_cleanliness.jsonl`.
+
+    Shape:
+        {
+          "window_hours": 24,
+          "total": 87,
+          "clean": 84,
+          "leaked": 3,
+          "clean_rate": 0.966,
+          "fallback_used": 3,
+          "leak_breakdown": {"denial": 1, "thinking": 2}
+        }
+
+    Target: >= 0.95 clean_rate. Below that, it's time to revisit the
+    model choice or the strict-prompt config.
+    """
+    from datetime import datetime, timedelta, timezone
+    import json as _json
+    from pathlib import Path
+
+    log_path = Path.home() / "AI_Agent" / "memory" / "quick_chat_cleanliness.jsonl"
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(1, min(hours, 24 * 30)))).timestamp()
+
+    total = 0
+    clean = 0
+    fallback = 0
+    leak_kinds: dict[str, int] = {}
+
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = _json.loads(raw)
+                    except _json.JSONDecodeError:
+                        continue
+                    ts = entry.get("ts", "")
+                    if not isinstance(ts, str):
+                        continue
+                    try:
+                        t = datetime.fromisoformat(ts).timestamp()
+                    except ValueError:
+                        continue
+                    if t < cutoff:
+                        continue
+                    total += 1
+                    if entry.get("clean"):
+                        clean += 1
+                    if entry.get("fallback_used"):
+                        fallback += 1
+                    lk = entry.get("leak_kind")
+                    if lk:
+                        leak_kinds[lk] = leak_kinds.get(lk, 0) + 1
+        except OSError:
+            pass
+
+    return {
+        "window_hours": hours,
+        "total": total,
+        "clean": clean,
+        "leaked": total - clean,
+        "clean_rate": round(clean / total, 3) if total else 1.0,
+        "fallback_used": fallback,
+        "leak_breakdown": leak_kinds,
+    }
+
+
 @app.get("/agents")
 async def list_agents():
     """Get status of all running agents and their tasks."""

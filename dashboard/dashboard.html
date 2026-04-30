@@ -122,6 +122,14 @@
       <div id="lat-fast-format" style="margin-top:10px; color:#91a0c8; font-size:12px;"></div>
     </div>
     <div class="card">
+      <h3>quick_chat cleanliness · last 24h
+        <span id="clean-rate" style="font-weight:normal;"></span>
+      </h3>
+      <div id="clean-body" style="font-size:13px; line-height:1.5; color:#d2dbf3;">
+        loading…
+      </div>
+    </div>
+    <div class="card">
       <h3>Recent agent turns (avg latency, tools, tokens)</h3>
       <table>
         <thead><tr><th>ts</th><th>route</th><th>model</th><th>wall_s</th><th>tools</th><th>tokens in/out</th><th>ok</th></tr></thead>
@@ -314,6 +322,36 @@ async function refreshLatency() {
 }
 refreshLatency();
 setInterval(refreshLatency, 60_000);
+
+// quick_chat cleanliness widget — target >= 0.95.
+async function refreshCleanliness() {
+  try {
+    const resp = await fetch(`${API_BASE}/metrics/quick_chat_cleanliness?hours=24`);
+    if (!resp.ok) return;
+    const d = await resp.json();
+    const rateEl = document.getElementById('clean-rate');
+    const bodyEl = document.getElementById('clean-body');
+    if (!d.total) {
+      rateEl.textContent = '· no traffic';
+      bodyEl.textContent = 'No quick_chat calls in the last 24h.';
+      return;
+    }
+    const pct = (d.clean_rate * 100).toFixed(1);
+    const ok = d.clean_rate >= 0.95;
+    rateEl.style.color = ok ? '#a4f2c0' : '#ffb4b4';
+    rateEl.textContent = `· ${pct}% clean (${d.clean}/${d.total})`;
+    const leakBits = Object.entries(d.leak_breakdown || {})
+      .map(([k, v]) => `${k}: ${v}`).join(', ') || 'none';
+    bodyEl.innerHTML =
+      `<div>Fallback to qwen3.6 used: <strong>${d.fallback_used}</strong></div>` +
+      `<div>Leak breakdown: <strong>${leakBits}</strong></div>` +
+      `<div style="color:#91a0c8; margin-top:6px;">Target ≥ 95%. Below → investigate model regression or prompt drift.</div>`;
+  } catch (e) {
+    /* silent */
+  }
+}
+refreshCleanliness();
+setInterval(refreshCleanliness, 60_000);
 </script>
 </body>
 </html>

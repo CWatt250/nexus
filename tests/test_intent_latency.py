@@ -117,3 +117,43 @@ def test_metrics_endpoint_handles_missing_file(tmp_path, monkeypatch) -> None:
     assert out["total"] == 0
     assert out["by_intent"] == {}
     assert out["fast_format"] == {}
+
+
+# --- 5. /metrics/quick_chat_cleanliness aggregates correctly ------------
+def test_cleanliness_endpoint(tmp_path, monkeypatch) -> None:
+    import nexus_api
+    from datetime import datetime, timedelta, timezone
+
+    home = tmp_path / "home"
+    log_dir = home / "AI_Agent" / "memory"
+    log_dir.mkdir(parents=True)
+    log_path = log_dir / "quick_chat_cleanliness.jsonl"
+
+    now = datetime.now(timezone.utc)
+    rows = [
+        {"ts": (now - timedelta(hours=1)).isoformat(timespec="seconds"),
+         "model": "qwen3:4b", "elapsed_s": 0.4, "clean": True,  "fallback_used": False},
+        {"ts": (now - timedelta(hours=2)).isoformat(timespec="seconds"),
+         "model": "qwen3:4b", "elapsed_s": 0.5, "clean": True,  "fallback_used": False},
+        {"ts": (now - timedelta(hours=3)).isoformat(timespec="seconds"),
+         "model": "qwen3.6",  "elapsed_s": 7.2, "clean": True,  "fallback_used": True,
+         "leak_kind": "thinking"},
+        {"ts": (now - timedelta(hours=4)).isoformat(timespec="seconds"),
+         "model": "qwen3:4b", "elapsed_s": 0.5, "clean": False, "fallback_used": True,
+         "leak_kind": "denial"},
+        # outside window
+        {"ts": (now - timedelta(hours=30)).isoformat(timespec="seconds"),
+         "model": "qwen3:4b", "elapsed_s": 0.4, "clean": True,  "fallback_used": False},
+    ]
+    log_path.write_text("\n".join(json.dumps(r) for r in rows))
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home), raising=False)
+
+    import asyncio
+    out = asyncio.run(nexus_api.quick_chat_cleanliness(hours=24))
+    assert out["total"] == 4
+    assert out["clean"] == 3
+    assert out["leaked"] == 1
+    assert out["clean_rate"] == 0.75
+    assert out["fallback_used"] == 2
+    assert out["leak_breakdown"] == {"thinking": 1, "denial": 1}
