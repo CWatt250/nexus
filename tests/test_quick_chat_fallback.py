@@ -157,3 +157,98 @@ def test_telegram_alert_skipped_below_threshold(monkeypatch, tmp_path) -> None:
 
     ch._maybe_alert_telegram(2)
     assert sent == []
+
+
+# --- 8. Thinking-leak detection -----------------------------------------
+@pytest.mark.parametrize("text,expected_leak", [
+    # The literal failing example from this morning's bug report.
+    (
+        "I need to banter back lightly as per the rules. Keep it 2-3 sentences, "
+        "conversational tone. No preamble, no tags. Since they're greeting me, "
+        "I'll respond with a friendly, quick reply that matches their vibe.",
+        True,
+    ),
+    # Common qwen3:4b leak shapes
+    ("Okay, the user asked what's 7+8.", True),
+    ("Let me count: 1, 2, 3...", True),
+    ("Make sure to mention the timezone.", True),
+    ("Double-checking the format.", True),
+    ("Maybe something like 'You're welcome'.", True),
+    ("As Nexus, I should reply tersely.", True),
+    ("We are in 2026, Thursday morning.", True),
+    # Clean answers — must NOT trip the detector
+    ("Hey. WattBott still running smooth. What's on your mind?", False),
+    ("15.", False),
+    ("Transmission Control Protocol.", False),
+    ("It's 8:30 AM.", False),
+    ("Why don't scientists trust atoms? Because they make up everything!", False),
+])
+def test_looks_like_thinking_leak(text: str, expected_leak: bool) -> None:
+    from workers.conversation_handler import looks_like_thinking_leak
+    assert looks_like_thinking_leak(text) is expected_leak, f"misclassified: {text!r}"
+
+
+# --- 9. </think> separator stripping ------------------------------------
+def test_split_unbalanced_close_think() -> None:
+    from workers.conversation_handler import _split_unbalanced_close_think
+    raw = (
+        "Okay, user said hi. Let me craft a warm reply. *checks notes*\n"
+        "</think>\n"
+        "Hey. WattBott still running smooth. What's on your mind?"
+    )
+    out = _split_unbalanced_close_think(raw)
+    assert out.startswith("Hey.")
+    assert "Let me craft" not in out
+    assert "</think>" not in out
+
+
+def test_split_unbalanced_close_think_passes_through_when_no_close() -> None:
+    from workers.conversation_handler import _split_unbalanced_close_think
+    raw = "It's 8:30 AM."
+    assert _split_unbalanced_close_think(raw) == raw
+
+
+# --- 10. quick_chat falls back on thinking_leak (not just denial) -------
+def test_quick_chat_falls_back_on_thinking_leak(monkeypatch, tmp_path) -> None:
+    """The actual bug: qwen3:4b emits CoT prose without any denial
+    keywords. The new fallback trigger is `looks_like_thinking_leak`."""
+    from workers import conversation_handler as ch
+
+    monkeypatch.setattr(ch, "_DENIAL_LOG", tmp_path / "denials.jsonl")
+    monkeypatch.setattr(ch, "_DENIAL_LAST_ALERT", tmp_path / "last_alert")
+    monkeypatch.setattr(ch, "_CLEANLINESS_LOG", tmp_path / "cleanliness.jsonl")
+    monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
+
+    def fake(model, msg, sys):
+        if model == "qwen3:4b":
+            return ("I need to banter back lightly as per the rules. "
+                    "Keep it 2-3 sentences. Since they're greeting me, "
+                    "I'll respond with a friendly reply.")
+        return "Hey, what's up. WattBott's running smooth."
+
+    monkeypatch.setattr(ch, "_ollama_quick_chat", fake)
+
+    out = ch.quick_chat("Hey what's up brotha")
+    assert "running smooth" in out
+    assert "I need to banter" not in out
+    # Denial log should record this as a "thinking" leak, not a "denial".
+    denials = (tmp_path / "denials.jsonl").read_text().strip().splitlines()
+    assert len(denials) == 1
+    entry = json.loads(denials[0])
+    assert entry["kind"] == "thinking"
+
+
+def test_quick_chat_records_cleanliness_when_clean(monkeypatch, tmp_path) -> None:
+    from workers import conversation_handler as ch
+
+    monkeypatch.setattr(ch, "_CLEANLINESS_LOG", tmp_path / "clean.jsonl")
+    monkeypatch.setattr(ch, "_ollama_quick_chat",
+                        lambda m, msg, s: "It's 15.")
+
+    out = ch.quick_chat("what's 7+8")
+    assert out == "It's 15."
+
+    rec = json.loads((tmp_path / "clean.jsonl").read_text().strip())
+    assert rec["clean"] is True
+    assert rec["fallback_used"] is False
+    assert rec["model"] == "qwen3:4b"

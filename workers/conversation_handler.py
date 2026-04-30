@@ -135,6 +135,12 @@ class Intent(BaseModel):
 
 
 QUICK_CHAT_SYSTEM_PROMPT_BASE = (
+    # Strict prefix — qwen3:4b ignores 'no preamble' phrasing but obeys
+    # this when paired with format=json + low num_predict (Fix #4 v2).
+    "OUTPUT ONLY THE FINAL ANSWER. Do NOT explain your reasoning. "
+    "Do NOT count sentences. Do NOT think out loud. Do NOT meta-comment. "
+    "Respond as if the user can only see your final words. If you catch "
+    "yourself starting to reason, STOP and just give the answer.\n\n"
     "You are Nexus — a fast, warm, terse personal assistant for Colton on his "
     "WattBott workstation. Reply in 2-3 sentences, conversational tone, no "
     "preamble, no <think> tags, no meta-commentary about how you'll answer. "
@@ -196,27 +202,59 @@ def _datetime_context() -> str:
     )
 
 
-# Denial-counter persistence. Each entry: {"ts": iso, "msg": short, "model": str}.
-# Bounded — old lines pruned on append once the file passes ~10k entries.
+# Denial-counter persistence. Each entry: {"ts": iso, "msg": short,
+# "model": str, "kind": "denial"|"thinking_leak"}.
 _DENIAL_LOG = Path.home() / "AI_Agent" / "memory" / "quick_chat_denials.jsonl"
 _DENIAL_24H_THRESHOLD = 5  # alert via Telegram when >= this many in 24h
 _DENIAL_ALERT_COOLDOWN_S = 6 * 3600  # don't re-alert more than every 6h
 _DENIAL_LAST_ALERT = Path.home() / "AI_Agent" / "memory" / "quick_chat_denial_last_alert"
 
+# Cleanliness telemetry: every quick_chat call writes one line.
+# {"ts": iso, "model": str, "elapsed_s": float, "clean": bool,
+#  "fallback_used": bool, "leak_kind": "denial"|"thinking"|null}
+_CLEANLINESS_LOG = Path.home() / "AI_Agent" / "memory" / "quick_chat_cleanliness.jsonl"
 
-def _record_denial(message: str, model: str) -> None:
-    """Append one line to the denial log. Best-effort, never raises."""
+
+def _record_denial(message: str, model: str, *, kind: str = "denial") -> None:
+    """Append one line to the denial log. Best-effort, never raises.
+
+    `kind` distinguishes denial-style refusals ("I can't browse the web")
+    from thinking-style leaks ("Okay, the user asked..."). Both push the
+    same 24h alert threshold so a regression in either is visible."""
     try:
         _DENIAL_LOG.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
             "msg": (message or "")[:140],
             "model": model,
+            "kind": kind,
         }
         with _DENIAL_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError as exc:
         log.warning("denial log append failed: %s", exc)
+
+
+def _record_cleanliness(model: str, elapsed_s: float, *, clean: bool,
+                        fallback_used: bool, leak_kind: str | None = None) -> None:
+    """Append one cleanliness observation. Read by
+    /metrics/quick_chat_cleanliness for the dashboard widget.
+    Best-effort — never raises."""
+    try:
+        _CLEANLINESS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "model": model,
+            "elapsed_s": round(elapsed_s, 3),
+            "clean": clean,
+            "fallback_used": fallback_used,
+        }
+        if leak_kind:
+            entry["leak_kind"] = leak_kind
+        with _CLEANLINESS_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        log.warning("cleanliness log append failed: %s", exc)
 
 
 def _denials_in_last_24h() -> int:
@@ -281,21 +319,30 @@ def _maybe_alert_telegram(count_24h: int) -> None:
 
 
 _QUICK_CHAT_JSON_HINT = (
-    "\n\nReturn ONLY a single-key JSON object: "
-    '{"reply": "<your 1-3 sentence answer here>"}. '
-    "No prose outside the JSON. No reasoning. No 'Okay,' / 'Let me think' / "
-    "'The user asked' preambles. Just the JSON."
+    '\n\nReturn ONLY this JSON object: {"reply": "<your answer>"}. '
+    "No prose outside the JSON. No reasoning inside the reply field. "
+    "No \"Okay,\" / \"Let me\" / \"The user\" preambles. Just the answer."
 )
+
+# qwen3:4b investigation (see /tmp/qwen3_4b_outputs.log) found that:
+#  - `think=False` does NOT actually disable chain-of-thought; it just
+#    hides the opening <think> tag. The model still emits raw reasoning
+#    prose followed (sometimes) by a closing </think> + the real answer.
+#  - With num_predict=200, half the responses got cut off mid-reasoning
+#    before reaching any answer at all.
+#  - With strict-prefix system prompt + format=json + num_predict=120 +
+#    temperature=0.3, every test case returned a clean direct answer
+#    in 0.3-0.5 s. That's the sweet spot.
+QUICK_CHAT_NUM_PREDICT = 120
+QUICK_CHAT_TEMPERATURE = 0.3
 
 
 def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
     """One-shot quick_chat call against any model. Forces JSON-mode
-    output ({"reply": "..."}) which has the side effect of
-    suppressing qwen3:4b's chain-of-thought leak — the model can't
-    emit "Okay, the user asked..." prose if its output schema is
-    locked to a single string field. Falls back to plain-text mode if
-    the JSON parse fails so a model that doesn't honour the format
-    flag still gets a chance.
+    output ({"reply": "..."}) and tight num_predict to suppress
+    qwen3:4b's CoT. Falls back to plain-text mode if the JSON parse
+    fails so any model that doesn't honour the format flag still gets
+    a chance to answer.
     """
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
@@ -304,7 +351,11 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
                 {"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT},
                 {"role": "user", "content": message},
             ],
-            options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 200},
+            options={
+                "temperature": QUICK_CHAT_TEMPERATURE,
+                "num_ctx": 4096,
+                "num_predict": QUICK_CHAT_NUM_PREDICT,
+            },
             keep_alive=-1,
             think=False,
             format="json",
@@ -321,13 +372,18 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
         log.warning("quick_chat json mode failed: %s — retrying plain", exc)
 
     # Plain-text fallback if the JSON path returned nothing useful.
+    # Same tight num_predict so a stuck model still can't ramble forever.
     resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
         ],
-        options={"temperature": 0.5, "num_ctx": 4096, "num_predict": 250},
+        options={
+            "temperature": QUICK_CHAT_TEMPERATURE,
+            "num_ctx": 4096,
+            "num_predict": QUICK_CHAT_NUM_PREDICT * 2,  # bigger budget for plain mode
+        },
         keep_alive=-1,
         think=False,
     )
@@ -380,11 +436,88 @@ def _strip_reasoning_preamble(text: str) -> str:
     return text.strip()
 
 
+def _split_unbalanced_close_think(text: str) -> str:
+    """qwen3:4b often emits its CoT prose then a bare `</think>` close
+    tag (no opening), then the real answer. Strip everything before
+    the first `</think>` if one is present.
+
+    This is separate from `nexus.strip_thinking` (which expects matched
+    open+close tags) because the open is always missing here."""
+    if not text or "</think>" not in text:
+        return text
+    return text.split("</think>", 1)[1].strip()
+
+
+# Sentinel substrings that indicate raw internal reasoning leaked into
+# the user-facing reply. If ANY of these survive both `</think>` split
+# and the preamble stripper, we flag the response as "leaked" so the
+# caller can retry on qwen3.6.
+_LEAK_SENTINELS = (
+    "let me count",
+    "let me recall",
+    "let me check",
+    "let me think",
+    "let me craft",
+    "let me pick",
+    "double-checking",
+    "double check",
+    "make sure to",
+    "make sure it's",
+    "no meta-commentary",
+    "no preamble",
+    "no <think>",
+    "no  tags",
+    "okay, the user",
+    "okay, user just",
+    "okay, user asked",
+    "we are in the middle of",
+    "we are in 2026",
+    "i need to respond",
+    "i should reply",
+    "i'll respond with",
+    "*checks notes*",
+    "*checks time*",
+    "*checks rules*",
+    "as nexus,",
+    "the user is asking",
+    "the user just said",
+    "the user asks:",
+    "maybe something like",
+    "first, i'll",
+    "as per the rules",
+    "since they're",
+    "since the user",
+    "perfect. no",
+    "got that?\n",
+    "let me craft",
+)
+
+
+def looks_like_thinking_leak(text: str) -> bool:
+    """True if the cleaned reply still contains internal-reasoning
+    sentinels we *know* are CoT artifacts. Used as a fallback trigger
+    after the cleaner has already done its best."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(s in lower for s in _LEAK_SENTINELS)
+
+
 def _clean_quick_chat(text: str) -> str:
-    """Strip <think> tags, the common reasoning-leak prose patterns
-    qwen3:4b emits even with think=False, and trailing 'I should...' /
-    'In summary...' meta-commentary. Belt-and-suspenders on top of the
-    JSON-mode output constraint."""
+    """Strip <think> tags, the bare `</think>` separator qwen3:4b
+    emits without an opener, common reasoning-prose preambles, and
+    trailing meta-commentary. Belt-and-suspenders on top of the
+    JSON-mode + tight num_predict constraint.
+
+    Order matters:
+      1. `</think>` split — if the model self-marked the answer boundary,
+         everything before it is reasoning to drop.
+      2. nexus.strip_thinking — drop matched <think>...</think> blocks.
+      3. preamble stripper — sentence-level "Okay, the user..." drops.
+    """
+    if not text:
+        return text
+    text = _split_unbalanced_close_think(text)
     if hasattr(nexus, "strip_thinking"):
         text = nexus.strip_thinking(text)
     text = _strip_reasoning_preamble(text)
@@ -394,32 +527,48 @@ def _clean_quick_chat(text: str) -> str:
 def quick_chat(message: str) -> str:
     """Inline conversational reply for CHAT and QUERY_INLINE intents.
 
-    Two-tier model strategy (Fix #4 part A):
-      1. qwen3:4b primary — ~1-2s warm, 5x faster than qwen3.6.
-      2. If the reply trips `_looks_like_denial` (4b sometimes refuses
-         tool capabilities Nexus actually has), log the denial and
-         retry ONCE on qwen3.6. Fallback latency is the worst case
-         (~8-10s) but it's rare. Five denials in 24h fires a Telegram
-         alert so we know to investigate or revert.
+    Two-tier model strategy (Fix #4 v2 — qwen3:4b CoT-leak repair):
+      1. qwen3:4b primary in JSON-mode + tight num_predict + strict
+         system prompt. ~0.4-1.5s warm, 5-15x faster than qwen3.6.
+      2. If the reply trips `_looks_like_denial` (model refused) OR
+         `looks_like_thinking_leak` (model leaked CoT prose despite
+         the JSON+strict-prompt+post-processing pipeline), log it and
+         retry ONCE on qwen3.6. Five total leak-or-denial events in
+         24h fires a Telegram alert so we can revert if qwen3:4b
+         starts regressing.
 
     Real datetime is injected into the system prompt every call so the
     model can answer "what time is it" correctly instead of
-    hallucinating from training data. Strips leaked <think> blocks.
+    hallucinating from training data.
     """
+    import time as _time  # noqa: PLC0415
+
     system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{_datetime_context()}"
+    t0 = _time.monotonic()
     try:
         primary = _ollama_quick_chat(QUICK_CHAT_MODEL, message, system_prompt)
     except Exception as exc:
+        elapsed = _time.monotonic() - t0
+        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+                            clean=False, fallback_used=False, leak_kind="error")
         return f"(quick_chat error: {type(exc).__name__}: {exc})"
 
-    if not _looks_like_denial(primary):
+    leak_kind: str | None = None
+    if _looks_like_denial(primary):
+        leak_kind = "denial"
+    elif looks_like_thinking_leak(primary):
+        leak_kind = "thinking"
+
+    if leak_kind is None:
+        elapsed = _time.monotonic() - t0
+        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+                            clean=True, fallback_used=False)
         return primary
 
-    # Primary denied — log + retry on the heavier model exactly once.
-    log.info("quick_chat denial on %s — retrying on %s. denial=%r msg=%r",
-             QUICK_CHAT_MODEL, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
+    log.info("quick_chat %s leak (%s) — retrying on %s. preview=%r msg=%r",
+             QUICK_CHAT_MODEL, leak_kind, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
              primary[:120], message[:120])
-    _record_denial(message, QUICK_CHAT_MODEL)
+    _record_denial(message, QUICK_CHAT_MODEL, kind=leak_kind)
     _maybe_alert_telegram(_denials_in_last_24h())
 
     try:
@@ -427,11 +576,22 @@ def quick_chat(message: str) -> str:
             QUICK_CHAT_DENIAL_FALLBACK_MODEL, message, system_prompt,
         )
     except Exception as exc:
+        elapsed = _time.monotonic() - t0
         log.warning("quick_chat fallback failed: %s — returning primary reply", exc)
+        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+                            clean=False, fallback_used=True, leak_kind=leak_kind)
         return primary
 
-    # If the fallback also denied, prefer the primary (shorter typically).
-    return fallback if not _looks_like_denial(fallback) else primary
+    # If the fallback also denied or leaked, return whichever is shorter
+    # (the primary is usually less verbose) so the user gets *something*.
+    fallback_bad = _looks_like_denial(fallback) or looks_like_thinking_leak(fallback)
+    elapsed = _time.monotonic() - t0
+    final = primary if fallback_bad else fallback
+    _record_cleanliness(
+        QUICK_CHAT_DENIAL_FALLBACK_MODEL, elapsed,
+        clean=not fallback_bad, fallback_used=True, leak_kind=leak_kind,
+    )
+    return final
 
 
 LITE_AGENT_TIMEOUT_S = 15.0
