@@ -177,7 +177,7 @@ async def _run_one(row: dict) -> None:
         msgs = result.get("messages", [])
         for m in reversed(msgs):
             if m.__class__.__name__ == "AIMessage" and getattr(m, "content", ""):
-                reply = nexus.strip_thinking(m.content)
+                reply = nexus.clean_task_reply(m.content)
                 break
     except asyncio.TimeoutError:
         ok = False

@@ -425,6 +425,22 @@ def fast_mode_messages(user_text: str, *, route: str | None = None, override: bo
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
 
+# Untagged reasoning preambles qwen3.6 sometimes emits when `think=False`
+# is set on the model but the agent path is long enough that the system
+# instruction drift matters. Anchored to start so we only catch the lead.
+_REASONING_PREAMBLE_RE = re.compile(
+    r"^\s*(?:"
+    r"okay,?\s+(?:let'?s|let\s+me|so)\b"
+    r"|hmm[,.\s]"
+    r"|wait[,.\s]+(?:the\s+tool|but|i\s+|let)"
+    r"|let\s+me\s+(?:check|see|think|look|verify)"
+    r"|so\s+the\s+(?:user|tool|task)"
+    r"|alright,?\s+(?:let|so)"
+    r"|first[,.\s]+let\s+me"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def strip_thinking(text: str) -> str:
     """Remove <think>...</think> reasoning blocks from a model response.
@@ -435,6 +451,70 @@ def strip_thinking(text: str) -> str:
     cleaned = _THINK_RE.sub("", text)
     cleaned = _OPEN_THINK_RE.sub("", cleaned)
     return cleaned.strip()
+
+
+def looks_like_raw_reasoning(text: str) -> bool:
+    """True if `text` appears to start with un-tagged qwen3 reasoning prose
+    ("Okay, let me check...", "Hmm,", "Wait, the tool is..."). Used after
+    strip_thinking() to detect leaks the regex can't catch.
+    """
+    if not text or len(text) < 8:
+        return False
+    return bool(_REASONING_PREAMBLE_RE.match(text))
+
+
+_EXTRACT_FINAL_PROMPT = (
+    "The text below is a leaked stream of an AI's reasoning process. "
+    "Extract ONLY the user-facing final answer. Output the answer in "
+    "1-3 short sentences, plain prose. No preamble. No reasoning. "
+    "No <think> tags. No 'Hmm', 'Wait', 'Okay let me'. "
+    "If there is no real answer in the text, output exactly: "
+    "(no clean answer extracted)"
+)
+
+
+def extract_clean_answer(text: str, *, model: str = "qwen3.6") -> str:
+    """One-shot Ollama call that asks the model to pull the final answer
+    out of a reasoning-leaked response. Used as a fallback when
+    `looks_like_raw_reasoning` flags the original output as suspect.
+    Returns the original text on any failure so we never make things worse.
+    """
+    if not text:
+        return text
+    try:
+        import ollama  # noqa: PLC0415
+        resp = ollama.Client(host=OLLAMA_URL).chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": _EXTRACT_FINAL_PROMPT},
+                {"role": "user", "content": text[:6000]},
+            ],
+            stream=False, think=False, keep_alive=-1,
+            options={"temperature": 0.1, "num_predict": 250, "num_ctx": 8192},
+        )
+    except Exception:
+        return text
+    body = (resp.get("message", {}) or {}).get("content", "").strip()
+    body = strip_thinking(body)
+    if not body or "(no clean answer extracted)" in body.lower():
+        return text
+    return body
+
+
+def clean_task_reply(text: str, *, allow_reextract: bool = True) -> str:
+    """Final scrub before a TASK reply hits the user.
+
+    1. Strip <think>...</think> blocks (closed and open-ended).
+    2. If what remains still looks like raw reasoning prose, ask qwen3.6
+       to extract the final answer with a strict system prompt.
+
+    Defense-in-depth on top of `reasoning=False` on the LLM. Pure text in,
+    pure text out — never raises.
+    """
+    cleaned = strip_thinking(text or "")
+    if allow_reextract and looks_like_raw_reasoning(cleaned):
+        cleaned = strip_thinking(extract_clean_answer(cleaned))
+    return cleaned
 
 
 class ThinkStripper:
