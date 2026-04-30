@@ -60,6 +60,21 @@ MODULE_CATEGORY: dict[str, str] = {
     "tools.capabilities_tool":  "Meta & Telemetry",
 }
 
+# Per-category preamble — appears immediately under the heading. Use
+# this for cross-cutting notes (auth requirements, dependencies) the
+# per-tool docstrings can't capture.
+CATEGORY_PREAMBLE: dict[str, str] = {
+    "GitHub": (
+        "Auth: token resolved from `~/AI_Agent/config/secrets.yaml` "
+        "(`GITHUB_PAT`, fine-grained — preferred), then env vars, then "
+        "`~/AI_Agent/.env` (`GITHUB_TOKEN`, classic). "
+        "When no token is configured, falls back to anonymous PyGithub — "
+        "**public repos only, ~60 req/h rate limit**. Run "
+        "`github_auth_status()` to see who you're logged in as, what "
+        "scopes the token has, and the current rate-limit budget."
+    ),
+}
+
 # Stable display order for categories.
 CATEGORY_ORDER = [
     "Web & Search",
@@ -137,6 +152,10 @@ def render() -> str:
             continue
         out.append(f"## {cat}")
         out.append("")
+        preamble = CATEGORY_PREAMBLE.get(cat)
+        if preamble:
+            out.append(f"_{preamble}_")
+            out.append("")
         for t in sorted(tools, key=lambda x: x.name):
             out.append(f"- {_signature(t)} — {_description(t)}")
         out.append("")
