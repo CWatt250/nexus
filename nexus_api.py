@@ -631,6 +631,169 @@ async def quick_chat_cleanliness(hours: int = 24):
     }
 
 
+@app.get("/api/dispatches")
+async def api_dispatches(limit: int = 30):
+    """Phase 22 dashboard endpoint: queue snapshot + recent results.
+
+    Single round-trip the dashboard polls/refreshes from. Combines the
+    live queue (running/queued/pending) with the most recent results
+    so the UI can render without juggling multiple endpoints."""
+    from core import cc_dispatch as _ccd
+    from dataclasses import asdict
+    snap = _ccd.queue_summary()
+    recent = [asdict(r) for r in _ccd.list_results(limit=limit)]
+    level, spend, budget = _ccd.budget_status()
+    return {
+        "queue": snap,
+        "recent": recent,
+        "budget": {"level": level, "spend": spend, "monthly_budget": budget},
+    }
+
+
+class DispatchAPIRequest(BaseModel):
+    """POST /api/dispatch — dashboard-facing dispatch entry point."""
+    prompt: str
+    label: str | None = None
+    time_budget_minutes: int = 120
+    force: bool = False
+
+
+@app.post("/api/dispatch")
+async def api_dispatch(req: DispatchAPIRequest):
+    """Dashboard-facing dispatch. Mirrors the LangGraph tool path so the
+    UI uses the same risky-pattern + budget gates. Returns dispatch_id
+    immediately."""
+    from core import cc_dispatch as _ccd
+    if not req.prompt or not req.prompt.strip():
+        return {"ok": False, "error": "empty prompt"}
+    minutes = max(5, min(int(req.time_budget_minutes or 120), 480))
+    level, spend, budget = _ccd.budget_status()
+    if level == "over" and not req.force:
+        return {
+            "ok": False,
+            "error": "budget exhausted",
+            "spend": spend, "budget": budget,
+        }
+    risky = _ccd.is_risky(req.prompt)
+    label = req.label or req.prompt.strip().splitlines()[0][:60]
+    meta = _ccd.DispatchMeta.new(
+        label=label, time_budget_minutes=minutes, risky_match=risky,
+    )
+    _ccd.write_prompt(meta, req.prompt, pending=bool(risky))
+    return {
+        "ok": True,
+        "dispatch_id": meta.dispatch_id,
+        "label": meta.label,
+        "pending_approval": bool(risky),
+        "risky_match": risky,
+        "time_budget_minutes": minutes,
+    }
+
+
+class DispatchActionRequest(BaseModel):
+    """POST /api/dispatch/{action} — approve / cancel / retry / extend."""
+    dispatch_id: str
+    extend_minutes: int | None = None
+
+
+@app.post("/api/dispatch/approve")
+async def api_dispatch_approve(req: DispatchActionRequest):
+    from core import cc_dispatch as _ccd
+    p = _ccd.approve(req.dispatch_id)
+    return {"ok": p is not None, "dispatch_id": req.dispatch_id}
+
+
+@app.post("/api/dispatch/cancel")
+async def api_dispatch_cancel(req: DispatchActionRequest):
+    from core import cc_dispatch as _ccd
+    p = _ccd.cancel(req.dispatch_id)
+    return {"ok": p is not None, "dispatch_id": req.dispatch_id}
+
+
+@app.get("/api/services")
+async def api_services():
+    """Phase 22.4 + dashboard 2.6 — health snapshot of nexus-* units.
+    Reads `systemctl is-active` for each default service. No sudo needed."""
+    import subprocess as _sp
+    from tools.restart_services_tool import DEFAULT_SERVICES
+    out = []
+    for name in DEFAULT_SERVICES:
+        try:
+            proc = _sp.run(
+                ["/bin/systemctl", "is-active", f"{name}.service"],
+                capture_output=True, text=True, timeout=3,
+            )
+            state = proc.stdout.strip() or "unknown"
+        except Exception:
+            state = "unknown"
+        out.append({"service": name, "state": state})
+    return {"services": out}
+
+
+class RestartAPIRequest(BaseModel):
+    services: list[str] | None = None
+
+
+@app.post("/api/restart")
+async def api_restart(req: RestartAPIRequest):
+    from tools.restart_services_tool import restart_services_sync
+    return restart_services_sync(req.services)
+
+
+@app.get("/api/dispatch/{dispatch_id}/log")
+async def api_dispatch_log(dispatch_id: str, tail: int = 200):
+    """Tail the cc_logs/<id>.log file for the dashboard log viewer."""
+    from core import cc_dispatch as _ccd
+    path = _ccd.LOGS / f"{dispatch_id}.log"
+    if not path.exists():
+        return {"ok": False, "log": ""}
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"ok": False, "log": ""}
+    lines = text.splitlines()
+    return {"ok": True, "log": "\n".join(lines[-max(1, tail):])}
+
+
+@app.get("/api/memory/retros")
+async def api_memory_retros(limit: int = 30):
+    """Recent retros from memory/retros/. Used by Memory tab."""
+    retros_dir = ROOT / "memory" / "retros"
+    if not retros_dir.exists():
+        return {"retros": []}
+    files = sorted(retros_dir.glob("retro_*.md"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+    out = []
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        out.append({
+            "id": f.stem, "mtime": f.stat().st_mtime,
+            "preview": text[:400], "size": len(text),
+        })
+    return {"retros": out}
+
+
+@app.get("/api/memory/retro/{retro_id}")
+async def api_memory_retro(retro_id: str):
+    retros_dir = ROOT / "memory" / "retros"
+    path = retros_dir / f"{retro_id}.md"
+    if not path.exists():
+        return {"ok": False, "body": ""}
+    try:
+        return {"ok": True, "body": path.read_text(encoding="utf-8")}
+    except OSError:
+        return {"ok": False, "body": ""}
+
+
+@app.get("/api/agents")
+async def list_agents_alias():
+    """Dashboard alias for /agents — keeps API surface uniform under /api/."""
+    return await list_agents()
+
+
 @app.get("/agents")
 async def list_agents():
     """Get status of all running agents and their tasks."""

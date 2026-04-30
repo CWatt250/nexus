@@ -77,14 +77,17 @@ def dispatch_to_claude_code(
     cc_dispatch.write_prompt(meta, prompt, pending=bool(risky))
 
     snap = cc_dispatch.queue_summary()
-    queued = snap["queued_count"]
+    # `queued_count` includes the file we just wrote, so subtract self
+    # to report "jobs ahead of you".
+    ahead = max(0, snap["queued_count"] - 1)
     running = snap["running"]
     approx_start = ""
-    if running:
-        # Crude ETA: assume current job uses ~25% of its budget remaining.
-        approx_start = " | running job ahead — start when it finishes"
-    elif queued:
-        approx_start = f" | {queued} ahead in queue"
+    if running and ahead > 0:
+        approx_start = f" | running job + {ahead} ahead"
+    elif running:
+        approx_start = " | will start when current job finishes"
+    elif ahead > 0:
+        approx_start = f" | {ahead} ahead in queue"
 
     if risky:
         _telegram_notify(

@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0A0E27">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nexus">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.svg">
+<link rel="icon" href="/icon-192.svg" type="image/svg+xml">
+<title>Nexus</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  html, body { background: #050818; min-height: 100vh; min-height: 100dvh; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
+                 system-ui, sans-serif;
+    color: #E8ECF7;
+    overscroll-behavior-y: contain;
+  }
+  .bg-aurora {
+    background:
+      radial-gradient(ellipse 1200px 800px at 12% 8%, rgba(99,102,241,0.35), transparent 60%),
+      radial-gradient(ellipse 1000px 700px at 90% 92%, rgba(56,189,248,0.30), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 50% 60%, rgba(236,72,153,0.18), transparent 70%),
+      linear-gradient(180deg, #0A0E27 0%, #1A1F4F 100%);
+    background-attachment: fixed;
+    animation: aurora-shift 24s ease-in-out infinite alternate;
+  }
+  @keyframes aurora-shift {
+    0%   { background-position: 0% 0%, 100% 100%, 50% 60%, 0 0; }
+    100% { background-position: 30% 10%, 70% 90%, 60% 50%, 0 0; }
+  }
+  .glass {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .glass-strong {
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.16);
+    backdrop-filter: blur(30px) saturate(160%);
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    border-radius: 24px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .glass-input {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 14px;
+    color: #E8ECF7;
+    padding: 12px 14px;
+  }
+  .glass-input::placeholder { color: rgba(232,236,247,0.4); }
+  .glass-input:focus { outline: none; border-color: rgba(99,102,241,0.6); }
+  .pulse-glow {
+    animation: pulse-glow 1.5s ease-out;
+  }
+  @keyframes pulse-glow {
+    0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.5); }
+    100% { box-shadow: 0 0 0 16px rgba(99,102,241,0); }
+  }
+  .tab-active {
+    background: rgba(99,102,241,0.20);
+    color: #C4B5FD;
+  }
+  /* Bottom-nav safe-area for iOS PWA install. */
+  .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 8px); }
+  .safe-top    { padding-top:    max(env(safe-area-inset-top), 8px); }
+  /* Hide scrollbars on the activity feed — keep it clean. */
+  .scroll-clean::-webkit-scrollbar { width: 6px; }
+  .scroll-clean::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  /* Spring-ish reveal animation — replaces framer-motion's spring transitions
+     for the small set of card mounts we actually animate. */
+  .reveal { animation: reveal 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-green  { background: #34D399; box-shadow: 0 0 8px #34D399; }
+  .dot-amber  { background: #FBBF24; box-shadow: 0 0 8px #FBBF24; }
+  .dot-red    { background: #F87171; box-shadow: 0 0 8px #F87171; }
+  .dot-grey   { background: #9CA3AF; }
+</style>
+</head>
+<body class="bg-aurora">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useEffect, useState, useRef, useCallback } = React;
+
+// ── tiny client helpers ─────────────────────────────────────────────────
+const API = (window.location.protocol + "//" + window.location.hostname + ":11435");
+async function get(path) {
+  const r = await fetch(API + path); return r.json();
+}
+async function post(path, body) {
+  const r = await fetch(API + path, {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify(body || {}),
+  });
+  return r.json();
+}
+
+// Format helpers — keep all formatting in one spot so a tweak hits everywhere.
+const fmtDur = (s) => {
+  if (!s && s !== 0) return "—";
+  if (s < 60) return `${s.toFixed(1)}s`;
+  if (s < 3600) return `${(s/60).toFixed(1)}m`;
+  return `${(s/3600).toFixed(1)}h`;
+};
+const fmtTimeAgo = (mtime) => {
+  const d = (Date.now()/1000) - mtime; return fmtDur(d) + " ago";
+};
+const statusDot = (state) => {
+  if (state === "active" || state === "done") return "dot-green";
+  if (state === "running" || state === "activating") return "dot-amber";
+  if (state === "failed" || state === "timeout" || state === "inactive") return "dot-red";
+  return "dot-grey";
+};
+
+// ── live WebSocket subscription ─────────────────────────────────────────
+function useEvents() {
+  const [events, setEvents] = useState([]);
+  const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    let ws, retry, alive = true;
+    const connect = () => {
+      try {
+        ws = new WebSocket(API.replace(/^http/, "ws") + "/ws/events");
+      } catch { setConnected(false); return; }
+      ws.onopen = () => alive && setConnected(true);
+      ws.onclose = () => {
+        if (!alive) return;
+        setConnected(false);
+        retry = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws && ws.close();
+      ws.onmessage = (m) => {
+        try {
+          const ev = JSON.parse(m.data);
+          setEvents((evs) => [ev, ...evs].slice(0, 200));
+        } catch {}
+      };
+    };
+    connect();
+    return () => { alive = false; clearTimeout(retry); ws && ws.close(); };
+  }, []);
+  return { events, connected };
+}
+
+// ── shared chrome ──────────────────────────────────────────────────────
+function Header({ tab, connected }) {
+  const titles = { home: "Nexus", dispatch: "Dispatch", memory: "Memory", settings: "Settings" };
+  return (
+    <div className="safe-top px-4 pt-3 pb-2 flex items-center justify-between">
+      <h1 className="text-2xl font-semibold tracking-tight">{titles[tab]}</h1>
+      <div className="flex items-center gap-2 text-xs text-white/60">
+        <span className={"dot " + (connected ? "dot-green" : "dot-red")}></span>
+        {connected ? "live" : "reconnecting"}
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ tab, setTab }) {
+  const items = [
+    { id: "home",     label: "Home",     icon: "🏠" },
+    { id: "dispatch", label: "Dispatch", icon: "🚀" },
+    { id: "memory",   label: "Memory",   icon: "🧠" },
+    { id: "settings", label: "Settings", icon: "⚙️" },
+  ];
+  return (
+    <div className="fixed bottom-0 left-0 right-0 safe-bottom px-2 pt-2 z-30">
+      <div className="glass-strong mx-auto max-w-2xl flex justify-around p-2">
+        {items.map((it) => (
+          <button
+            key={it.id}
+            onClick={() => setTab(it.id)}
+            className={"flex-1 flex flex-col items-center py-2 px-1 rounded-2xl transition-all duration-200 active:scale-95 " +
+              (tab === it.id ? "tab-active" : "text-white/70")}
+          >
+            <span className="text-lg leading-none">{it.icon}</span>
+            <span className="text-[10px] mt-1">{it.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HOME tab ────────────────────────────────────────────────────────────
+function ChatBox() {
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const onSend = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setMsgs((m) => [...m, { role: "user", content: text }]);
+    setInput(""); setBusy(true);
+    try {
+      const r = await post("/chat", { message: text });
+      setMsgs((m) => [...m, { role: "assistant", content: r.response || "(no reply)" }]);
+    } catch (e) {
+      setMsgs((m) => [...m, { role: "assistant", content: "Error: " + e.message }]);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="glass p-3 reveal">
+      <div className="scroll-clean overflow-y-auto pr-2 mb-3 space-y-2" style={{maxHeight: "44vh"}}>
+        {msgs.length === 0 && (
+          <div className="text-white/40 text-sm py-6 text-center">
+            Ask anything. Nexus replies via the same /chat endpoint Telegram uses.
+          </div>
+        )}
+        {msgs.map((m, i) => (
+          <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
+            <div className={"glass max-w-[85%] px-3 py-2 text-sm leading-snug " + (m.role === "user" ? "rounded-br-md" : "rounded-bl-md")}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="glass-input flex-1 text-sm"
+          placeholder={busy ? "thinking…" : "ask Nexus…"}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSend()}
+          disabled={busy}
+        />
+        <button
+          onClick={onSend}
+          disabled={busy || !input.trim()}
+          className="px-4 py-2 rounded-xl bg-indigo-500/80 hover:bg-indigo-400 transition active:scale-95 disabled:opacity-30 text-sm font-medium"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ActiveNow({ snap }) {
+  if (!snap || !snap.queue || !snap.queue.running) return null;
+  const r = snap.queue.running;
+  return (
+    <div className="glass p-4 reveal">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-wider text-white/50">Active now</div>
+        <span className="dot dot-amber pulse-glow"></span>
+      </div>
+      <div className="text-sm font-mono">{r.dispatch_id}</div>
+      <div className="text-xs text-white/60 mt-1">elapsed {fmtDur(r.elapsed_seconds)}</div>
+    </div>
+  );
+}
+
+function ActivityFeed({ events }) {
+  if (!events.length) return (
+    <div className="glass p-4 text-sm text-white/50 reveal">
+      Waiting for events. Tools and tasks will stream here as they fire.
+    </div>
+  );
+  return (
+    <div className="glass p-3 reveal">
+      <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Recent activity</div>
+      <div className="space-y-2 scroll-clean overflow-y-auto" style={{maxHeight: "50vh"}}>
+        {events.slice(0, 60).map((ev, i) => (
+          <div key={i} className="text-xs flex justify-between gap-2 py-1 border-b border-white/5 last:border-0">
+            <span className="font-mono text-indigo-300/80">{ev.event}</span>
+            <span className="text-white/50 truncate max-w-[60%]">
+              {ev.label || ev.dispatch_id || ev.task_id || ev.tool || ""}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeTab({ events, snap }) {
+  return (
+    <div className="px-4 space-y-3 pb-32">
+      <ChatBox />
+      <ActiveNow snap={snap} />
+      <ActivityFeed events={events} />
+    </div>
+  );
+}
+
+// ── DISPATCH tab ────────────────────────────────────────────────────────
+const TEMPLATES = [
+  { label: "Build a feature", text: "Build [feature]. Include tests. Commit." },
+  { label: "Fix a bug",       text: "Fix [bug description]. Reproduce with a test, then make it pass." },
+  { label: "Write tests",     text: "Add unit tests for [target]. Aim for 80%+ coverage." },
+  { label: "Refactor",        text: "Refactor [target] for readability. Don't change behavior. Tests must still pass." },
+];
+
+function DispatchTab({ snap, refresh }) {
+  const [prompt, setPrompt] = useState("");
+  const [label, setLabel] = useState("");
+  const [budget, setBudget] = useState(120);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  const submit = async (force = false) => {
+    if (!prompt.trim() || busy) return;
+    setBusy(true); setFeedback("");
+    try {
+      const r = await post("/api/dispatch", { prompt, label, time_budget_minutes: budget, force });
+      if (r.ok) {
+        setFeedback((r.pending_approval ? "🚨 Held for approval — " : "🚀 Dispatched — ") + r.dispatch_id);
+        setPrompt(""); setLabel("");
+        refresh();
+      } else {
+        setFeedback("⚠️ " + (r.error || "failed"));
+      }
+    } catch (e) { setFeedback("⚠️ " + e.message); }
+    finally { setBusy(false); }
+  };
+
+  const runningId = snap && snap.queue && snap.queue.running ? snap.queue.running.dispatch_id : null;
+  const queued = (snap && snap.queue && snap.queue.queued) || [];
+  const pending = (snap && snap.queue && snap.queue.pending_approval) || [];
+  const recent = (snap && snap.recent) || [];
+  const budgetInfo = (snap && snap.budget) || {};
+
+  return (
+    <div className="px-4 space-y-3 pb-32">
+      <div className="glass-strong p-4 reveal">
+        <textarea
+          className="glass-input w-full text-sm font-mono"
+          rows={5}
+          placeholder="Describe what Claude Code should build, fix, or refactor…"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+        <div className="flex flex-wrap gap-2 mt-2">
+          {TEMPLATES.map((t) => (
+            <button key={t.label}
+              onClick={() => setPrompt(t.text)}
+              className="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10 transition active:scale-95">
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          <input className="glass-input text-sm" placeholder="label (optional)"
+                 value={label} onChange={(e) => setLabel(e.target.value)} />
+          <input className="glass-input text-sm" type="number" min="5" max="480"
+                 value={budget} onChange={(e) => setBudget(parseInt(e.target.value) || 120)}
+                 placeholder="budget (min)" />
+        </div>
+        <div className="flex justify-between items-center mt-3">
+          <div className="text-xs text-white/50">
+            budget: ${(budgetInfo.spend || 0).toFixed(2)}/${(budgetInfo.monthly_budget || 50).toFixed(0)}
+            <span className={"ml-2 dot " + (budgetInfo.level === "over" ? "dot-red" : budgetInfo.level && budgetInfo.level.startsWith("warn") ? "dot-amber" : "dot-green")}></span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => submit(false)} disabled={busy || !prompt.trim()}
+              className="px-4 py-2 rounded-xl bg-indigo-500/80 hover:bg-indigo-400 transition active:scale-95 disabled:opacity-30 text-sm font-medium">
+              Dispatch
+            </button>
+            {budgetInfo.level === "over" && (
+              <button onClick={() => submit(true)} disabled={busy}
+                className="px-3 py-2 rounded-xl bg-red-500/30 border border-red-400/40 text-sm">
+                Force
+              </button>
+            )}
+          </div>
+        </div>
+        {feedback && <div className="mt-2 text-xs text-white/70">{feedback}</div>}
+      </div>
+
+      {pending.length > 0 && (
+        <div className="glass p-4 border border-amber-400/30 reveal">
+          <div className="text-xs uppercase tracking-wider text-amber-300/80 mb-2">
+            Pending approval ({pending.length})
+          </div>
+          {pending.map((p) => (
+            <DispatchCard key={p.dispatch_id} item={{...p, _pending: true}} refresh={refresh} />
+          ))}
+        </div>
+      )}
+
+      {runningId && (
+        <div className="glass p-4 reveal">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-wider text-white/50">Running</div>
+            <span className="dot dot-amber pulse-glow"></span>
+          </div>
+          <div className="text-sm font-mono">{runningId}</div>
+          <div className="text-xs text-white/60 mt-1">
+            elapsed {fmtDur(snap.queue.running.elapsed_seconds)}
+          </div>
+        </div>
+      )}
+
+      {queued.length > 0 && (
+        <div className="glass p-4 reveal">
+          <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Queued ({queued.length})</div>
+          {queued.map((q, i) => (
+            <div key={q.dispatch_id} className="flex justify-between text-sm py-1 border-b border-white/5 last:border-0">
+              <span className="font-mono">{q.dispatch_id}</span>
+              <span className="text-white/50">#{i + 1}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="glass p-3 reveal">
+        <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Recent</div>
+        {recent.length === 0
+          ? <div className="text-white/40 text-sm py-3 text-center">No dispatches yet.</div>
+          : recent.slice(0, 10).map((r) => <DispatchCard key={r.dispatch_id} item={r} refresh={refresh} />)
+        }
+      </div>
+    </div>
+  );
+}
+
+function DispatchCard({ item, refresh }) {
+  const [open, setOpen] = useState(false);
+  const [logText, setLogText] = useState("");
+  useEffect(() => {
+    if (open && item.dispatch_id && !item._pending) {
+      get(`/api/dispatch/${item.dispatch_id}/log?tail=80`).then((r) => setLogText(r.log || ""));
+    }
+  }, [open, item.dispatch_id, item._pending]);
+
+  if (item._pending) {
+    return (
+      <div className="py-2 flex items-center justify-between gap-2">
+        <span className="font-mono text-sm">{item.dispatch_id}</span>
+        <div className="flex gap-2">
+          <button onClick={async () => { await post("/api/dispatch/approve", {dispatch_id: item.dispatch_id}); refresh(); }}
+            className="text-xs px-3 py-1 rounded-full bg-emerald-500/30 border border-emerald-400/40">Go</button>
+          <button onClick={async () => { await post("/api/dispatch/cancel",  {dispatch_id: item.dispatch_id}); refresh(); }}
+            className="text-xs px-3 py-1 rounded-full bg-red-500/30 border border-red-400/40">Cancel</button>
+        </div>
+      </div>
+    );
+  }
+  const dotCls = statusDot(item.status);
+  return (
+    <div className="py-2 border-b border-white/5 last:border-0">
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => setOpen(!open)}>
+        <div className="flex items-center gap-2">
+          <span className={"dot " + dotCls}></span>
+          <span className="font-mono text-sm">{item.dispatch_id}</span>
+        </div>
+        <div className="text-xs text-white/60 flex gap-3">
+          <span>{item.status}</span>
+          <span>{fmtDur(item.duration_seconds)}</span>
+        </div>
+      </div>
+      {open && (
+        <div className="mt-2 ml-4 space-y-1 text-xs reveal">
+          {item.one_line_summary && <div className="text-white/80">{item.one_line_summary}</div>}
+          {item.commits_made && item.commits_made.length > 0 && (
+            <div className="text-white/60">{item.commits_made.length} commits: {item.commits_made.slice(0, 3).join(", ")}</div>
+          )}
+          {item.files_changed > 0 && <div className="text-white/60">files changed: {item.files_changed}</div>}
+          {item.error_tail && <div className="text-red-300/90">err: {item.error_tail}</div>}
+          {logText && (
+            <pre className="mt-2 max-h-48 overflow-auto bg-black/40 p-2 rounded-lg text-[10px] leading-tight scroll-clean">{logText}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MEMORY tab ──────────────────────────────────────────────────────────
+function MemoryTab() {
+  const [retros, setRetros] = useState([]);
+  const [open, setOpen] = useState(null);
+  const [body, setBody] = useState("");
+  const refresh = useCallback(() => get("/api/memory/retros?limit=30").then((r) => setRetros(r.retros || [])), []);
+  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (open) get(`/api/memory/retro/${open}`).then((r) => setBody(r.body || ""));
+  }, [open]);
+
+  return (
+    <div className="px-4 space-y-3 pb-32">
+      <div className="glass p-3 reveal">
+        <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Recent retros ({retros.length})</div>
+        {retros.length === 0 && <div className="text-white/40 text-sm py-3 text-center">No retros yet.</div>}
+        {retros.map((r) => (
+          <div key={r.id} className="py-2 border-b border-white/5 last:border-0 cursor-pointer hover:bg-white/5 -mx-1 px-1 rounded-lg"
+               onClick={() => setOpen(open === r.id ? null : r.id)}>
+            <div className="flex justify-between items-center">
+              <span className="font-mono text-xs">{r.id}</span>
+              <span className="text-xs text-white/50">{fmtTimeAgo(r.mtime)}</span>
+            </div>
+            <div className="text-xs text-white/60 mt-1 line-clamp-2">{r.preview}</div>
+            {open === r.id && body && (
+              <pre className="mt-2 bg-black/40 p-3 rounded-lg text-[11px] leading-snug whitespace-pre-wrap scroll-clean overflow-auto"
+                style={{maxHeight: "60vh"}}>{body}</pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── SETTINGS tab ────────────────────────────────────────────────────────
+function SettingsTab({ snap, refresh }) {
+  const [services, setServices] = useState([]);
+  const [restarting, setRestarting] = useState(null);
+  const loadServices = useCallback(() => get("/api/services").then((r) => setServices(r.services || [])), []);
+  useEffect(() => { loadServices(); const t = setInterval(loadServices, 10000); return () => clearInterval(t); }, [loadServices]);
+
+  const restart = async (name) => {
+    setRestarting(name);
+    try {
+      const r = await post("/api/restart", { services: [name] });
+      // Refresh status after a beat to let systemd settle.
+      setTimeout(() => { loadServices(); refresh(); }, 1500);
+      if (r.results && r.results[0] && !r.results[0].ok) {
+        alert(r.results[0].message);
+      }
+    } finally { setRestarting(null); }
+  };
+
+  const budget = (snap && snap.budget) || {};
+  const pct = budget.monthly_budget ? Math.min(100, (budget.spend / budget.monthly_budget) * 100) : 0;
+  const barCls = budget.level === "over" ? "bg-red-400" : budget.level && budget.level.startsWith("warn") ? "bg-amber-400" : "bg-emerald-400";
+
+  return (
+    <div className="px-4 space-y-3 pb-32">
+      <div className="glass p-4 reveal">
+        <div className="text-xs uppercase tracking-wider text-white/50 mb-3">Service health</div>
+        {services.map((s) => (
+          <div key={s.service} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+            <div className="flex items-center gap-2">
+              <span className={"dot " + statusDot(s.state)}></span>
+              <span className="font-mono text-sm">{s.service}</span>
+              <span className="text-xs text-white/50">{s.state}</span>
+            </div>
+            <button onClick={() => restart(s.service)} disabled={restarting === s.service}
+              className="text-xs px-3 py-1 rounded-full glass hover:bg-white/10 active:scale-95 disabled:opacity-30">
+              {restarting === s.service ? "…" : "restart"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="glass p-4 reveal">
+        <div className="text-xs uppercase tracking-wider text-white/50 mb-3">Claude Code budget</div>
+        <div className="text-2xl font-semibold">${(budget.spend || 0).toFixed(2)}
+          <span className="text-sm text-white/50"> / ${(budget.monthly_budget || 50).toFixed(0)}</span>
+        </div>
+        <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
+          <div className={"h-full transition-all duration-700 " + barCls} style={{ width: pct + "%" }}></div>
+        </div>
+        <div className="mt-2 text-xs text-white/50">
+          {budget.level === "over"
+            ? "Over budget — new dispatches require force."
+            : `${pct.toFixed(0)}% used this month`}
+        </div>
+      </div>
+
+      <div className="glass p-4 reveal">
+        <div className="text-xs uppercase tracking-wider text-white/50 mb-2">Connection</div>
+        <div className="text-sm">
+          API: <span className="font-mono">{API}</span><br />
+          WS:  <span className="font-mono">{API.replace(/^http/, "ws")}/ws/events</span><br />
+          Tailscale: <span className="font-mono">100.124.210.84:11438</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App shell ───────────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState("home");
+  const [snap, setSnap] = useState(null);
+  const { events, connected } = useEvents();
+
+  const refresh = useCallback(() => {
+    get("/api/dispatches?limit=20").then(setSnap).catch(() => {});
+  }, []);
+  useEffect(() => { refresh(); const t = setInterval(refresh, 4000); return () => clearInterval(t); }, [refresh]);
+
+  // Re-fetch the queue snapshot when a dispatch event comes in over WS so
+  // the UI doesn't need to wait for the 4s poll.
+  useEffect(() => {
+    if (!events.length) return;
+    const ev = events[0].event || "";
+    if (ev.startsWith("cc_dispatch_")) refresh();
+  }, [events, refresh]);
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header tab={tab} connected={connected} />
+      {tab === "home"     && <HomeTab     events={events} snap={snap} />}
+      {tab === "dispatch" && <DispatchTab snap={snap} refresh={refresh} />}
+      {tab === "memory"   && <MemoryTab />}
+      {tab === "settings" && <SettingsTab snap={snap} refresh={refresh} />}
+      <BottomNav tab={tab} setTab={setTab} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+// PWA service worker registration. Best-effort; silent on failure so a
+// missing /sw.js doesn't break the page.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
