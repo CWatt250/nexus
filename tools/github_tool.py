@@ -268,7 +268,120 @@ def github_commit_file(
     return f"committed {path}@{sha[:8]} {url}".strip()
 
 
+@tool
+def github_list_my_repos(visibility: str = "all", limit: int = 50) -> str:
+    """List ALL repos the authenticated GitHub user can access (public + private).
+
+    Use this for 'my repos', 'my private repos', 'list my repos'. This is
+    the PAT-aware tool — it only returns useful results when GITHUB_PAT
+    is configured. With no token, it falls through to the same anonymous
+    mode (which can't see private repos at all) and reports clearly.
+
+    Args:
+        visibility: 'all' (default), 'public', or 'private'.
+        limit: max repos to return (default 50).
+    Returns one repo per line: '<full_name> [private?] <description>'."""
+    visibility = (visibility or "all").lower().strip()
+    if visibility not in ("all", "public", "private"):
+        return f"ERROR: visibility must be all|public|private (got {visibility!r})"
+    try:
+        client = _get_client()
+        if _client_anonymous:
+            return (
+                "ERROR: github_list_my_repos requires authentication. "
+                "Add GITHUB_PAT to ~/AI_Agent/config/secrets.yaml."
+            )
+        user = client.get_user()
+        repos = user.get_repos(visibility=visibility, sort="updated")
+    except Exception as exc:
+        return _err(exc)
+    lines: list[str] = []
+    private_count = 0
+    public_count = 0
+    for i, r in enumerate(repos):
+        if i >= max(1, int(limit)):
+            break
+        marker = "🔒" if r.private else "🌐"
+        if r.private:
+            private_count += 1
+        else:
+            public_count += 1
+        desc = (r.description or "").strip()
+        lines.append(f"{marker} {r.full_name} — {desc}" if desc else f"{marker} {r.full_name}")
+    if not lines:
+        return f"(no repos with visibility={visibility})"
+    summary = f"{len(lines)} repo(s) — {public_count} public, {private_count} private:"
+    return summary + "\n" + "\n".join(lines)
+
+
+@tool
+def github_auth_status() -> str:
+    """Report GitHub auth state: who, what scopes, rate limit, expiry.
+
+    Returns 'Authenticated as <user>, scopes: <list>, rate limit:
+    <remaining>/<limit>, expires: <date>' when a token is configured;
+    'Anonymous (public-only)' when not. Useful for debugging private-repo
+    access and for the agent to know what it can do before attempting a
+    call that needs a write scope.
+    """
+    try:
+        client = _get_client()
+    except Exception as exc:
+        return _err(exc)
+    if _client_anonymous:
+        try:
+            rl = client.get_rate_limit().core
+            return (
+                "Anonymous (public-only). "
+                f"Rate limit: {rl.remaining}/{rl.limit}, resets at {rl.reset.isoformat()}"
+            )
+        except Exception as exc:
+            return f"Anonymous (public-only). Rate-limit lookup failed: {_err(exc)}"
+    try:
+        user = client.get_user()
+        login = user.login
+    except Exception as exc:
+        return f"Token rejected: {_err(exc)}"
+    # Scopes + token expiration are surfaced as response headers, not
+    # body fields — pull them off the most recent connection's last
+    # response. PyGithub exposes these via __requester._Requester__connection
+    # in some versions but they're not part of the public API; instead,
+    # do a low-level GET /user and read response headers ourselves.
+    scopes = "(unknown)"
+    expires = "(no expiry header)"
+    try:
+        import requests  # noqa: PLC0415
+        token = _token() or ""
+        if token:
+            r = requests.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                timeout=10,
+            )
+            scopes = r.headers.get("x-oauth-scopes", "") or "(fine-grained PAT — no classic scopes)"
+            expires = r.headers.get("github-authentication-token-expiration", "(no expiry)")
+    except Exception as exc:
+        scopes = f"(scope lookup failed: {type(exc).__name__})"
+    try:
+        rl = client.get_rate_limit().core
+        rate = f"{rl.remaining}/{rl.limit} (resets {rl.reset.isoformat()})"
+    except Exception:
+        rate = "(rate-limit lookup failed)"
+    return (
+        f"Authenticated as {login}\n"
+        f"  scopes: {scopes}\n"
+        f"  rate limit: {rate}\n"
+        f"  token expires: {expires}"
+    )
+
+
 GITHUB_TOOLS = [
+    github_auth_status,
+    github_list_my_repos,
     github_create_repo,
     github_list_repos,
     github_create_issue,
