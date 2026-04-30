@@ -32,6 +32,7 @@ from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  #
 from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.capabilities_tool import CAPABILITIES_TOOLS  # noqa: E402
 from tools.browser_tool import browser_tool  # noqa: E402
+from tools.browser_render import browser_render  # noqa: E402
 from tools.file_tool import file_edit_tool, file_read_tool, file_write_tool  # noqa: E402
 from tools.github_tool import GITHUB_TOOLS  # noqa: E402
 from tools.markitdown_tool import markitdown_tool  # noqa: E402
@@ -100,6 +101,7 @@ TOOLS = [
     glob_tool,
     grep_tool,
     browser_tool,
+    browser_render,
     memory_search,
     memory_add,
     memory_list,

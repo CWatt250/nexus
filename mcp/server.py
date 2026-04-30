@@ -24,6 +24,7 @@ from mcp.server.stdio import stdio_server  # noqa: E402
 # Importing nexus would build a LangGraph agent (and load models). We only
 # need the TOOLS list, so import the tool modules directly.
 from tools.browser_tool import browser_tool  # noqa: E402
+from tools.browser_render import browser_render  # noqa: E402
 from tools.file_tool import (  # noqa: E402
     file_edit_tool,
     file_read_tool,
@@ -51,6 +52,7 @@ TOOLS = [
     glob_tool,
     grep_tool,
     browser_tool,
+    browser_render,
     memory_search,
     memory_add,
     markitdown_tool,
