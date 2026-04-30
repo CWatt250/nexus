@@ -214,7 +214,10 @@ def quick_chat(message: str) -> str:
 
 
 LITE_AGENT_TIMEOUT_S = 15.0
-LITE_AGENT_PICKER_BUDGET = 5.0
+# Bumped from 5s → 8s after smoke runs showed qwen3.6 picker timing out
+# under contention (model serving was busy with the EOD summary job).
+# 8s + 4s + small tool window keeps total under the 15s ceiling.
+LITE_AGENT_PICKER_BUDGET = 8.0
 LITE_AGENT_TOOL_BUDGET = 6.0
 LITE_AGENT_FORMATTER_BUDGET = 4.0
 LITE_AGENT_MODEL = "qwen3.6"
@@ -561,6 +564,44 @@ _STATUS_QUEUE_TRIGGERS_RE = re.compile(
 )
 
 
+# Patterns that should ALWAYS route to QUERY_TOOL regardless of what the
+# LLM classifier says. Live-smoke turned up cases where qwen3.6 saw
+# "what's my github auth status" and picked TASK — even though the
+# prompt lists it as a QUERY_TOOL example. Belt-and-suspenders: an
+# obvious-shape question for a single fast tool gets a deterministic
+# fast path here.
+_FAST_TOOL_HARD_OVERRIDE_RE = re.compile(
+    r"\b("
+    # GitHub auth / status / single-call lookups
+    r"github\s+auth(?:entication)?\s+status"
+    r"|gh\s+auth(?:entication)?\s+status"
+    r"|github\s+status"
+    r"|am\s+i\s+(?:logged|signed)\s+in\s+to\s+github"
+    # "the weather (in <location>)"
+    r"|(?:what'?s\s+|how'?s\s+)?the?\s*weather\b"
+    r"|weather\s+(?:in|for|at)\s+\w"
+    # "search the web for X" / "search for X" / "look up X" — single
+    # web_search call satisfies these.
+    r"|search\s+(?:the\s+web\s+)?for\b"
+    r"|look\s+(?:something\s+)?up\b"
+    r"|google\s+\w"
+    # "search my notes for X" / "search my memory for X"
+    r"|search\s+(?:my\s+)?(?:notes?|memory|rag)\s+for\b"
+    # GitHub list-my-repos
+    r"|list\s+my\s+(?:github\s+)?repos?"
+    r"|what\s+repos?\s+do\s+i\s+have"
+    r")",  # no trailing \b — some patterns end on \w mid-word (e.g. "weather in seattle")
+    re.IGNORECASE,
+)
+
+
+def _looks_like_single_fast_tool(msg: str) -> bool:
+    """Deterministic gate: True for obvious one-tool-call shapes the LLM
+    classifier sometimes misses. Used to short-circuit straight to
+    QUERY_TOOL without paying the classifier round-trip."""
+    return bool(_FAST_TOOL_HARD_OVERRIDE_RE.search(msg or ""))
+
+
 def _is_genuine_queue_status(msg: str) -> bool:
     """True if the message clearly references the Nexus task queue.
     False if it just happens to contain "status" applied to some other
@@ -820,6 +861,26 @@ def route_message(message: str) -> dict:
     if fm:
         tid = fm.group(1).lower()
         return {"kind": "status", "reply": _full_output_reply(tid), "meta": {"task_id": tid}}
+
+    # Deterministic short-circuit BEFORE the LLM classifier — saves a
+    # round-trip on the high-confidence single-tool shapes the classifier
+    # sometimes mis-routes ("what's my github auth status" used to land
+    # in TASK despite the prompt example).
+    if _looks_like_single_fast_tool(msg):
+        log.info("route: hard-override %r → QUERY_TOOL", msg[:80])
+        intent_obj = type("Intent", (), {"kind": "QUERY_TOOL", "raw": "[hard-override]"})()
+        meta_pre = {"classifier_raw": "hard-override", "fast_tool_override": True}
+        result = lite_agent(msg)
+        if result.get("ok"):
+            return {
+                "kind": "query_tool",
+                "reply": result["reply"],
+                "meta": {**meta_pre, "tool": result.get("tool", "")},
+            }
+        log.info("hard-override lite_agent miss; falling to classifier path: %s",
+                 result.get("reason"))
+        # Fall through to the classifier path on miss — gives the LLM
+        # one more chance to pick TASK vs CHAT correctly.
 
     # LLM classifier
     intent = classify_intent_llm(msg)

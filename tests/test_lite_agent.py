@@ -179,11 +179,67 @@ def test_route_message_query_tool_falls_through_on_miss(monkeypatch) -> None:
     assert enqueued, "should have enqueued after lite_agent fall-through"
 
 
-# --- 10. STATUS-without-queue-trigger now demotes to QUERY_TOOL ----------
-def test_status_override_now_demotes_to_query_tool(monkeypatch) -> None:
-    """Previously 'github auth status' got promoted STATUS→TASK. With
-    the lite_agent path live we want STATUS→QUERY_TOOL instead so the
-    user gets a 5-second answer, not a queued task."""
+# --- 9b. Hard-override patterns short-circuit straight to QUERY_TOOL -----
+@pytest.mark.parametrize("msg", [
+    "what's my github auth status",
+    "github auth status",
+    "am I logged in to github",
+    "what's the weather in Pasco WA",
+    "weather in seattle",
+    "the weather",
+    "search the web for langchain",
+    "look something up about React",
+    "search my notes for BidWatt schema",
+    "list my github repos",
+    "what repos do I have",
+])
+def test_hard_override_recognises_single_tool_shapes(msg: str) -> None:
+    from workers.conversation_handler import _looks_like_single_fast_tool
+    assert _looks_like_single_fast_tool(msg), f"missed: {msg!r}"
+
+
+@pytest.mark.parametrize("msg", [
+    "research the top 5 AI agent frameworks and write me a summary",
+    "fix the bug in eod_summary.py",
+    "what's 7+8",
+    "hi nexus",
+    "queue: anything goes here",
+])
+def test_hard_override_does_not_match_task_or_chat(msg: str) -> None:
+    from workers.conversation_handler import _looks_like_single_fast_tool
+    assert not _looks_like_single_fast_tool(msg), f"false-positive on: {msg!r}"
+
+
+def test_route_message_hard_override_skips_classifier(monkeypatch) -> None:
+    """High-confidence single-tool shapes go straight to lite_agent
+    without paying the classifier round-trip."""
+    from workers import conversation_handler as ch
+
+    classifier_calls = {"n": 0}
+
+    def loud_classifier(msg):
+        classifier_calls["n"] += 1
+        from workers.conversation_handler import Intent
+        return Intent(kind="TASK", raw="TASK")
+
+    monkeypatch.setattr(ch, "classify_intent_llm", loud_classifier)
+    monkeypatch.setattr(ch, "lite_agent", lambda m: {
+        "ok": True, "tool": "github_auth_status",
+        "reply": "Authenticated as CWatt250."
+    })
+
+    result = ch.route_message("what's my github auth status")
+    assert result["kind"] == "query_tool"
+    assert result["meta"]["fast_tool_override"] is True
+    assert classifier_calls["n"] == 0, "classifier should be skipped on hard-override hit"
+
+
+# --- 10. STATUS-without-queue-trigger demotes to QUERY_TOOL --------------
+def test_status_override_demotes_to_query_tool(monkeypatch) -> None:
+    """Phrases like 'supabase status' don't hit the hard-override regex
+    but still get demoted from STATUS → QUERY_TOOL by the override
+    branch in route_message — gets the user a fast inline answer rather
+    than a queue lookup that returns nothing."""
     from workers import conversation_handler as ch
     from workers.conversation_handler import Intent
 
@@ -194,13 +250,39 @@ def test_status_override_now_demotes_to_query_tool(monkeypatch) -> None:
 
     def fake_lite(message):
         captured["msg"] = message
-        return {"ok": True, "tool": "github_auth_status",
-                "reply": "Authenticated as CWatt250 with repo + read:org."}
+        return {"ok": True, "tool": "web_search",
+                "reply": "Supabase status page reports all systems operational."}
 
     monkeypatch.setattr(ch, "lite_agent", fake_lite)
 
+    result = ch.route_message("what's the supabase status")
+    assert result["kind"] == "query_tool"
+    assert "operational" in result["reply"].lower()
+    assert result["meta"].get("status_override") is True
+    assert captured["msg"] == "what's the supabase status"
+
+
+def test_github_auth_status_now_handled_by_hard_override(monkeypatch) -> None:
+    """'github auth status' should bypass the classifier entirely via
+    the hard-override regex and land on lite_agent without any STATUS
+    detour. Verifies the override took precedence."""
+    from workers import conversation_handler as ch
+
+    classifier_calls = {"n": 0}
+
+    def loud_classifier(msg):
+        classifier_calls["n"] += 1
+        from workers.conversation_handler import Intent
+        return Intent(kind="STATUS", raw="STATUS")
+
+    monkeypatch.setattr(ch, "classify_intent_llm", loud_classifier)
+    monkeypatch.setattr(ch, "lite_agent", lambda m: {
+        "ok": True, "tool": "github_auth_status",
+        "reply": "Authenticated as CWatt250."
+    })
+
     result = ch.route_message("what's my github auth status")
     assert result["kind"] == "query_tool"
+    assert result["meta"].get("fast_tool_override") is True
     assert "CWatt250" in result["reply"]
-    assert result["meta"]["status_override"] is True
-    assert captured["msg"] == "what's my github auth status"
+    assert classifier_calls["n"] == 0, "hard-override should skip the classifier"
