@@ -78,9 +78,22 @@ TASK   — anything requiring tools, real-world lookup, or >5s of execution.
                    "research top 5 AI agent frameworks", "summarize this repo",
                    "do I have an open PR on the cli repo"
 
-STATUS — asking about an existing Nexus task or the queue state.
-         Examples: "queue status", "is task abc12345 done", "any updates",
-                   "what's running right now"
+STATUS — asking about Nexus's INTERNAL task queue or a specific task ID.
+         The word "status" alone does NOT make it STATUS — context matters.
+         INCLUDES:
+         - "queue status", "what's in the queue", "any tasks running"
+         - "is task abc12345 done", "status of task XYZ", "show task <id>"
+         - "what are you working on", "any tasks in flight"
+         EXCLUDES (these are TASK, not STATUS — they need a tool to answer):
+         - "github auth status"        → TASK (calls github_auth_status)
+         - "supabase status"           → TASK (calls a Supabase health tool)
+         - "weather status"            → TASK (calls a weather lookup)
+         - "ollama status"             → TASK (calls a local-API check)
+         - "system status" / "wifi status" / any "<tool or domain> status"
+         The cue is: STATUS is about Nexus's queue. TASK is about anything
+         else, even if the user happens to say "status".
+         Examples: "queue status", "is task abc12345 done",
+                   "any tasks running right now", "what are you working on"
 
 If you cannot tell the category, choose CHAT.
 But if the message contains a URL or asks Nexus to look at/fetch external
@@ -360,6 +373,50 @@ _STATUS_VERB_RE = re.compile(
     r"\b(status|state|progress|how[\s_-]*is|what'?s|where['\s_-]*is|check|where stand)\b",
     re.IGNORECASE,
 )
+
+# Words that mean "you're asking about Nexus's task queue, not some
+# other subject's status". If a STATUS-classified message contains none
+# of these, it's almost certainly "<tool or domain> status" and should
+# be re-routed to TASK so the agent calls the right tool.
+_STATUS_QUEUE_TRIGGERS_RE = re.compile(
+    r"\b("
+    r"queue|task|tasks|jobs?|nexus(?:'s)?|"
+    r"work(?:load)?|in[-\s]+flight|running|active|pending|recent|"
+    r"done|complete|stuck|blocked|backlog"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_genuine_queue_status(msg: str) -> bool:
+    """True if the message clearly references the Nexus task queue.
+    False if it just happens to contain "status" applied to some other
+    subject (e.g. "github auth status" → wants github_auth_status tool,
+    not a queue lookup)."""
+    if not msg:
+        return False
+    if _TASK_ID_RE.search(msg):  # explicit task_id always counts
+        return True
+    return bool(_STATUS_QUEUE_TRIGGERS_RE.search(msg))
+
+
+# The TASK enqueue path prepends a "[Current date and time: ...]\n\n"
+# block so the agent has wall-clock context. The STATUS list view shows
+# the stored input — strip the prefix so the user sees their own
+# message, not the injected context.
+_DATETIME_PREFIX_RE = re.compile(
+    r"^\s*\[Current date and time:.*?\]\s*\n+",
+    re.DOTALL,
+)
+
+
+def _strip_datetime_prefix(text: str) -> str:
+    """Remove the leading '[Current date and time: ...]\\n\\n' block from
+    a stored task input. Returns the user's original message. Idempotent
+    and a no-op for inputs without the prefix."""
+    if not text:
+        return text
+    return _DATETIME_PREFIX_RE.sub("", text, count=1)
 _CANCEL_VERB_RE = re.compile(r"\b(cancel|abort|kill|stop)\b", re.IGNORECASE)
 _PAUSE_VERB_RE = re.compile(r"\b(pause|hold)\b", re.IGNORECASE)
 _LIST_VERB_RE = re.compile(r"\b(list|show|recent|what.*tasks?|all\s+tasks?)\b", re.IGNORECASE)
@@ -417,6 +474,10 @@ def _format_status(row: dict | None, task_id: str) -> str:
     if not row:
         return f"no task with id {task_id}"
     bits = [f"task {row['task_id']} → {row['status']}", f"created {row['created_at']}"]
+    user_input = _strip_datetime_prefix(row.get("input") or "")
+    if user_input:
+        preview = user_input.strip().splitlines()[0][:200]
+        bits.append(f"input: {preview}")
     if row.get("started_at"):
         bits.append(f"started {row['started_at']}")
     if row.get("finished_at"):
@@ -527,7 +588,9 @@ def _full_output_reply(task_id: str) -> str:
 
 def _route_status(message: str) -> str:
     """STATUS branch: if message contains a task_id, return that task's
-    detail; otherwise list the recent queue."""
+    detail; otherwise list the recent queue. Strips the injected
+    datetime-context prefix so the user sees their own input, not the
+    "Current date and time: ..." preamble route_message attaches."""
     tid_match = _TASK_ID_RE.search(message)
     if tid_match:
         tid = tid_match.group(1)
@@ -537,9 +600,13 @@ def _route_status(message: str) -> str:
     rows = task_queue.list_tasks(limit=10)
     if not rows:
         return "Queue is empty — no recent tasks."
-    return "Recent tasks:\n" + "\n".join(
-        f"- {r['task_id']} [{r['status']}] {(r['input'] or '')[:60]}" for r in rows
-    )
+
+    def _line(r: dict) -> str:
+        clean_input = _strip_datetime_prefix(r["input"] or "").strip()
+        clean_input = clean_input.splitlines()[0] if clean_input else ""
+        return f"- {r['task_id']} [{r['status']}] {clean_input[:60]}"
+
+    return "Recent tasks:\n" + "\n".join(_line(r) for r in rows)
 
 
 def route_message(message: str) -> dict:
@@ -584,6 +651,15 @@ def route_message(message: str) -> dict:
     intent = classify_intent_llm(msg)
     meta = {"classifier_raw": intent.raw}
     log.info("route: classified %r as %s", msg[:60], intent.kind)
+
+    # Override: classifier loves to keyword-match "status" without context.
+    # If it picked STATUS but the message doesn't reference the queue or
+    # a task_id, it's almost always something like "github auth status"
+    # that needs a tool call — promote to TASK.
+    if intent.kind == "STATUS" and not _is_genuine_queue_status(msg):
+        log.info("STATUS→TASK override: %r doesn't reference queue", msg[:80])
+        meta["status_override"] = True
+        intent = Intent(kind="TASK", raw=intent.raw + " [override:status->task]")
 
     if intent.kind == "TASK":
         # Prepend real datetime so the spawned agent doesn't hallucinate
