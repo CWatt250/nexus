@@ -14,10 +14,46 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from urllib.parse import urlparse
 
 from langchain_core.tools import tool
 
 log = logging.getLogger("nexus.browser_render")
+
+# Domains where the basic browser_tool path (DOMContentLoaded only)
+# returns an empty body. browser_tool consults this to short-circuit
+# straight to the Playwright render path.
+JS_HEAVY_DOMAINS: frozenset[str] = frozenset({
+    "x.com", "twitter.com", "mobile.twitter.com",
+    "linkedin.com",
+    "instagram.com", "www.instagram.com",
+    "threads.net", "www.threads.net",
+    "facebook.com", "www.facebook.com", "m.facebook.com",
+    "tiktok.com", "www.tiktok.com",
+})
+
+
+def is_js_heavy_url(url: str) -> bool:
+    """True if the URL's host (or any parent host) is on the known
+    JS-heavy SPA list. Strips `www.`, `m.`, and `mobile.` prefixes so
+    `https://www.x.com/...` and `https://x.com/...` both match."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if host in JS_HEAVY_DOMAINS:
+        return True
+    for prefix in ("www.", "m.", "mobile."):
+        if host.startswith(prefix) and host[len(prefix):] in JS_HEAVY_DOMAINS:
+            return True
+    # Also catch parent-of-subdomain matches: business.linkedin.com → linkedin.com
+    parts = host.split(".")
+    for i in range(len(parts) - 1):
+        if ".".join(parts[i:]) in JS_HEAVY_DOMAINS:
+            return True
+    return False
 
 MAX_TEXT_CHARS = 20_000
 DEFAULT_TIMEOUT_MS = 30_000
@@ -92,6 +128,19 @@ def _render_sync(url: str, wait_for_selector: Optional[str], timeout_ms: int) ->
     bits.append("")
     bits.append(body_text)
     return "\n".join(bits)
+
+
+def render_url(url: str, *, wait_for_selector: Optional[str] = None,
+               timeout_seconds: int = 30) -> str:
+    """Plain (non-@tool) render entrypoint that raises on failure.
+
+    `browser_tool` uses this when it auto-escalates a JS-heavy URL — it
+    skips the @tool fallback path so we can't loop back into
+    `browser_tool` from inside `browser_tool`.
+    """
+    timeout_ms = max(5, min(int(timeout_seconds), 120)) * 1000
+    sel = (wait_for_selector or "").strip() or None
+    return _render_sync(url, sel, timeout_ms)
 
 
 @tool
