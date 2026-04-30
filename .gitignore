@@ -50,3 +50,10 @@ designs/
 # Claude Code runtime files
 claude_session.json
 .claude/scheduled_tasks.lock
+
+# Secrets - never commit
+config/secrets.yaml
+config/secrets.yml
+*.key
+.env
+.env.local
