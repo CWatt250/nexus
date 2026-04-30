@@ -95,6 +95,147 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Stop command received. (Not yet implemented)")
 
 
+async def _handle_dispatch_command(update: Update, text: str) -> bool:
+    """Phase 22 — handle dispatch-control prefixes BEFORE conversation
+    routing. Returns True if the message was consumed.
+
+    Supported shapes (case-insensitive on the leading verb):
+        dispatch: <prompt>           — queue a new CC dispatch
+        force dispatch: <prompt>     — bypass monthly budget cap
+        go cc_xxx                    — release a pending-approval prompt
+        cancel cc_xxx                — drop a pending-approval prompt
+        queue status                 — current queue snapshot
+        restart cc_xxx | nexus-*     — restart services after a dispatch
+        retry cc_xxx                 — re-dispatch the original prompt
+        extend cc_xxx <minutes>      — re-dispatch with bigger budget
+    """
+    from core import cc_dispatch as _ccd  # local import: keep listener fast
+    low = text.strip().lower()
+
+    if low.startswith("dispatch:") or low.startswith("force dispatch:"):
+        forced = low.startswith("force dispatch:")
+        prompt = text.split(":", 1)[1].strip()
+        if not prompt:
+            await update.message.reply_text("dispatch: needs a prompt.")
+            return True
+        level, spend, budget = _ccd.budget_status()
+        if level == "over" and not forced:
+            await update.message.reply_text(
+                f"Blocked: monthly Claude Code budget exhausted "
+                f"(${spend:.2f}/${budget:.2f}). "
+                f"Reply with 'force dispatch: ...' to override."
+            )
+            return True
+        risky = _ccd.is_risky(prompt)
+        meta = _ccd.DispatchMeta.new(
+            label=prompt.splitlines()[0][:60],
+            time_budget_minutes=120,
+            risky_match=risky,
+        )
+        _ccd.write_prompt(meta, prompt, pending=bool(risky))
+        snap = _ccd.queue_summary()
+        ahead = snap["queued_count"]
+        eta = f" — {ahead} ahead" if ahead else ""
+        if risky:
+            await update.message.reply_text(
+                f"🚨 Risky prompt held (matched: {risky}). "
+                f"Reply `go {meta.dispatch_id}` to dispatch."
+            )
+        else:
+            await update.message.reply_text(
+                f"🚀 Dispatched. id `{meta.dispatch_id}`{eta} "
+                f"(budget {meta.time_budget_minutes}m). "
+                f"I'll ping when it's done.",
+                parse_mode="Markdown",
+            )
+        return True
+
+    if low.startswith("go cc_"):
+        did = text.split(None, 1)[1].strip()
+        if _ccd.approve(did):
+            await update.message.reply_text(f"✅ Released `{did}` — dispatching now.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"No pending dispatch with id `{did}`.", parse_mode="Markdown")
+        return True
+
+    if low.startswith("cancel cc_"):
+        did = text.split(None, 1)[1].strip()
+        if _ccd.cancel(did):
+            await update.message.reply_text(f"🛑 Cancelled `{did}`.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"No dispatch to cancel for `{did}`.", parse_mode="Markdown")
+        return True
+
+    if low in ("queue status", "queue", "queue?", "/queue"):
+        snap = _ccd.queue_summary()
+        lines = []
+        if snap["running"]:
+            r = snap["running"]
+            mins = r["elapsed_seconds"] / 60
+            lines.append(f"▶︎ Running: `{r['dispatch_id']}` ({mins:.1f}m elapsed)")
+        else:
+            lines.append("▶︎ Running: (none)")
+        lines.append(f"⏳ Queued: {snap['queued_count']}")
+        for q in snap["queued"][:5]:
+            lines.append(f"  - `{q['dispatch_id']}`")
+        if snap["pending_approval"]:
+            lines.append(f"🚨 Pending approval: {len(snap['pending_approval'])}")
+            for p in snap["pending_approval"][:5]:
+                lines.append(f"  - `{p['dispatch_id']}` (reply `go {p['dispatch_id']}`)")
+        level, spend, budget = _ccd.budget_status()
+        lines.append(f"💰 Budget: ${spend:.2f}/${budget:.2f} ({level})")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        return True
+
+    if low.startswith("restart "):
+        target = text.split(None, 1)[1].strip()
+        from tools import restart_services_tool  # noqa: PLC0415
+        # `restart cc_xxx` → restart the default service set after a dispatch.
+        # `restart nexus-foo` (or comma list) → restart specific services.
+        if target.startswith("cc_"):
+            services = None
+        else:
+            services = [s for s in (x.strip() for x in target.split(",")) if s]
+        out = restart_services_tool.restart_services_sync(services)
+        body = "\n".join(f"{'✓' if r['ok'] else '✗'} {r['message']}" for r in out["results"])
+        await update.message.reply_text(
+            f"Restarted {out['ok']}/{out['total']}:\n{body}"
+        )
+        return True
+
+    if low.startswith("retry cc_") or low.startswith("extend cc_"):
+        is_extend = low.startswith("extend cc_")
+        parts = text.split()
+        did = parts[1] if len(parts) >= 2 else ""
+        new_budget = 240
+        if is_extend and len(parts) >= 3:
+            try:
+                new_budget = max(5, min(int(parts[2]), 480))
+            except ValueError:
+                pass
+        archive_path = _ccd.ARCHIVE / f"{did}.md"
+        if not archive_path.exists():
+            await update.message.reply_text(f"No archived dispatch `{did}`.", parse_mode="Markdown")
+            return True
+        meta, body = _ccd.read_prompt(archive_path)
+        if not meta or not body:
+            await update.message.reply_text(f"Could not parse archived dispatch `{did}`.", parse_mode="Markdown")
+            return True
+        new_meta = _ccd.DispatchMeta.new(
+            label=("re-run: " if not is_extend else f"extend({new_budget}m): ") + meta.label,
+            time_budget_minutes=new_budget if is_extend else meta.time_budget_minutes,
+        )
+        _ccd.write_prompt(new_meta, body, pending=False)
+        await update.message.reply_text(
+            f"🔁 Re-dispatched as `{new_meta.dispatch_id}` "
+            f"(budget {new_meta.time_budget_minutes}m).",
+            parse_mode="Markdown",
+        )
+        return True
+
+    return False
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route user message through the conversation handler (Phase 15.5).
 
@@ -109,6 +250,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_message = update.message.text
     logger.info("Received message: %s", user_message[:100])
     await update.message.chat.send_action("typing")
+
+    # Phase 22 dispatch shortcuts run BEFORE the LLM router so they're
+    # deterministic and never blocked on Ollama.
+    if await _handle_dispatch_command(update, user_message):
+        return
 
     chat_id = update.effective_chat.id
     try:

@@ -69,6 +69,8 @@ from tools.notion_sync import NOTION_TOOLS  # noqa: E402
 from tools.obsidian_sync import OBSIDIAN_TOOLS  # noqa: E402
 from tools.chat_history_import import HISTORY_TOOLS  # noqa: E402
 from tools.model_watcher import MODEL_WATCHER_TOOLS  # noqa: E402
+from tools.cc_dispatch_tool import CC_DISPATCH_TOOLS  # noqa: E402
+from tools.restart_services_tool import RESTART_SERVICES_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -148,6 +150,8 @@ TOOLS = [
     *OBSIDIAN_TOOLS,
     *HISTORY_TOOLS,
     *MODEL_WATCHER_TOOLS,
+    *CC_DISPATCH_TOOLS,
+    *RESTART_SERVICES_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
