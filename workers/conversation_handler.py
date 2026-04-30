@@ -52,31 +52,39 @@ HANDLER_MODEL = "qwen3:4b"
 CLASSIFIER_MODEL = "qwen3.6"
 QUICK_CHAT_MODEL = "qwen3.6"
 
-INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label: CHAT, QUERY, TASK, or STATUS.
+INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label:
+CHAT, QUERY_INLINE, QUERY_TOOL, TASK, or STATUS.
 
-CHAT   — greetings, small talk, no real question or task.
-         Examples: "hi", "hey", "what's up", "thanks", "how are you", "lol nice"
+CHAT         — greetings, small talk, no real question or task.
+               Examples: "hi", "hey", "what's up", "thanks", "lol nice"
 
-QUERY  — factual question answerable in 1-2 sentences from general knowledge,
-         WITHOUT fetching anything from the real world.
-         Examples: "what's 7+8", "what does dependency injection mean",
-                   "explain a B-tree in one sentence"
+QUERY_INLINE — factual question answerable in 1-2 sentences from general
+               knowledge OR from the injected datetime. NO tool call needed.
+               Examples: "what's 7+8", "what does TCP stand for",
+                         "what time is it", "what day is it",
+                         "explain a B-tree in one sentence"
 
-TASK   — anything requiring tools, real-world lookup, or >5s of execution.
-         INCLUDES (route these to TASK, NOT CHAT or QUERY):
-         - Any URL in the message (https://..., http://..., github.com/...)
-         - References to a real-world account, profile, repo, channel, or domain
-         - Verbs like 'view', 'look at', 'check', 'fetch', 'browse', 'open',
-           'visit', 'pull up', 'read this' applied to external content
-         - Real-world data the model can't know: weather, news, prices, current
-           events, GitHub repos, web pages, live API output, current commits
-         - The user's own files, projects, repos, or system state
-           ("read my file", "what's in my Downloads folder", "list my repos")
-         - Multi-step work: research, build, fix, refactor, summarize a repo
-         Examples: "FYI my GitHub is https://github.com/CWatt250 — can you view it?"
-                   "what's the weather", "fix the bug in eod_summary.py",
-                   "research top 5 AI agent frameworks", "summarize this repo",
-                   "do I have an open PR on the cli repo"
+QUERY_TOOL   — quick factual question that needs ONE tool call to answer,
+               then a short reply. The user wants the answer NOW, inline,
+               not a long task. Wall-clock target: under ~8 seconds.
+               Examples: "what's the weather in Pasco WA",
+                         "what's my github auth status",
+                         "search for the latest news on Apple Vision Pro",
+                         "do I have any open issues on the cli repo",
+                         "list my github repos",
+                         "search my notes for 'BidWatt schema'"
+               Pick QUERY_TOOL when ONE web search, ONE GitHub call, ONE
+               memory lookup, etc. is enough. If the user is asking for a
+               summary, plan, build, research sweep, or anything that
+               clearly needs >1 step, pick TASK instead.
+
+TASK         — multi-step or long-running work, or anything that needs the
+               full agent loop with all 91 tools.
+               Examples: "research the top 5 AI agent frameworks and write
+                         me a summary", "fix the bug in eod_summary.py",
+                         "build a Next.js scaffold with auth",
+                         "summarize this repo", "deploy to vercel",
+                         anything starting with "queue:" (forced override)
 
 STATUS — asking about Nexus's INTERNAL task queue or a specific task ID.
          The word "status" alone does NOT make it STATUS — context matters.
@@ -101,13 +109,18 @@ content, ALWAYS choose TASK.
 
 Output the label only — one word, nothing else."""
 
-_LABEL_RE = re.compile(r"\b(CHAT|QUERY|TASK|STATUS)\b")
+_LABEL_RE = re.compile(r"\b(CHAT|QUERY_INLINE|QUERY_TOOL|QUERY|TASK|STATUS)\b")
 
 
 class Intent(BaseModel):
-    """Result of LLM intent classification."""
-    kind: Literal["CHAT", "QUERY", "TASK", "STATUS"] = Field(
-        description="CHAT|QUERY|TASK|STATUS"
+    """Result of LLM intent classification.
+
+    `QUERY` (without _INLINE / _TOOL suffix) is kept for backwards
+    compatibility — older callers still emit the bare label. When the
+    classifier returns it, route_message normalises to QUERY_INLINE.
+    """
+    kind: Literal["CHAT", "QUERY_INLINE", "QUERY_TOOL", "QUERY", "TASK", "STATUS"] = Field(
+        description="CHAT|QUERY_INLINE|QUERY_TOOL|TASK|STATUS"
     )
     raw: str = Field(default="", description="Raw model output for debugging.")
 
@@ -198,6 +211,166 @@ def quick_chat(message: str) -> str:
         return f"(quick_chat error: {type(exc).__name__}: {exc})"
     body = (resp.get("message", {}) or {}).get("content", "").strip()
     return nexus.strip_thinking(body) if hasattr(nexus, "strip_thinking") else body
+
+
+LITE_AGENT_TIMEOUT_S = 15.0
+LITE_AGENT_PICKER_BUDGET = 5.0
+LITE_AGENT_TOOL_BUDGET = 6.0
+LITE_AGENT_FORMATTER_BUDGET = 4.0
+LITE_AGENT_MODEL = "qwen3.6"
+
+
+_PICKER_SYSTEM = (
+    "You are a tool router. Given a user question, pick the SINGLE best "
+    "tool from the list below and the args to call it with. Return ONLY "
+    "a JSON object of the form: "
+    '{"tool": "<exact tool name>", "args": {"<arg>": "<value>", ...}}. '
+    "No prose. No reasoning. No <think> tags.\n\n"
+    'If no listed tool fits, return {"tool": "_none", "args": {}}.'
+)
+
+
+_FORMATTER_SYSTEM = (
+    "Write a 2-3 sentence answer to the user's question using the tool "
+    "result below. Plain prose. No preamble. No reasoning. No <think> tags. "
+    "If the tool returned an error, say so plainly and suggest an alternative "
+    "in 1 sentence. Never echo the raw tool output verbatim."
+)
+
+
+def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250,
+                 fmt: str | None = None) -> str:
+    """One-shot Ollama call with explicit per-call timeout. Returns the
+    text content (already think-stripped) or raises on timeout/error."""
+    client = ollama.Client(host=nexus.OLLAMA_URL, timeout=timeout)
+    kwargs: dict = {
+        "model": LITE_AGENT_MODEL,
+        "messages": messages,
+        "stream": False,
+        "think": False,
+        "keep_alive": -1,
+        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 4096},
+    }
+    if fmt:
+        kwargs["format"] = fmt
+    resp = client.chat(**kwargs)
+    body = (resp.get("message", {}) or {}).get("content", "") or ""
+    if hasattr(nexus, "strip_thinking"):
+        body = nexus.strip_thinking(body)
+    return body.strip()
+
+
+def _pick_tool(message: str) -> dict | None:
+    """First leg of lite_agent: ask qwen3.6 to pick one tool + args.
+    Returns {"tool": str, "args": dict} or None on parse failure."""
+    from tools.lite_agent_tools import picker_prompt_block  # noqa: PLC0415
+    user_prompt = (
+        f"{picker_prompt_block()}\n\n"
+        f"User question: {message}\n\n"
+        'Respond with the JSON object only.'
+    )
+    try:
+        body = _ollama_chat(
+            [
+                {"role": "system", "content": _PICKER_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+            timeout=LITE_AGENT_PICKER_BUDGET,
+            num_predict=200,
+            fmt="json",
+        )
+    except Exception as exc:
+        log.warning("lite_agent picker failed: %s", exc)
+        return None
+    try:
+        obj = json.loads(body)
+    except json.JSONDecodeError:
+        log.warning("lite_agent picker returned non-JSON: %r", body[:160])
+        return None
+    if not isinstance(obj, dict) or "tool" not in obj:
+        return None
+    return obj
+
+
+def _format_answer(message: str, tool_name: str, tool_result: str) -> str:
+    """Second leg: turn the tool result into a 2-3 sentence reply."""
+    user_prompt = (
+        f"User question: {message}\n\n"
+        f"Tool used: {tool_name}\n"
+        f"Tool result:\n{(tool_result or '')[:4000]}"
+    )
+    try:
+        body = _ollama_chat(
+            [
+                {"role": "system", "content": _FORMATTER_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+            timeout=LITE_AGENT_FORMATTER_BUDGET,
+            num_predict=250,
+        )
+    except Exception as exc:
+        log.warning("lite_agent formatter failed: %s", exc)
+        # Last-ditch: trim raw result so the user gets *something*.
+        return (tool_result or "").strip()[:600] or f"({tool_name} returned no output)"
+    return body or f"({tool_name} returned no output)"
+
+
+def lite_agent(message: str) -> dict:
+    """Two-LLM-call + one-tool-call fast path.
+
+    Picks a tool from `tools.lite_agent_tools.get_registry()`, invokes
+    it, then asks qwen3.6 to format the result into 2-3 sentences.
+    Hard wall at LITE_AGENT_TIMEOUT_S (15 s) — beyond that we return
+    a sentinel and let `route_message` fall through to TASK enqueue.
+
+    Returns:
+        {"ok": True,  "reply": str, "tool": str}
+        {"ok": False, "reason": str}      # caller should fall through to TASK
+    """
+    import time as _time  # noqa: PLC0415
+    started = _time.monotonic()
+
+    def _budget_left() -> float:
+        return LITE_AGENT_TIMEOUT_S - (_time.monotonic() - started)
+
+    # 1. Pick a tool.
+    if _budget_left() < LITE_AGENT_PICKER_BUDGET:
+        return {"ok": False, "reason": "timeout before picker"}
+    pick = _pick_tool(message)
+    if not pick:
+        return {"ok": False, "reason": "picker returned no JSON"}
+    tool_name = (pick.get("tool") or "").strip()
+    args = pick.get("args") or {}
+    if tool_name == "_none":
+        return {"ok": False, "reason": "picker chose _none"}
+    if not isinstance(args, dict):
+        return {"ok": False, "reason": "picker args not a dict"}
+
+    from tools.lite_agent_tools import get_registry  # noqa: PLC0415
+    registry = get_registry()
+    if tool_name not in registry:
+        return {"ok": False, "reason": f"tool {tool_name!r} not in lite registry"}
+
+    # 2. Invoke the tool with whatever budget remains.
+    if _budget_left() < LITE_AGENT_FORMATTER_BUDGET + 0.5:
+        return {"ok": False, "reason": "timeout before tool call"}
+    tool_obj = registry[tool_name]["tool"]
+    try:
+        tool_result = tool_obj.invoke(args)
+    except Exception as exc:
+        tool_result = f"ERROR: {type(exc).__name__}: {exc}"
+        log.warning("lite_agent tool %s raised: %s", tool_name, exc)
+
+    # 3. Format. If we're past budget, skip formatting and return raw.
+    if _budget_left() < 0.5:
+        log.info("lite_agent skipping formatter — out of budget")
+        return {
+            "ok": True,
+            "tool": tool_name,
+            "reply": (str(tool_result) or "")[:600],
+        }
+    reply = _format_answer(message, tool_name, str(tool_result))
+    return {"ok": True, "tool": tool_name, "reply": reply}
 
 
 def classify_intent_llm(message: str) -> Intent:
@@ -622,9 +795,10 @@ def route_message(message: str) -> dict:
       2. 'queue: <text>' prefix -> enqueue immediately (power-user override).
       3. LLM intent classifier runs once.
       4. Route on intent:
-         - CHAT / QUERY  -> qwen3.6 inline reply via quick_chat()
-         - TASK          -> enqueue, reply "On it. task_id=xxx"
-         - STATUS        -> task_id lookup or queue list
+         - CHAT / QUERY_INLINE -> qwen3.6 inline reply via quick_chat()
+         - QUERY_TOOL          -> lite_agent (one tool, ~8s budget)
+         - TASK                -> enqueue, reply "On it. task_id=xxx"
+         - STATUS              -> task_id lookup or queue list
     """
     msg = (message or "").strip()
     if not msg:
@@ -652,14 +826,35 @@ def route_message(message: str) -> dict:
     meta = {"classifier_raw": intent.raw}
     log.info("route: classified %r as %s", msg[:60], intent.kind)
 
+    # Backwards-compat: legacy callers / older classifier outputs return
+    # the bare "QUERY" label. Treat it as QUERY_INLINE (the old behavior).
+    if intent.kind == "QUERY":
+        intent = Intent(kind="QUERY_INLINE", raw=intent.raw + " [legacy:query]")
+
     # Override: classifier loves to keyword-match "status" without context.
     # If it picked STATUS but the message doesn't reference the queue or
     # a task_id, it's almost always something like "github auth status"
-    # that needs a tool call — promote to TASK.
+    # that needs a tool call — promote to QUERY_TOOL so the lite_agent
+    # picks github_auth_status. (Promote to TASK is too heavy for that.)
     if intent.kind == "STATUS" and not _is_genuine_queue_status(msg):
-        log.info("STATUS→TASK override: %r doesn't reference queue", msg[:80])
+        log.info("STATUS→QUERY_TOOL override: %r doesn't reference queue", msg[:80])
         meta["status_override"] = True
-        intent = Intent(kind="TASK", raw=intent.raw + " [override:status->task]")
+        intent = Intent(kind="QUERY_TOOL", raw=intent.raw + " [override:status->query_tool]")
+
+    if intent.kind == "QUERY_TOOL":
+        # Single-tool fast path. Falls through to TASK enqueue if it can't
+        # pick a tool, blows its budget, or the tool errors hard.
+        result = lite_agent(msg)
+        if result.get("ok"):
+            return {
+                "kind": "query_tool",
+                "reply": result["reply"],
+                "meta": {**meta, "tool": result.get("tool", "")},
+            }
+        log.info("lite_agent fell through to TASK: %s", result.get("reason"))
+        meta["lite_agent_fallthrough"] = result.get("reason")
+        # fall through to TASK enqueue below
+        intent = Intent(kind="TASK", raw=intent.raw + " [fallthrough:lite_agent]")
 
     if intent.kind == "TASK":
         # Prepend real datetime so the spawned agent doesn't hallucinate
