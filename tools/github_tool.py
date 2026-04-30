@@ -1,70 +1,82 @@
 """GitHub tools for Nexus — direct PyGithub integration.
 
-These tools work without MCP as a fallback. Auth reads from:
-  1. GITHUB_TOKEN in the process environment, else
-  2. GITHUB_TOKEN in ~/AI_Agent/.env
-If neither is set, every tool returns a clear "no token" message instead
-of raising so the agent can recover gracefully."""
+Token resolution priority (highest first):
+  1. GITHUB_PAT in ~/AI_Agent/config/secrets.yaml  ← fine-grained PAT
+  2. GITHUB_TOKEN / GITHUB_PERSONAL_ACCESS_TOKEN in env
+  3. GITHUB_TOKEN / GITHUB_PERSONAL_ACCESS_TOKEN in ~/AI_Agent/.env
+
+When a token is present, all calls use authenticated mode (Bearer auth
+via PyGithub's Auth.Token, which sets the Authorization header for
+every request). When no token is found, the client falls back to the
+PyGithub anonymous client — public-only access, sharply lower rate
+limits — and a single warning is logged so the operator notices.
+
+Token values never reach stdout / journalctl: every error string runs
+through core.secrets.redact() before being returned to the agent.
+"""
 from __future__ import annotations
 
-import base64
-import os
+import logging
+import sys
 from pathlib import Path
 
 from langchain_core.tools import tool
 
-ENV_FILE = Path.home() / "AI_Agent" / ".env"
+# Allow `python tools/github_tool.py` direct invocation for unit tests.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core import secrets  # noqa: E402
+
+log = logging.getLogger("nexus.github_tool")
 
 _client = None
-_client_error: str | None = None
-
-
-def _load_env_file() -> dict[str, str]:
-    """Parse a simple KEY=VALUE .env file. Lines starting with # are
-    ignored; unquoted values are taken as-is."""
-    out: dict[str, str] = {}
-    if not ENV_FILE.exists():
-        return out
-    try:
-        for raw in ENV_FILE.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            v = v.strip()
-            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                v = v[1:-1]
-            out[k.strip()] = v
-    except OSError:
-        pass
-    return out
+_client_anonymous = False  # True when no token was configured at boot
+_warned_anonymous = False
 
 
 def _token() -> str | None:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN")
-    if token:
-        return token
-    env = _load_env_file()
-    return env.get("GITHUB_TOKEN") or env.get("GITHUB_PERSONAL_ACCESS_TOKEN") or None
+    """Resolve the GitHub token by priority. secrets.yaml's GITHUB_PAT
+    wins over .env's GITHUB_TOKEN so the new fine-grained PAT takes
+    over without editing the legacy slot."""
+    return (
+        secrets.get("GITHUB_PAT")
+        or secrets.get("GITHUB_TOKEN")
+        or secrets.get("GITHUB_PERSONAL_ACCESS_TOKEN")
+    )
 
 
 def _get_client():
-    """Lazy singleton. Returns the PyGithub client, or raises RuntimeError
-    if no token is configured."""
-    global _client, _client_error
+    """Lazy singleton. Always returns a PyGithub Github() instance —
+    authenticated when a token exists, anonymous otherwise. Anonymous
+    mode logs a one-time warning and lets public-only calls still work."""
+    global _client, _client_anonymous, _warned_anonymous
     if _client is not None:
         return _client
-    if _client_error is not None:
-        raise RuntimeError(_client_error)
+    from github import Auth, Github  # noqa: PLC0415
     token = _token()
-    if not token:
-        _client_error = "GITHUB_TOKEN not set (check ~/AI_Agent/.env)"
-        raise RuntimeError(_client_error)
-    from github import Auth, Github
-    _client = Github(auth=Auth.Token(token))
+    if token:
+        _client = Github(auth=Auth.Token(token))
+        _client_anonymous = False
+    else:
+        _client = Github()  # anonymous, public-only
+        _client_anonymous = True
+        if not _warned_anonymous:
+            log.warning(
+                "github_tool: no GITHUB_PAT / GITHUB_TOKEN found — "
+                "running in anonymous mode (public repos only, "
+                "60 req/h rate limit)."
+            )
+            _warned_anonymous = True
     return _client
+
+
+def _reset_client() -> None:
+    """Drop the cached client + reset the warning latch. Used by
+    secrets.reload() callers and the unit test."""
+    global _client, _client_anonymous, _warned_anonymous
+    _client = None
+    _client_anonymous = False
+    _warned_anonymous = False
 
 
 def _repo(full_name: str):
@@ -72,7 +84,11 @@ def _repo(full_name: str):
 
 
 def _err(exc: Exception) -> str:
-    return f"ERROR: {type(exc).__name__}: {exc}"
+    """Format an exception message safely. Always pass through redact()
+    in case PyGithub's error string echoes the bearer token (rare on
+    PyGithub but it has happened in older versions)."""
+    msg = f"ERROR: {type(exc).__name__}: {exc}"
+    return secrets.redact(msg)
 
 
 # ---------------------------------------------------------------------------
