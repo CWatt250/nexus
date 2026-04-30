@@ -128,20 +128,49 @@ def searxng_search_news(query: str, count: int = 5) -> str:
     return _format_results(data, count)
 
 
+HEALTH_FAST_TIMEOUT = 4.0   # /healthz should respond in <1s
+HEALTH_SLOW_TIMEOUT = 10.0  # /search via JSON aggregates external engines
+
+
 @tool
 def searxng_health() -> str:
     """Health probe for the local SearXNG container. Returns 'ok' if
-    the JSON search endpoint responds inside the timeout, or a short
-    reason string otherwise. Cheap — runs a 'ping' query with count=1.
+    the container responds inside the timeout, or a short reason
+    string otherwise.
+
+    Tries `/healthz` first (cheap, returns 200 OK without hitting any
+    engine). Falls back to a real search query through the JSON API
+    if `/healthz` is unavailable on this SearXNG build — that path
+    aggregates external engines and can take several seconds on a
+    cold start, so the timeout is bumped to 10s.
     """
+    # Fast path — /healthz, container-internal, no engines hit.
     try:
-        with httpx.Client(timeout=3.0) as client:
+        with httpx.Client(timeout=HEALTH_FAST_TIMEOUT) as client:
+            r = client.get(f"{SEARXNG_URL}/healthz")
+        if r.status_code == 200:
+            return "ok"
+        if r.status_code != 404:
+            return f"degraded: /healthz HTTP {r.status_code}"
+        # 404 → this build doesn't ship /healthz; fall through.
+    except httpx.ConnectError:
+        return "down: container not reachable on 127.0.0.1:8888"
+    except httpx.TimeoutException:
+        # Don't give up yet — the slow path uses a longer budget.
+        pass
+    except Exception as exc:
+        return f"down: {type(exc).__name__}: {exc}"
+
+    # Slow path — actual JSON search. Generous timeout because cold
+    # start + first-engine-hit can take a few seconds.
+    try:
+        with httpx.Client(timeout=HEALTH_SLOW_TIMEOUT) as client:
             r = client.get(
                 f"{SEARXNG_URL}/search",
                 params={"q": "ping", "format": "json"},
             )
         if r.status_code != 200:
-            return f"degraded: HTTP {r.status_code}"
+            return f"degraded: /search HTTP {r.status_code}"
         body = r.json()
         results = body.get("results") or body.get("infoboxes") or []
         if not isinstance(results, list):

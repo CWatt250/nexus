@@ -65,19 +65,42 @@ class _BadClient:
 
 
 # --- 3. searxng_health returns 'ok' on healthy ---------------------------
-def test_searxng_health_ok(monkeypatch) -> None:
+def test_searxng_health_ok_via_healthz(monkeypatch) -> None:
     from tools import searxng_tool
 
     class _Resp:
         status_code = 200
-        def json(self): return {"results": [{"title": "x", "url": "y", "content": "z"}]}
+        def json(self): return {}
 
     class _OkClient:
         def __enter__(self): return self
         def __exit__(self, *a): pass
-        def get(self, *a, **kw): return _Resp()
+        def get(self, url, *a, **kw): return _Resp()
 
     monkeypatch.setattr(searxng_tool.httpx, "Client", lambda **kw: _OkClient())
+    assert searxng_tool.searxng_health.invoke({}) == "ok"
+
+
+def test_searxng_health_falls_back_when_healthz_404(monkeypatch) -> None:
+    """If /healthz isn't on this SearXNG build, the probe falls back
+    to a real /search?format=json query before giving up."""
+    from tools import searxng_tool
+
+    class _R:
+        def __init__(self, code, payload=None):
+            self.status_code = code
+            self._p = payload or {}
+        def json(self): return self._p
+
+    class _FallbackClient:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def get(self, url, *a, **kw):
+            if url.endswith("/healthz"):
+                return _R(404)
+            return _R(200, {"results": [{"title": "ok"}]})
+
+    monkeypatch.setattr(searxng_tool.httpx, "Client", lambda **kw: _FallbackClient())
     assert searxng_tool.searxng_health.invoke({}) == "ok"
 
 
