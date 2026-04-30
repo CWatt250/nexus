@@ -422,6 +422,87 @@ def _pick_tool(message: str) -> dict | None:
     return obj
 
 
+# --- Part B: skip the LLM formatter when the tool output is already clean.
+# Saves a 3-4s qwen3.6 round-trip on the common case where the tool
+# already produced something the user can read directly.
+
+# Tool names whose output is structured the same way every time and can
+# be parsed deterministically into a 1-line answer.
+_FORMATTABLE_SEARCH_TOOLS = frozenset({
+    "searxng_search", "searxng_search_news", "web_search",
+    "brave_search", "brave_search_news",
+})
+
+
+def _searxng_top_hit(text: str) -> str | None:
+    """If `text` is a SearXNG / web_search formatted result list, pull
+    the top hit's title and snippet into a single sentence. Returns
+    None for any other shape so the caller falls back to the LLM
+    formatter (or the generic clean-output check below).
+
+    Expected input shape (from tools/searxng_tool._format_results +
+    optional `[search:<backend>]` header from search_router.web_search):
+
+        [search:searxng]
+        - [google] Some Title
+          https://example.com/path
+          A short snippet here.
+        - [bing] ...
+    """
+    if not text:
+        return None
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    if lines[0].startswith("[search:"):
+        lines = lines[1:]
+    if not lines or not lines[0].lstrip().startswith("- "):
+        return None
+    title_line = lines[0].lstrip("- ").strip()
+    if title_line.startswith("["):
+        idx = title_line.find("] ")
+        if idx > 0:
+            title_line = title_line[idx + 2:].strip()
+    snippet = ""
+    # The bullet's third line under it is typically the snippet
+    # (line 0=title, 1=url, 2=snippet).
+    if len(lines) >= 3 and not lines[2].lstrip().startswith("- "):
+        snippet = lines[2].strip()
+    if not title_line:
+        return None
+    if not snippet:
+        return title_line
+    # Trim for chat — Telegram users want to skim, not read.
+    if len(snippet) > 240:
+        snippet = snippet[:240].rstrip() + "…"
+    return f"{title_line}: {snippet}"
+
+
+def _looks_like_clean_output(text: str) -> bool:
+    """Generic heuristic: True when tool output already reads like a
+    user-facing answer and doesn't need an LLM formatter pass.
+
+    Rules (all must hold):
+    - non-empty
+    - <= 600 chars (longer outputs are usually result lists / dumps)
+    - doesn't start with JSON or list markers
+    - doesn't start with ERROR (let the formatter explain those)
+    - ends with sentence punctuation or a closing quote/paren
+    """
+    if not text:
+        return False
+    text = text.strip()
+    n = len(text)
+    if n == 0 or n > 600:
+        return False
+    if text[0] in "{[":
+        return False
+    head = text[:8].upper()
+    if head.startswith("ERROR") or head.startswith("(NO ") or head.startswith("ADD "):
+        return False
+    return text[-1] in ".!?'\")]}>:"
+
+
 def _format_answer(message: str, tool_name: str, tool_result: str) -> str:
     """Second leg: turn the tool result into a 2-3 sentence reply."""
     user_prompt = (
@@ -491,15 +572,40 @@ def lite_agent(message: str) -> dict:
         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
         log.warning("lite_agent tool %s raised: %s", tool_name, exc)
 
-    # 3. Format. If we're past budget, skip formatting and return raw.
+    # 3a. Cheap shortcuts that skip the LLM formatter (Fix #4 part B).
+    # Most QUERY_TOOL turns hit one of these and save ~3-4s.
+    result_str = str(tool_result) if tool_result is not None else ""
+
+    if tool_name in _FORMATTABLE_SEARCH_TOOLS:
+        sx = _searxng_top_hit(result_str)
+        if sx:
+            return {
+                "ok": True,
+                "tool": tool_name,
+                "reply": sx,
+                "fast_format": "search_top_hit",
+            }
+
+    if _looks_like_clean_output(result_str):
+        return {
+            "ok": True,
+            "tool": tool_name,
+            "reply": result_str.strip(),
+            "fast_format": "clean_output",
+        }
+
+    # 3b. Out of budget? Return raw — at least the user gets *something*.
     if _budget_left() < 0.5:
         log.info("lite_agent skipping formatter — out of budget")
         return {
             "ok": True,
             "tool": tool_name,
-            "reply": (str(tool_result) or "")[:600],
+            "reply": result_str[:600],
+            "fast_format": "out_of_budget",
         }
-    reply = _format_answer(message, tool_name, str(tool_result))
+
+    # 3c. Last resort: pay the LLM formatter to rewrite into prose.
+    reply = _format_answer(message, tool_name, result_str)
     return {"ok": True, "tool": tool_name, "reply": reply}
 
 
