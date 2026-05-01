@@ -27,7 +27,7 @@ def _telegram_notify(text: str) -> None:
 @tool
 def dispatch_to_claude_code(
     prompt: str,
-    time_budget_minutes: int = 120,
+    time_budget_minutes: int = 30,
     label: str = "",
 ) -> str:
     """Hand a coding/research prompt to a background Claude Code session.
@@ -47,8 +47,9 @@ def dispatch_to_claude_code(
 
     Args:
         prompt: The full task prompt to hand to Claude Code.
-        time_budget_minutes: Hard kill at this many minutes (default 120,
-            range 5-480). 80% mark sends a Telegram heads-up.
+        time_budget_minutes: Hard kill at this many minutes (default 30,
+            range 5-480). 80% mark sends a Telegram heads-up. Bump to
+            60-120 for full features, 240+ for big refactors.
         label: Short human-readable name shown in notifications.
 
     Returns:
@@ -57,7 +58,7 @@ def dispatch_to_claude_code(
     """
     if not prompt or not prompt.strip():
         return "Error: empty prompt — nothing to dispatch."
-    minutes = max(5, min(int(time_budget_minutes or 120), 480))
+    minutes = max(5, min(int(time_budget_minutes or 30), 480))
 
     # Budget gate before we touch the queue.
     level, spend, budget = cc_dispatch.budget_status()
