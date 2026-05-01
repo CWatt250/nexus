@@ -1346,6 +1346,82 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
     )
 
 
+# BUG 6 — entity-question patterns that MUST hit the wiki before any
+# reply generation. "What is BidWatt?" was hallucinating an answer
+# about real-time electricity pricing because the classifier picked
+# CHAT. These patterns intercept first.
+_ENTITY_QUESTION_RE = re.compile(
+    r"^\s*(?:what(?:'?s| is| are)|who(?:'?s| is| are)|tell me about|"
+    r"explain|describe|define|wikiq?(?::|\s))\s+(.{2,})$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _entity_lookup(message: str) -> dict | None:
+    """If the message looks like 'what is X / who is X / tell me about X',
+    query the wiki BEFORE any LLM call. Returns a route dict on hit, or
+    a route dict with a clearly-marked uncertainty prefix on miss, or
+    None when the pattern doesn't apply at all so the caller can keep
+    routing normally."""
+    m = _ENTITY_QUESTION_RE.match(message.strip())
+    if not m:
+        return None
+    try:
+        from tools import wiki_tool  # noqa: PLC0415
+        hits = wiki_tool.wiki_query.invoke({"question": message, "k": 3})
+    except Exception as exc:
+        log.warning("wiki_query failed: %s", exc)
+        return None
+    if not hits or hits.startswith("(no wiki hits"):
+        # No wiki entry — fall through to quick_chat but tag the result
+        # so the model (and the user) knows the answer isn't grounded.
+        return {
+            "kind": "query_inline",
+            "reply": _entity_no_wiki_reply(message),
+            "meta": {"wiki_hit": False},
+        }
+    # Got a hit — synthesize a grounded reply via quick_chat using the
+    # wiki content as system context. Keep it tight.
+    grounded_prompt = (
+        "Answer the user's question using ONLY the wiki excerpt below. "
+        "Be concise (2-4 sentences). If the excerpt doesn't fully answer, "
+        "say so explicitly. Do not invent details.\n\n"
+        f"WIKI EXCERPT:\n{hits[:4000]}\n\n"
+        f"USER QUESTION: {message}"
+    )
+    try:
+        reply = quick_chat(grounded_prompt)
+    except Exception as exc:
+        log.warning("grounded reply failed: %s", exc)
+        reply = hits[:1500] + "\n\n(raw wiki excerpt — synthesis failed)"
+    return {
+        "kind": "query_inline",
+        "reply": reply,
+        "meta": {"wiki_hit": True},
+    }
+
+
+def _entity_no_wiki_reply(message: str) -> str:
+    """Compose a reply for an entity question with no wiki match. Calls
+    quick_chat with a tight uncertainty-required system overlay so the
+    model can't invent a confident answer."""
+    overlay = (
+        "(no wiki entry — answering from training data) "
+        "The user is asking about an entity Nexus has no curated wiki "
+        "page for. Reply briefly. If you genuinely don't know, say "
+        "\"I don't know\" or \"I'm guessing here\"; never invent "
+        "confident facts. Begin your reply with the literal prefix "
+        "\"(no wiki entry — answering from training data) \"."
+    )
+    try:
+        reply = quick_chat(f"{overlay}\n\nUser question: {message}")
+    except Exception:
+        reply = "(no wiki entry — answering from training data) I don't know."
+    if not reply.startswith("(no wiki entry"):
+        reply = f"(no wiki entry — answering from training data) {reply}"
+    return reply
+
+
 _QUEUE_PREFIX_RE = re.compile(r"^\s*queue\s*[:>]\s*(.+)$", re.IGNORECASE | re.DOTALL)
 _DISPATCH_PREFIX_RE = re.compile(
     r"^\s*(force\s+)?dispatch\s*[:>]\s*(.+)$",
@@ -1444,6 +1520,16 @@ def _route_message_inner(message: str) -> dict:
     msg = (message or "").strip()
     if not msg:
         return {"kind": "empty", "reply": "(empty message)", "meta": {}}
+
+    # BUG 6 — entity questions ("what is X", "tell me about X", "who is
+    # X", "explain X") MUST hit the wiki before any other classification.
+    # Returns None when the pattern doesn't match so the rest of routing
+    # runs unchanged. Returns a grounded reply (or a clearly-tagged
+    # "no wiki entry" reply) when the pattern fires.
+    eq = _entity_lookup(msg)
+    if eq is not None:
+        log.info("route: entity-question hit wiki=%s", eq.get("meta", {}).get("wiki_hit"))
+        return eq
 
     # Power-user override: "queue: <task>"
     qm = _QUEUE_PREFIX_RE.match(msg)
