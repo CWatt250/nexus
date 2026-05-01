@@ -35,11 +35,12 @@ from memory import retros as agent_retros  # noqa: E402
 ACTIVE_LOG = ROOT / "memory" / "active_tasks.jsonl"
 POLL_SECONDS = 1.0
 
-# Per-task hard timeout (seconds). 5 minutes is the user-spec default
-# for simple URL/file tasks; research/build/research-sweep types get
-# bumped via TIMEOUT_OVERRIDES below. Override per-task by including a
+# Per-task hard timeout (seconds). 30 minutes is the new floor — earlier
+# 5-min default killed real coding tasks before they could finish even
+# small features. Research/build/research-sweep types still get bumped
+# higher via TIMEOUT_OVERRIDES below. Override per-task by including a
 # `[timeout=600]` tag in the input — _resolve_timeout strips and parses.
-DEFAULT_TIMEOUT_S = 300
+DEFAULT_TIMEOUT_S = 1800
 
 # Crude keyword routing for default budgets — short-circuits the parse
 # tag for common shapes. The override tag still wins.
