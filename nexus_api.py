@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict
@@ -63,6 +64,20 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="nexus-api", version="0.5", lifespan=_lifespan)
+
+# Phase 17.5 polish — the dashboard runs on port 11438 and talks to this
+# API on 11435; that's a different ORIGIN (different port = different
+# origin) and the browser blocked every POST/GET with "Error: Load failed"
+# until we surfaced CORS headers. Allow loopback + Tailscale dashboard
+# origins. Keep allow_credentials=False so we don't have to whitelist
+# specific origins; allow_methods="*" covers POST/OPTIONS preflight.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1|100\.124\.210\.84|wattbott(\.local)?)(:\d+)?)$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _last_user_text(msgs: list) -> str:
@@ -361,7 +376,8 @@ async def healthz():
 @app.get("/health")
 async def health():
     """Health check endpoint for Telegram bot."""
-    return {"status": "ok", "model": MODEL_NAME}
+    from datetime import datetime, timezone
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 class SimpleChatRequest(BaseModel):
