@@ -95,7 +95,7 @@ def _meta_for(dispatch_id: str) -> str:
 def _telegram(text: str) -> None:
     try:
         from tools import telegram_tool  # noqa: PLC0415
-        telegram_tool.notify_sync(text)
+        telegram_tool.notify_sync(text, parse_mode=None)
     except Exception as exc:
         log.debug("telegram notify failed: %s", exc)
 

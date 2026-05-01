@@ -24,7 +24,7 @@ def _get_bot():
     return Bot(token=TELEGRAM_BOT_TOKEN)
 
 
-async def _send_message_async(message: str) -> str:
+async def _send_message_async(message: str, parse_mode: Optional[str] = "Markdown") -> str:
     """Send message asynchronously."""
     bot = _get_bot()
     if bot is None:
@@ -33,7 +33,7 @@ async def _send_message_async(message: str) -> str:
         return "Error: TELEGRAM_CHAT_ID not configured. Add it to ~/AI_Agent/.env"
 
     try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode=parse_mode)
         return f"Message sent to Telegram successfully"
     except Exception as e:
         return f"Error sending Telegram message: {type(e).__name__}: {e}"
@@ -113,9 +113,9 @@ def telegram_send_file(file_path: str, caption: str = "") -> str:
 
 
 # Synchronous versions for direct use (not as LangGraph tools)
-def notify_sync(message: str) -> str:
+def notify_sync(message: str, parse_mode: Optional[str] = "Markdown") -> str:
     """Synchronous version of telegram_notify for direct use."""
-    return asyncio.run(_send_message_async(message))
+    return asyncio.run(_send_message_async(message, parse_mode=parse_mode))
 
 
 def send_file_sync(file_path: str, caption: str = "") -> str:
