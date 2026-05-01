@@ -57,8 +57,11 @@ log = logging.getLogger("nexus.task_worker")
 
 # Heartbeat ping interval. First heartbeat fires at HEARTBEAT_INTERVAL_S
 # of elapsed time, then every HEARTBEAT_INTERVAL_S after that — so a
-# 90s task gets none, a 5-minute task gets 2 pings (at 2m and 4m).
-HEARTBEAT_INTERVAL_S = 120
+# 4-min task gets none, a 15-minute task gets 2 pings (at 5m and 10m).
+# Bumped from 120s — 2-minute pings were too noisy for long tasks. The
+# 80%-of-budget warning still fires on top, so users still get a heads-
+# up before a kill.
+HEARTBEAT_INTERVAL_S = 300
 
 
 async def _heartbeat_loop(task_id: str, started: float, tool_counter: list) -> None:
