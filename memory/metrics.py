@@ -10,7 +10,6 @@ must never break the agent.
 """
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
@@ -19,6 +18,8 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Iterable
+
+from core import json_safe
 
 ROOT = Path.home() / "AI_Agent"
 MEMORY_DIR = ROOT / "memory"
@@ -40,11 +41,23 @@ def _approx_tokens(s: Any) -> int:
     return max(0, len(s) // 4)
 
 
+def _coerce_str(s: Any) -> str:
+    """Normalize bytes / non-str inputs to str. Tool outputs sometimes
+    come back as `bytes` when a tool forgot `.decode()`; slicing those
+    yields more bytes which json.dumps refuses. Coerce here instead of
+    chasing every leaf call site."""
+    if isinstance(s, (bytes, bytearray)):
+        return s.decode("utf-8", errors="replace")
+    if isinstance(s, str):
+        return s
+    return str(s) if s is not None else ""
+
+
 def _append(path: Path, record: dict) -> None:
     try:
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         with _LOCK, path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(json_safe.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
         log.warning("metrics write failed for %s: %s", path.name, exc)
 
@@ -91,6 +104,9 @@ def record_agent_turn(
     success: bool,
     error: str = "",
 ) -> None:
+    user_text = _coerce_str(user_text)
+    reply_text = _coerce_str(reply_text)
+    error = _coerce_str(error)
     _append(TASK_LOG, {
         "ts": _now_iso(),
         "task_id": task_id,
@@ -102,8 +118,8 @@ def record_agent_turn(
         "tool_calls": int(tool_calls),
         "success": bool(success),
         "error": error[:500],
-        "user_preview": (user_text or "")[:200],
-        "reply_preview": (reply_text or "")[:200],
+        "user_preview": user_text[:200],
+        "reply_preview": reply_text[:200],
     })
 
 

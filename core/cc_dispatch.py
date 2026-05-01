@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from core import json_safe
+
 ROOT = Path.home() / "AI_Agent"
 INBOX = ROOT / "cc_inbox"
 PENDING = INBOX / ".pending"
@@ -86,7 +88,7 @@ class DispatchMeta:
     def to_header(self) -> str:
         return (
             "<!--cc-dispatch\n"
-            + json.dumps(asdict(self), ensure_ascii=False, indent=2)
+            + json_safe.dumps(asdict(self), ensure_ascii=False, indent=2)
             + "\n-->\n"
         )
 
@@ -231,7 +233,7 @@ def write_result(result: DispatchResult) -> Path:
     """Append outcome to cc_results/<id>.json (overwrites if exists)."""
     ensure_dirs()
     path = RESULTS / f"{result.dispatch_id}.json"
-    path.write_text(json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(json_safe.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
@@ -297,7 +299,7 @@ def log_dispatch(meta: DispatchMeta, result: DispatchResult) -> None:
         "estimated_output_tokens": result.estimated_output_tokens,
     }
     with METRICS_LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        f.write(json_safe.dumps(line, ensure_ascii=False) + "\n")
 
 
 def month_spend_usd() -> float:

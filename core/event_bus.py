@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core import json_safe
+
 ROOT = Path.home() / "AI_Agent"
 EVENT_LOG = ROOT / "memory" / "agent-events.jsonl"
 
@@ -37,9 +39,14 @@ def _append(record: dict) -> None:
     EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
     try:
         with _log_lock, EVENT_LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(json_safe.dumps(record, ensure_ascii=False) + "\n")
     except OSError as exc:
         log.warning("event log write failed: %s", exc)
+    except TypeError as exc:
+        # json_safe handles bytes / Path / set / dataclass / datetime;
+        # anything left is a genuinely unencodable object — log and drop
+        # rather than crash the caller.
+        log.warning("event record had unencodable field: %s", exc)
 
 
 def subscribe() -> asyncio.Queue:
