@@ -35,7 +35,12 @@ sys.path.insert(0, str(ROOT))
 from core import cc_dispatch, event_bus  # noqa: E402
 
 POLL_SECONDS = 2.0
-INACTIVITY_KILL_SECONDS = 5 * 60  # log dead for 5 min → assume stuck
+# Safety fallback when a queued prompt's metadata is missing/garbage —
+# never kill before 30 minutes. The tool path passes time_budget_minutes
+# explicitly (default 30 there too); this only fires for hand-written
+# inbox files or upgrade-mid-flight cases.
+DEFAULT_TIME_BUDGET_MINUTES = 30
+INACTIVITY_KILL_SECONDS = 10 * 60  # log dead for 10 min → assume stuck
 TERM_GRACE_SECONDS = 10           # SIGTERM → wait → SIGKILL
 
 log = logging.getLogger("nexus.cc_dispatcher")
@@ -217,7 +222,10 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     started_iso = _now_iso()
     started_mono = time.monotonic()
     head_before = _git_repo_head()
-    budget_seconds = max(60, meta.time_budget_minutes * 60)
+    # Fall back to DEFAULT_TIME_BUDGET_MINUTES if the meta header is
+    # missing/zeroed; clamp lowest valid value to 60 seconds for sanity.
+    budget_minutes = meta.time_budget_minutes or DEFAULT_TIME_BUDGET_MINUTES
+    budget_seconds = max(60, budget_minutes * 60)
     eighty_pct = budget_seconds * 0.8
     eighty_pct_sent = False
 
