@@ -68,10 +68,20 @@ CHAT         — greetings, small talk, no real question or task.
                Examples: "hi", "hey", "what's up", "thanks", "lol nice"
 
 QUERY_INLINE — factual question answerable in 1-2 sentences from general
-               knowledge OR from the injected datetime. NO tool call needed.
+               knowledge, the injected datetime, or PERSONAL FACTS already
+               injected in the system prompt (Mem0 / RAG memories about
+               Colton — name, role, employer, preferences, projects, family,
+               etc.). NO tool call needed.
                Examples: "what's 7+8", "what does TCP stand for",
                          "what time is it", "what day is it",
-                         "explain a B-tree in one sentence"
+                         "explain a B-tree in one sentence",
+                         "what's my name", "what's my favorite color",
+                         "where do I work", "what's my role",
+                         "who am I", "what am I working on this week",
+                         "what did I tell you about my dog"
+               Personal-fact recall is ALWAYS QUERY_INLINE, never TASK —
+               the answer is either in the prompt context or it isn't,
+               and a 30-min agent loop won't change that.
 
 QUERY_TOOL   — quick factual question that needs ONE tool call to answer,
                then a short reply. The user wants the answer NOW, inline,
