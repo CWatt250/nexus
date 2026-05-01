@@ -792,17 +792,116 @@ function DispatchCard({ item, refresh }) {
 // ── MEMORY ──────────────────────────────────────────────────────────────
 function MemoryTab() {
   const [retros, setRetros] = useState([]);
+  const [wiki, setWiki] = useState([]);
   const [open, setOpen] = useState(null);
   const [body, setBody] = useState("");
-  const refresh = useCallback(() => get("/api/memory/retros?limit=30").then((r) => setRetros(r.retros || [])), []);
+  const [wikiQ, setWikiQ] = useState("");
+  const [wikiHits, setWikiHits] = useState("");
+  const [wikiSearching, setWikiSearching] = useState(false);
+
+  const refresh = useCallback(() => {
+    get("/api/memory/retros?limit=20").then((r) => setRetros(r.retros || []));
+    get("/api/wiki/recent?limit=20").then((r) => setWiki(r.entries || []));
+  }, []);
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
-    if (open) get(`/api/memory/retro/${open}`).then((r) => setBody(r.body || ""));
+    if (open && open.startsWith("retro_")) {
+      get(`/api/memory/retro/${open}`).then((r) => setBody(r.body || ""));
+    } else {
+      setBody("");
+    }
   }, [open]);
 
+  const runSearch = async () => {
+    if (!wikiQ.trim()) { setWikiHits(""); return; }
+    setWikiSearching(true);
+    try {
+      const r = await get(`/api/wiki/search?q=${encodeURIComponent(wikiQ.trim())}&k=5`);
+      setWikiHits(r.hits || "(no hits)");
+    } catch (e) {
+      setWikiHits(`error: ${e.message || e}`);
+    } finally {
+      setWikiSearching(false);
+    }
+  };
+
+  const layerColor = (layer) => {
+    if (layer === "entities") return "#0EA5E9";
+    if (layer === "concepts") return "#FACC15";
+    if (layer === "decisions") return "#A855F7";
+    return "#1A1F4F";
+  };
+
   return (
-    <div className="px-4 space-y-3 pb-32">
+    <div className="px-4 space-y-4 pb-32">
+      {/* Wiki search */}
+      <div className="glass p-4 space-y-3">
+        <div className="text-xs uppercase tracking-wider text-secondary font-semibold">Wiki search</div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={wikiQ}
+            onChange={(e) => setWikiQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runSearch()}
+            placeholder="ask the wiki — bidwatt, dispatch, intent…"
+            className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+            style={{background: "rgba(26,31,79,0.06)", color: "#1A1F4F"}}
+          />
+          <button
+            onClick={runSearch}
+            disabled={wikiSearching}
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+            style={{background: "#0EA5E9"}}
+          >
+            {wikiSearching ? "…" : "Search"}
+          </button>
+        </div>
+        {wikiHits && (
+          <pre className="p-3 rounded-xl text-[11px] leading-snug whitespace-pre-wrap scroll-clean overflow-auto"
+               style={{background: "rgba(26,31,79,0.05)", maxHeight: "40vh", color: "#1A1F4F"}}>{wikiHits}</pre>
+        )}
+      </div>
+
+      {/* Recent wiki entries */}
       <div className="px-2 text-xs uppercase tracking-wider text-secondary font-semibold">
+        Recent wiki ({wiki.length})
+      </div>
+      {wiki.length === 0 && (
+        <div className="glass p-5 text-secondary text-sm text-center">No wiki entries yet.</div>
+      )}
+      <div className="space-y-2">
+        {wiki.map((w, i) => (
+          <motion.div
+            key={w.id}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...spring, delay: Math.min(i * 0.02, 0.2) }}
+            whileTap={{ scale: 0.99 }}
+            className="glass p-4"
+          >
+            <div className="flex justify-between items-start gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md text-white shrink-0"
+                      style={{background: layerColor(w.layer)}}>{w.layer}</span>
+                <span className="font-mono text-[13px] font-semibold truncate">{w.name}</span>
+              </div>
+              <span className="text-xs text-tertiary font-medium shrink-0">{w.last_updated || fmtTimeAgo(w.mtime)}</span>
+            </div>
+            <div className="text-[13px] text-secondary mt-1.5 line-clamp-2">{w.description || w.id}</div>
+            {w.tags && w.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {w.tags.slice(0, 5).map((t) => (
+                  <span key={t} className="text-[10px] px-2 py-0.5 rounded-md font-medium"
+                        style={{background: "rgba(26,31,79,0.08)", color: "#1A1F4F"}}>{t}</span>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Recent retros */}
+      <div className="px-2 text-xs uppercase tracking-wider text-secondary font-semibold pt-2">
         Recent retros ({retros.length})
       </div>
       {retros.length === 0 && (

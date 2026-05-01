@@ -804,6 +804,82 @@ async def api_memory_retro(retro_id: str):
         return {"ok": False, "body": ""}
 
 
+@app.get("/api/wiki/recent")
+async def api_wiki_recent(limit: int = 30):
+    """Phase 25 — most-recently-updated curated wiki pages.
+
+    Returns entities/, concepts/, and decisions/ ordered by mtime so the
+    Memory tab can show what's freshest without enumerating every page.
+    """
+    wiki_dir = ROOT / "wiki"
+    if not wiki_dir.exists():
+        return {"entries": []}
+    files: list[Path] = []
+    for sub in ("entities", "concepts", "decisions"):
+        d = wiki_dir / sub
+        if d.exists():
+            files.extend(d.glob("*.md"))
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    out = []
+    for f in files[:limit]:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Cheap frontmatter parse (mirrors tools/wiki_tool but stays inline
+        # so the API has zero new imports).
+        name = f.stem
+        description = ""
+        last_updated = ""
+        tags: list[str] = []
+        if text.startswith("---\n"):
+            end = text.find("\n---", 4)
+            if end != -1:
+                for line in text[4:end].splitlines():
+                    if ":" not in line:
+                        continue
+                    k, _, v = line.partition(":")
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k == "name" and v:
+                        name = v
+                    elif k == "description":
+                        description = v
+                    elif k == "last_updated":
+                        last_updated = v
+                    elif k == "tags" and v.startswith("[") and v.endswith("]"):
+                        tags = [t.strip().strip('"').strip("'")
+                                for t in v[1:-1].split(",") if t.strip()]
+        rel = f.relative_to(wiki_dir)
+        out.append({
+            "id": str(rel),
+            "layer": rel.parts[0],
+            "name": name,
+            "description": description,
+            "last_updated": last_updated,
+            "tags": tags,
+            "mtime": f.stat().st_mtime,
+        })
+    return {"entries": out}
+
+
+@app.get("/api/wiki/search")
+async def api_wiki_search(q: str, k: int = 5):
+    """Phase 25 — slug + frontmatter + semantic search over the wiki.
+
+    Thin wrapper over tools.wiki_tool.wiki_query so the dashboard hits the
+    same code path as Telegram and the agent. Returns markdown blocks.
+    """
+    if not q or not q.strip():
+        return {"q": q, "hits": "", "ok": False}
+    try:
+        from tools import wiki_tool  # noqa: PLC0415
+        hits = wiki_tool.wiki_query.invoke({"question": q.strip(), "k": max(1, min(k, 10))})
+    except Exception as exc:
+        return {"q": q, "hits": "", "ok": False, "error": str(exc)}
+    return {"q": q, "hits": hits, "ok": True}
+
+
 @app.get("/api/agents")
 async def list_agents_alias():
     """Dashboard alias for /agents — keeps API surface uniform under /api/."""
