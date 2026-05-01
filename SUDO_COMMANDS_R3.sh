@@ -140,3 +140,9 @@ sudo systemctl enable --now nexus-tools-refresh.timer
 systemctl list-timers nexus-tools-refresh.timer --no-pager
 
 
+
+# ── Phase 25 — Wiki extractor service ──────────────────────────
+sudo cp /tmp/nexus-wiki-extractor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-wiki-extractor.service
+sudo systemctl status nexus-wiki-extractor.service --no-pager
