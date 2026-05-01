@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -14,18 +15,58 @@ from PIL import Image
 # Lazy load pyautogui to avoid display errors on import
 _pyautogui = None
 
+# Polish #7 — virtual display fallback. When the host has no monitor
+# attached (DISPLAY unset, or the real X session has gone away), Nexus
+# can still screenshot via the nexus-xvfb.service-managed Xvfb instance
+# at :99. Set up by SUDO_DISPATCH.sh.
+_HEADLESS_DISPLAY = ":99"
+
+
+def _ensure_display_env() -> Optional[str]:
+    """Return the DISPLAY value to use for pyautogui. If the env var is
+    unset and the headless Xvfb at :99 is reachable, return ':99' (and
+    set os.environ['DISPLAY']). Otherwise return whatever the env says.
+
+    Caller should call this BEFORE first pyautogui access — pyautogui
+    reads $DISPLAY at import time."""
+    current = os.environ.get("DISPLAY")
+    if current:
+        return current
+    # No display attached. Probe :99 — if Xvfb is up, xdpyinfo answers.
+    try:
+        proc = subprocess.run(
+            ["xdpyinfo", "-display", _HEADLESS_DISPLAY],
+            capture_output=True, timeout=2,
+        )
+        if proc.returncode == 0:
+            os.environ["DISPLAY"] = _HEADLESS_DISPLAY
+            return _HEADLESS_DISPLAY
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
 
 def _get_pyautogui():
-    """Lazy load pyautogui with proper error handling."""
+    """Lazy load pyautogui with proper error handling. Falls back to the
+    Xvfb virtual display at :99 when no real DISPLAY is set."""
     global _pyautogui
     if _pyautogui is None:
+        display = _ensure_display_env()
+        if not display:
+            raise RuntimeError(
+                "No DISPLAY available. Start the headless Xvfb service "
+                "(`sudo systemctl start nexus-xvfb`) or run "
+                "SUDO_DISPATCH.sh to install it."
+            )
         try:
             import pyautogui
             pyautogui.FAILSAFE = True  # Move mouse to corner to abort
             pyautogui.PAUSE = 0.1  # Small pause between actions
             _pyautogui = pyautogui
         except Exception as e:
-            raise RuntimeError(f"Cannot initialize pyautogui (display issue?): {e}")
+            raise RuntimeError(
+                f"Cannot initialize pyautogui on DISPLAY={display}: {e}"
+            )
     return _pyautogui
 
 # Output directory for screenshots

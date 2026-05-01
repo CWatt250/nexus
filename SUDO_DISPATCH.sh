@@ -43,6 +43,18 @@ sudo systemctl restart nexus-telegram.service
 # sudo systemctl restart nexus-dashboard.service
 
 # ---------------------------------------------------------------------------
+# Polish #7 — install Xvfb + start headless virtual display at :99 so
+# computer_use_tool.screenshot() works without a physical monitor.
+# ---------------------------------------------------------------------------
+sudo apt-get install -y xvfb x11-utils      # x11-utils provides xdpyinfo
+sudo cp /tmp/nexus-xvfb.service /etc/systemd/system/nexus-xvfb.service
+sudo systemctl daemon-reload
+sudo systemctl enable nexus-xvfb.service
+sudo systemctl start  nexus-xvfb.service
+# Verify :99 is alive.
+DISPLAY=:99 xdpyinfo | head -3 || echo "warn: :99 not answering yet"
+
+# ---------------------------------------------------------------------------
 # Polish #6 — move EOD summary trigger from 17:00 local → 20:00 Pacific.
 # OnCalendar with America/Los_Angeles suffix handles DST automatically.
 # ---------------------------------------------------------------------------
