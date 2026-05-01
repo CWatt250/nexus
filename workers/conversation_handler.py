@@ -509,7 +509,53 @@ _LEAK_SENTINELS = (
     "perfect. no",
     "got that?\n",
     "let me craft",
+    # BUG 9 — observed in May 1 production:
+    "wait, the instructions",
+    "wait, the system",
+    "wait, the rules",
+    "wait, the prompt",
+    "the instructions say",
+    "the system prompt says",
+    "according to my instructions",
+    "based on the system prompt",
+    "remember, the rules",
+    "looking at the rules",
+    "i'm supposed to",
+    "i'm being told to",
+    "the persona says",
 )
+
+
+# BUG 9 — final defense: any reply that exits route_message goes through
+# this stripper. Catches `<think>...</think>` blocks AND open `<think>`
+# tags with no closer (qwen3:4b sometimes truncates mid-thought). The
+# regex from nexus.py is the canonical source — re-exported here so
+# every reply path picks it up without needing to import nexus.
+import re as _re  # noqa: E402
+_THINK_BLOCK_RE = _re.compile(r"<think>.*?</think>", _re.DOTALL | _re.IGNORECASE)
+_OPEN_THINK_RE = _re.compile(r"<think>.*\Z", _re.DOTALL | _re.IGNORECASE)
+
+
+def _strip_think_final(text: str) -> str:
+    """Final reply scrubber. Removes <think>...</think>, dangling
+    <think>..., and a known set of leaked-reasoning prefix lines.
+    Idempotent — safe to apply on already-clean text."""
+    if not text:
+        return text
+    out = _THINK_BLOCK_RE.sub("", text)
+    out = _OPEN_THINK_RE.sub("", out)
+    # Drop any leading line whose lowercased prefix matches a sentinel.
+    lines = out.splitlines()
+    while lines:
+        head = lines[0].strip().lower()
+        if not head:
+            lines.pop(0)
+            continue
+        if any(head.startswith(s) for s in _LEAK_SENTINELS):
+            lines.pop(0)
+            continue
+        break
+    return "\n".join(lines).strip()
 
 
 def looks_like_thinking_leak(text: str) -> bool:
@@ -1740,11 +1786,19 @@ def route_message(message: str) -> dict:
     telemetry. Every call appends one line to
     `memory/intent_latencies.jsonl` so the dashboard's Performance tab
     can render the rolling-24h average per intent.
+
+    BUG 9 — every reply gets passed through `_strip_think_final` here,
+    not just inside quick_chat, so reply paths that bypass the
+    quick_chat cleaner (status replies, dispatch confirmations, queue
+    listings) can't accidentally leak <think> blocks if a downstream
+    composer ever interpolates model output into them.
     """
     import time as _time
     t0 = _time.monotonic()
     result = _route_message_inner(message)
     elapsed = _time.monotonic() - t0
+    if isinstance(result, dict) and isinstance(result.get("reply"), str):
+        result["reply"] = _strip_think_final(result["reply"])
     meta = result.get("meta", {}) or {}
     _record_intent_latency(
         intent=result.get("kind", "unknown"),
