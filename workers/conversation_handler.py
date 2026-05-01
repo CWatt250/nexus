@@ -98,12 +98,23 @@ QUERY_TOOL   — quick factual question that needs ONE tool call to answer,
                clearly needs >1 step, pick TASK instead.
 
 TASK         — multi-step or long-running work, or anything that needs the
-               full agent loop with all 91 tools.
+               full agent loop with all 91 tools. TASK only fires on
+               IMPERATIVE statements with a SPECIFIC OBJECT — "Build X",
+               "Fix Y", "Add Z to file W", "Refactor module M".
                Examples: "research the top 5 AI agent frameworks and write
                          me a summary", "fix the bug in eod_summary.py",
                          "build a Next.js scaffold with auth",
                          "summarize this repo", "deploy to vercel",
                          anything starting with "queue:" (forced override)
+               COUNTER-EXAMPLES that look task-ish but are actually CHAT
+               (no specific object, just hype/openness):
+               - "are you ready to build something?"  → CHAT
+               - "want to ship something cool?"        → CHAT
+               - "feel like coding tonight?"           → CHAT
+               - "should we do anything fun?"          → CHAT
+               - "let's build something" (no object)   → CHAT
+               These need a clarifying reply, not 50 tool calls. Wait for
+               the user to name the actual thing they want built.
 
 STATUS — asking about Nexus's INTERNAL task queue or a specific task ID.
          The word "status" alone does NOT make it STATUS — context matters.
