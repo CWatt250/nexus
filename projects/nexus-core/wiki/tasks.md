@@ -8,9 +8,9 @@ Open work for nexus-core. Newest-first within each section. Keep items short; li
 - [x] **Run log system** — `tools/run_log.py` created as centralized append helper; `terminal_tool.py` migrated to use it; all other tools can import and use `log_run()`.
 
 ## next
-- [ ] **Multi-model routing** — cheap/fast model for trivial turns (qwen3:14b or similar), heavy model (qwen3.6) for reasoning/tool use. Decide routing heuristic: message length, tool-intent detection, or a tiny classifier pass.
-- [ ] **Reflection pipeline** — after each session (or N turns), summarize what happened, pull lessons into `wiki/lessons-learned.md`, and write embeddings into `nexus-memory` so future sessions recall them.
-- [ ] **Phone access via Open WebUI** — expose nexus through Open WebUI so it's reachable from the phone on the home network. Confirm auth story before opening beyond localhost.
+- [x] **Multi-model routing** — `tools/model_router.py` created with heuristic + Ollama classification. Routes: fast, mid, heavy, code, design. Model resolution via `models.json` with fallback defaults.
+- [x] **Reflection pipeline** — `tools/session_reflection.py` created. `run_reflection(n)` reads last N runs from run-log, asks qwen3:4b for insights, writes lessons to wiki and deduplicates. `auto_reflect_threshold(n)` enables auto-trigger.
+- [x] **Phone access via Open WebUI** — `wiki/phone-access.md` created with 3 options (bind-all, API key auth, SSH tunnel), firewall config, Open WebUI setup steps, and security notes.
 
 ## later
 - [ ] Checkpointed conversation state via `langgraph-checkpoint-sqlite` so sessions survive restarts.
