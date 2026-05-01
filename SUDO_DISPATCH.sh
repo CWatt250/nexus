@@ -43,6 +43,15 @@ sudo systemctl restart nexus-telegram.service
 # sudo systemctl restart nexus-dashboard.service
 
 # ---------------------------------------------------------------------------
+# Polish #6 — move EOD summary trigger from 17:00 local → 20:00 Pacific.
+# OnCalendar with America/Los_Angeles suffix handles DST automatically.
+# ---------------------------------------------------------------------------
+sudo cp /tmp/nexus-eod-summary.timer /etc/systemd/system/nexus-eod-summary.timer
+sudo systemctl daemon-reload
+sudo systemctl restart nexus-eod-summary.timer
+systemctl list-timers nexus-eod-summary.timer --no-pager
+
+# ---------------------------------------------------------------------------
 # 22 — verify
 # ---------------------------------------------------------------------------
 journalctl -u nexus-cc-dispatcher.service -n 20 --no-pager

@@ -1,10 +1,10 @@
 """Daily end-of-day summary (Phase 19.3).
 
-5pm local Sparky+Telegram summary that pulls from today's task_metrics,
+8pm Pacific Sparky+Telegram summary that pulls from today's task_metrics,
 agent-events, retros, run-log, and produces a short brief: what shipped,
 what's pending, what to pick up tomorrow.
 
-Triggered by `nexus-eod-summary.timer` (Mon-Sun 17:00 local).
+Triggered by `nexus-eod-summary.timer` (Mon-Fri 20:00 America/Los_Angeles).
 """
 from __future__ import annotations
 
