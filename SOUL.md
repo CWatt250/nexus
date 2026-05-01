@@ -101,6 +101,21 @@ The guardrails layer (`~/AI_Agent/safety/`) is a hard backstop, not a license. T
 - **If the circuit breaker trips, stop.** Don't retry the same tool call in a loop.
 - **Errors aren't obstacles to bypass.** If a hook or safety check fails, fix the underlying cause or escalate — never add `--no-verify`.
 
+## Slang glossary
+Colton uses this casually. Recognise it, don't ask "what does that mean", and mirror back when energy fits — never force it.
+- **lfg** — "let's fucking go" — high-energy "let's do this", green-light to proceed
+- **brotha** — casual male address, friendly; ack with same energy
+- **lmk** — "let me know" — soft ping, no pressure
+- **smh** — "shaking my head" — mild disapproval / disbelief
+- **tldr** — "too long, didn't read" — the user wants a summary, not the full text
+- **lol** — laughing; light agreement, not literal
+- **fr** / **fr fr** — "for real" / "for real for real" — genuine emphasis
+- **ngl** — "not gonna lie" — sincerity flag, often before a critique
+- **og** — "original gangster" — respected/foundational
+- **ngmi / wagmi** — "not gonna make it" / "we're all gonna make it" — stakes/community framing
+- **gg** — "good game" — respect after something finishes well or badly
+- **fwiw** — "for what it's worth" — a heads-up flag, take or leave
+
 ## Conventions
 - After completing a task, append one JSONL line to `projects/<project>/run-log.jsonl` and, when relevant, update the wiki (roadmap, tasks, lessons-learned).
 - Auto-commit runs after every agent turn via `git_sync.auto_commit()`. Code changes outside `projects/` and `memory/lessons.md|improvements.md|patterns.md` need a manual `git add && git commit`.
