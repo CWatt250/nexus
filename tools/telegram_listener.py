@@ -203,6 +203,42 @@ async def _handle_dispatch_command(update: Update, text: str) -> bool:
         )
         return True
 
+    if low.startswith("wiki ") or low == "wiki":
+        query = text[len("wiki"):].strip()
+        if not query:
+            await update.message.reply_text("usage: `wiki <question>`", parse_mode="Markdown")
+            return True
+        try:
+            from tools import wiki_tool  # noqa: PLC0415
+            hits = wiki_tool.wiki_query.invoke({"question": query, "k": 3})
+        except Exception as e:
+            await update.message.reply_text(f"wiki_query error: {type(e).__name__}: {e}")
+            return True
+        # Telegram caps at 4096 chars; trim long bodies.
+        if len(hits) > 3500:
+            hits = hits[:3500] + "\n\n…(truncated)"
+        await update.message.reply_text(hits)
+        return True
+
+    if low.startswith("ingest ") or low == "ingest":
+        payload = text[len("ingest"):].strip()
+        if not payload:
+            await update.message.reply_text(
+                "usage: `ingest <url or note>`", parse_mode="Markdown"
+            )
+            return True
+        try:
+            from tools import wiki_tool  # noqa: PLC0415
+            msg = wiki_tool.wiki_ingest.invoke({
+                "source": payload,
+                "source_type": "manual",
+            })
+        except Exception as e:
+            await update.message.reply_text(f"wiki_ingest error: {type(e).__name__}: {e}")
+            return True
+        await update.message.reply_text(f"📥 {msg}")
+        return True
+
     if low.startswith("retry cc_") or low.startswith("extend cc_"):
         is_extend = low.startswith("extend cc_")
         parts = text.split()

@@ -100,6 +100,27 @@ def _telegram(text: str) -> None:
         log.debug("telegram notify failed: %s", exc)
 
 
+def _wiki_ingest_dispatch(dispatch_id: str, label: str, result_path: Path) -> None:
+    """Phase 25 integration — every dispatch result becomes a wiki source so
+    its findings can be extracted into entities/concepts/decisions.
+
+    We pass the raw JSON result path to wiki_ingest so the file lands in
+    wiki/sources/ with frontmatter and triggers the extractor worker.
+    Best-effort: silent on import or write failure (the dispatch is
+    already reported via Telegram + event_bus, the wiki is bonus durability).
+    """
+    try:
+        from tools import wiki_tool  # noqa: PLC0415
+        # wiki_ingest expects a string source — the result file's path works.
+        msg = wiki_tool.wiki_ingest.invoke({
+            "source": str(result_path),
+            "source_type": "dispatch_result",
+        })
+        log.info("wiki_ingest dispatch=%s → %s", dispatch_id, msg)
+    except Exception as exc:
+        log.debug("wiki_ingest failed for %s: %s", dispatch_id, exc)
+
+
 def _process_new_results(reported: set[str]) -> None:
     if not cc_dispatch.RESULTS.exists():
         return
@@ -128,6 +149,11 @@ def _process_new_results(reported: set[str]) -> None:
             )
         except Exception:
             pass
+        # Phase 25 — fan dispatch result into the wiki sources layer so
+        # the extractor can fold findings back into curated pages. Skip
+        # for wiki-extract dispatches themselves to avoid feedback loops.
+        if not label.startswith("wiki-extract:"):
+            _wiki_ingest_dispatch(dispatch_id, label, f)
         _mark_reported(dispatch_id)
         reported.add(dispatch_id)
 

@@ -71,6 +71,7 @@ from tools.chat_history_import import HISTORY_TOOLS  # noqa: E402
 from tools.model_watcher import MODEL_WATCHER_TOOLS  # noqa: E402
 from tools.cc_dispatch_tool import CC_DISPATCH_TOOLS  # noqa: E402
 from tools.restart_services_tool import RESTART_SERVICES_TOOLS  # noqa: E402
+from tools.wiki_tool import WIKI_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -152,6 +153,7 @@ TOOLS = [
     *MODEL_WATCHER_TOOLS,
     *CC_DISPATCH_TOOLS,
     *RESTART_SERVICES_TOOLS,
+    *WIKI_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
@@ -281,7 +283,21 @@ def load_static_prefix() -> str:
     nexus_md = _read_text(ROOT / "NEXUS.md")
     weekly_lessons = _read_text(ROOT / "LESSONS.md")
     tools_md = _read_text(ROOT / "TOOLS.md")
+    wiki_index = _read_text(ROOT / "wiki" / "index.md")
     sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", _TOOL_HINT]
+    # Phase 25 — knowledge garden hint. Inject the wiki index so the agent
+    # knows what curated pages exist and can reach for wiki_query before
+    # speculating about Colton's projects, Nexus internals, or past decisions.
+    if wiki_index:
+        sections.append(
+            "# KNOWLEDGE WIKI (~/AI_Agent/wiki/)\n"
+            "You maintain a knowledge wiki at ~/AI_Agent/wiki/. "
+            "Query it via `wiki_query` before answering questions about "
+            "Colton, his projects (BidWatt, SubWatt, Argus), Nexus "
+            "internals, or past decisions. Ingest new context via "
+            "`wiki_ingest`. Index of curated pages:\n\n"
+            + wiki_index
+        )
     # TOOLS.md is the canonical, auto-refreshed inventory. Inject it so any
     # agent path (worker, CLI, voice) knows the full tool surface and stops
     # hallucinating "I can't browse the web" when it has browser_tool +
