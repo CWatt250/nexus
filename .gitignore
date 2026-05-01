@@ -51,9 +51,63 @@ designs/
 claude_session.json
 .claude/scheduled_tasks.lock
 
-# Secrets - never commit
+# Secrets — never commit
 config/secrets.yaml
 config/secrets.yml
+config/*.key
 *.key
+*.pem
+*.crt
 .env
 .env.local
+.env.*
+
+# Phase 22 dispatch runtime — kept local only
+cc_logs/
+cc_results/
+cc_archive/
+cc_inbox/
+cc_metrics/
+.extractor_inbox/
+
+# Wiki source dumps (raw inputs, may contain personal data)
+wiki/sources/
+
+# Run-log telemetry — May 1 backup audit found these had captured
+# plaintext token values from `cat .env` calls. tools/run_log.py now
+# redacts at write time, but still keep run logs local-only as
+# defense-in-depth.
+projects/*/run-log.jsonl
+
+# Per-task EOD snapshots and intent telemetry
+memory/eod/
+memory/intent_latencies.jsonl
+memory/quick_chat_cleanliness.jsonl
+memory/quick_chat_denials.jsonl
+memory/quick_chat_denial_last_alert
+memory/perf-guardian.jsonl
+memory/perf-guardian.state.json
+memory/model-watcher.jsonl
+memory/active_tasks.jsonl
+memory/agent-events.jsonl
+memory/task_metrics.jsonl
+memory/tool_metrics.jsonl
+memory/scheduled_tasks.db
+memory/tasks.db
+memory/checkpoints*.db*
+memory/retros/
+
+# Output / scratch
+output/
+content/
+research/
+*.log
+HEARTBEAT.log
+
+# Editors
+.vscode/
+.idea/
+
+# Backups + tarballs
+*.bak
+*.tar.gz

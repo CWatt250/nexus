@@ -3,6 +3,15 @@
 Every task completion appends a JSONL record to the project's
 ``run-log.jsonl``. Import and use ``log_run`` instead of writing
 to the file directly.
+
+Secrets defense (May 1 backup-prep audit):
+  Earlier auto-commits captured plaintext token values when the
+  terminal tool ran ``cat .env`` / ``cat secrets.yaml`` (Nexus
+  inspecting its own config). Every value going into the record
+  now passes through ``core.secrets.redact`` first, which masks
+  any known-secret value with ``<REDACTED>`` before it hits disk.
+  History got rewritten via git-filter-repo; this hook prevents
+  the same leak from recurring.
 """
 from __future__ import annotations
 
@@ -13,6 +22,21 @@ from typing import Any, Optional
 
 RUN_LOG_DIR = Path.home() / "AI_Agent" / "projects" / "nexus-core"
 RUN_LOG_FILE = RUN_LOG_DIR / "run-log.jsonl"
+
+
+def _redact(value: Any) -> Any:
+    """Pass strings through core.secrets.redact so any value that
+    matches a known secret token (GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
+    etc.) is masked. Non-strings pass through unchanged. Never raises
+    — a missing/broken secrets module degrades to the original value
+    so the log line still gets written."""
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        from core import secrets as _secrets  # noqa: PLC0415
+        return _secrets.redact(value)
+    except Exception:
+        return value
 
 
 def _get_log_path(project: Optional[str] = None) -> Path:
@@ -64,26 +88,27 @@ def log_run(
         "tool": tool,
     }
     if task is not None:
-        record["task"] = task
+        record["task"] = _redact(task)
     record["result"] = result
     if notes:
-        record["notes"] = notes
+        record["notes"] = _redact(notes)
     if command is not None:
-        record["command"] = command
+        record["command"] = _redact(command)
     if returncode is not None:
         record["returncode"] = returncode
     if stdout is not None:
-        record["stdout"] = stdout
+        record["stdout"] = _redact(stdout)
     if stderr is not None:
-        record["stderr"] = stderr
+        record["stderr"] = _redact(stderr)
     if timed_out:
         record["timed_out"] = True
     if blocked:
         record["blocked"] = True
     if reason is not None:
-        record["reason"] = reason
+        record["reason"] = _redact(reason)
     if extra:
-        record.update(extra)
+        # Defensive: redact every string value in extra fields too.
+        record.update({k: _redact(v) for k, v in extra.items()})
 
     with log_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")

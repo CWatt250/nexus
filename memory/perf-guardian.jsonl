@@ -1,1 +1,0 @@
-{"ts": "2026-04-28T06:37:16.862646+00:00", "ram_pct": 15.2, "load1": 0.3, "load5": 0.29, "cpus": 32, "load_per_cpu": 0.0090625, "swap_pct": 0.0, "cpu_pct_5min": 0.0, "loaded_models": [{"name": "qwen3:4b", "size_vram_gb": 3.21}], "breaches": [], "fired": [], "pinned": {"ok": false, "missing": ["qwen3.6"], "loaded": ["qwen3:4b"]}}
