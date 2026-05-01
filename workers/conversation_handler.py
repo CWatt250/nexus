@@ -536,6 +536,31 @@ _THINK_BLOCK_RE = _re.compile(r"<think>.*?</think>", _re.DOTALL | _re.IGNORECASE
 _OPEN_THINK_RE = _re.compile(r"<think>.*\Z", _re.DOTALL | _re.IGNORECASE)
 
 
+# BUG 4 — words that signal "the user wants a synthesized answer, not
+# raw search snippets". When any of these appear in the user message,
+# lite_agent must skip the fast-format shortcuts and force the LLM
+# formatter step that actually condenses across all hits.
+_SYNTHESIS_KEYWORDS = (
+    "summarize", "summary", "summarise",
+    "in your own words",
+    "tldr", "tl;dr",
+    "bullet", "bullets",
+    "condense", "condensed",
+    "key points", "main points", "main takeaway", "takeaways",
+    "explain in", "in 3 ", "in three ", "in 5 ", "in five ",
+    "rewrite", "paraphrase",
+)
+
+
+def _wants_synthesis(message: str) -> bool:
+    """True if the user explicitly asked for a synthesized answer.
+    Case-insensitive substring match against `_SYNTHESIS_KEYWORDS`."""
+    if not message:
+        return False
+    low = message.lower()
+    return any(kw in low for kw in _SYNTHESIS_KEYWORDS)
+
+
 def _strip_think_final(text: str) -> str:
     """Final reply scrubber. Removes <think>...</think>, dangling
     <think>..., and a known set of leaked-reasoning prefix lines.
@@ -902,23 +927,31 @@ def lite_agent(message: str) -> dict:
     # Most QUERY_TOOL turns hit one of these and save ~3-4s.
     result_str = str(tool_result) if tool_result is not None else ""
 
-    if tool_name in _FORMATTABLE_SEARCH_TOOLS:
-        sx = _searxng_top_hit(result_str)
-        if sx:
+    # BUG 4 — synthesis bypass. When the user asked for a summary /
+    # bullets / "in your own words", DO NOT take the search-top-hit or
+    # clean-output shortcut — those paste the raw snippet. Force the
+    # LLM formatter so the model condenses across all results in the
+    # shape the user requested.
+    if tool_name in _FORMATTABLE_SEARCH_TOOLS and _wants_synthesis(message):
+        log.info("lite_agent: synthesis requested — skipping fast-format paths")
+    else:
+        if tool_name in _FORMATTABLE_SEARCH_TOOLS:
+            sx = _searxng_top_hit(result_str)
+            if sx:
+                return {
+                    "ok": True,
+                    "tool": tool_name,
+                    "reply": sx,
+                    "fast_format": "search_top_hit",
+                }
+
+        if _looks_like_clean_output(result_str):
             return {
                 "ok": True,
                 "tool": tool_name,
-                "reply": sx,
-                "fast_format": "search_top_hit",
+                "reply": result_str.strip(),
+                "fast_format": "clean_output",
             }
-
-    if _looks_like_clean_output(result_str):
-        return {
-            "ok": True,
-            "tool": tool_name,
-            "reply": result_str.strip(),
-            "fast_format": "clean_output",
-        }
 
     # 3b. Out of budget? Return raw — at least the user gets *something*.
     if _budget_left() < 0.5:
