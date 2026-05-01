@@ -1328,6 +1328,10 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
 
 
 _QUEUE_PREFIX_RE = re.compile(r"^\s*queue\s*[:>]\s*(.+)$", re.IGNORECASE | re.DOTALL)
+_DISPATCH_PREFIX_RE = re.compile(
+    r"^\s*(force\s+)?dispatch\s*[:>]\s*(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
 _FULL_OUTPUT_RE = re.compile(
     r"^\s*(?:full|whole|complete|show)\s+(?:output|result)\s+([0-9a-f]{8,16})\s*$",
     re.IGNORECASE,
@@ -1431,6 +1435,55 @@ def _route_message_inner(message: str) -> dict:
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
+
+    # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
+    # the prompt to the cc_dispatcher daemon (background Claude Code
+    # session), NOT the regular Nexus task agent. Defense-in-depth: the
+    # Telegram listener's `_handle_dispatch_command` should already
+    # short-circuit this, but if a message arrives via /chat or any
+    # other path we still route to the dispatcher here.
+    dm = _DISPATCH_PREFIX_RE.match(msg)
+    if dm:
+        forced = bool(dm.group(1))
+        body = (dm.group(2) or "").strip()
+        if not body:
+            return {"kind": "dispatch", "reply": "dispatch: needs a prompt.", "meta": {}}
+        from core import cc_dispatch as _ccd
+        level, spend, budget = _ccd.budget_status()
+        if level == "over" and not forced:
+            return {
+                "kind": "dispatch",
+                "reply": (
+                    f"Blocked: monthly Claude Code budget exhausted "
+                    f"(${spend:.2f}/${budget:.2f}). Reply with "
+                    f"'force dispatch: ...' to override."
+                ),
+                "meta": {"budget_blocked": True},
+            }
+        risky = _ccd.is_risky(body)
+        meta = _ccd.DispatchMeta.new(
+            label=body.splitlines()[0][:60],
+            time_budget_minutes=30,
+            risky_match=risky,
+        )
+        _ccd.write_prompt(meta, body, pending=bool(risky))
+        log.info("route: dispatch-prefix override -> %s (risky=%s)",
+                 meta.dispatch_id, bool(risky))
+        if risky:
+            reply = (
+                f"🚨 Risky prompt held (matched: {risky}). "
+                f"Reply 'go {meta.dispatch_id}' to dispatch."
+            )
+        else:
+            reply = (
+                f"🚀 Dispatched. dispatch_id={meta.dispatch_id} "
+                f"(budget {meta.time_budget_minutes}m). "
+                f"I'll ping when it's done."
+            )
+        return {
+            "kind": "dispatch", "reply": reply,
+            "meta": {"dispatch_id": meta.dispatch_id, "risky": bool(risky)},
+        }
 
     # Deterministic: "full output <task_id>" — return the unchunked
     # output from the row, since STATUS replies preview at 800 chars.
