@@ -1808,6 +1808,12 @@ def _route_message_inner(message: str) -> dict:
     # the capability rules in the system prompt. If the reply reads like a
     # denial, treat it as a misclassified TASK — re-route, enqueue, and
     # discard the bad text so the user gets a real answer instead.
+    #
+    # BUG 10 — when the original classification was CHAT or QUERY_INLINE,
+    # the user wasn't asking for a long task; they got a denial and we
+    # recovered. Reply with the friendly capability-recovery line, NOT
+    # "On it. task_id=…" (that's reserved for genuinely-routed TASK).
+    # task_id still flows back in meta for telemetry.
     if _looks_like_denial(reply):
         log.warning(
             "quick_chat produced denial — recovering as TASK. "
@@ -1816,9 +1822,15 @@ def _route_message_inner(message: str) -> dict:
         )
         enqueued_input = f"[{_datetime_context()}]\n\n{msg}"
         tid = task_queue.enqueue(enqueued_input)
+        original_was_task = intent.kind == "TASK"
+        recovery_reply = (
+            f"On it. task_id={tid}"
+            if original_was_task
+            else "Let me dig into that properly — one sec."
+        )
         return {
-            "kind": "task",
-            "reply": f"On it. task_id={tid}",
+            "kind": "task" if original_was_task else "chat",
+            "reply": recovery_reply,
             "meta": {**meta, "task_id": tid, "recovered_from": "denial"},
         }
 
