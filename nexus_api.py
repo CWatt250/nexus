@@ -387,16 +387,33 @@ class SimpleChatRequest(BaseModel):
 
 @app.post("/chat")
 async def simple_chat(req: SimpleChatRequest):
-    """Simple chat endpoint for Telegram bot."""
-    agent = await build_agent_async(router.model_for("heavy"))
-    thread_id = "telegram-chat"
-    config = {"configurable": {"thread_id": thread_id}}
-    lc_msgs = [HumanMessage(content=req.message)]
+    """Dashboard / Telegram chat endpoint. Routes the message through
+    the conversation handler so prefix shortcuts (`dispatch:`, `queue:`,
+    `restart …`, `go cc_xxx`, etc.) and intent classification fire
+    EXACTLY the same way they do on the Telegram listener path.
 
+    Before BUG 1 fix this path bypassed the router and invoked the
+    heavy agent directly with the raw message — which meant the LLM
+    sometimes picked off a single bullet line of a multi-line dispatch
+    prompt and started running it as a regular task while the real
+    dispatch was held for safety review. Now the router intercepts
+    those prefixes and writes to cc_inbox/ atomically, no parallel
+    Nexus task spawned."""
+    import asyncio as _asyncio
     try:
-        result = await agent.ainvoke({"messages": lc_msgs}, config=config)
-        reply = _extract_reply(result)
-        return {"response": reply}
+        from workers import conversation_handler  # noqa: PLC0415
+        result = await _asyncio.wait_for(
+            _asyncio.to_thread(conversation_handler.route_message, req.message),
+            timeout=25,
+        )
+        reply = result.get("reply") or "(no reply)"
+        return {"response": reply, "kind": result.get("kind"),
+                "meta": result.get("meta", {})}
+    except _asyncio.TimeoutError:
+        return {"response": (
+            "Took >25s to route — Ollama may be busy. Try again, or "
+            "send 'queue: <task>' to bypass classification."
+        )}
     except Exception as e:
         return {"response": f"Error: {type(e).__name__}: {e}"}
 
