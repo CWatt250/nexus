@@ -146,3 +146,9 @@ sudo cp /tmp/nexus-wiki-extractor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now nexus-wiki-extractor.service
 sudo systemctl status nexus-wiki-extractor.service --no-pager
+
+# ── Phase 25 — Research watcher service ──────────────────────────
+sudo cp /tmp/nexus-research-watcher.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nexus-research-watcher.service
+sudo systemctl status nexus-research-watcher.service --no-pager
