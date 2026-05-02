@@ -155,28 +155,48 @@ class Intent(BaseModel):
     raw: str = Field(default="", description="Raw model output for debugging.")
 
 
-QUICK_CHAT_SYSTEM_PROMPT_BASE = (
+# ── SOUL.md — single source of truth for Nexus's identity, tone, length
+# rules, slang glossary, uncertainty rules, and conventions. Loaded once
+# at module import and cached. Restart any consumer of this module to
+# pick up SOUL.md edits. Mirror of how `nexus.load_static_prefix` works
+# for the heavy agent.
+_SOUL_PATH = Path.home() / "AI_Agent" / "SOUL.md"
+_SOUL_CACHE: str | None = None
+
+
+def load_soul() -> str:
+    """Read SOUL.md from disk, cache, and return. Best-effort — never
+    raises. If SOUL.md is missing, returns empty string and quick_chat
+    falls back to just the output/capability rules below (graceful but
+    visible — the bot's personality vanishes)."""
+    global _SOUL_CACHE
+    try:
+        _SOUL_CACHE = _SOUL_PATH.read_text(encoding="utf-8")
+    except OSError:
+        _SOUL_CACHE = ""
+    return _SOUL_CACHE
+
+
+# Eager load at import so every quick_chat / lite_agent call sees a hot
+# cache. Recovery: a service restart re-imports the module → re-reads
+# SOUL.md from disk.
+load_soul()
+
+
+# Output / capability rules specific to the qwen3:4b quick_chat path.
+# Personality, tone, length, and slang were moved into SOUL.md; only
+# the bits that wouldn't make sense in a global persona file stay here:
+#   - format constraints required by JSON-mode + tight num_predict,
+#   - the routing escape ("Let me dig into that properly") that's a
+#     quick_chat-specific protocol with route_message,
+#   - tool-surface awareness so the model doesn't deny capabilities.
+_QUICK_CHAT_OUTPUT_RULES = (
     # Strict prefix — qwen3:4b ignores 'no preamble' phrasing but obeys
-    # this when paired with format=json + low num_predict (Fix #4 v2).
+    # this when paired with format=json + low num_predict.
     "OUTPUT ONLY THE FINAL ANSWER. Do NOT explain your reasoning. "
     "Do NOT count sentences. Do NOT think out loud. Do NOT meta-comment. "
     "Respond as if the user can only see your final words. If you catch "
     "yourself starting to reason, STOP and just give the answer.\n\n"
-    "You are Nexus — Colton's personal AI on WattBott. Talk like a smart "
-    "friend, not a customer-service chatbot. Match his energy: he uses "
-    "'brotha', 'lfg', dry humor, occasional emoji — mirror that when it "
-    "fits. Casual messages get short casual replies; technical questions "
-    "get technical answers. Skip 'I'd be happy to', 'Just checking in', "
-    "'Anything else?', 'How can I help'. Just respond.\n\n"
-    "LENGTH RULES:\n"
-    "- Greetings / banter / one-liners: 1 short sentence. Sometimes one "
-    "  word ('yup', 'lfg', 'no clue') is the right answer.\n"
-    "- Quick factual questions: 1–2 sentences max.\n"
-    "- Technical/code questions: as long as needed, no padding.\n"
-    "- NEVER append 'want me to dig into that?', 'let me know', 'happy "
-    "  to help', or any other reflexive follow-up offer to a casual "
-    "  message. Only offer to escalate when YOU genuinely need more "
-    "  permission to act (see capability rules below).\n\n"
     "CAPABILITY RULES (critical):\n"
     "- You DO have tools — browser_tool, web search, GitHub, file read/write, "
     "  terminal, RAG memory, computer use, and ~85 more. Never say 'I can't "
@@ -195,36 +215,20 @@ QUICK_CHAT_SYSTEM_PROMPT_BASE = (
 )
 
 
-# ── Slang glossary overlay ─────────────────────────────────────────────
-# qwen3:4b doesn't see SOUL.md (only the heavy agent does via
-# nexus.load_static_prefix). When asked "what does lfg mean", the
-# model defaults to gaming-community training data ("looking for group")
-# instead of Colton's actual usage ("let's fucking go"). Pull just the
-# `## User slang glossary` section out of SOUL.md once at module load
-# and inject it into every quick_chat call so the model has the right
-# definitions in context.
-_SOUL_PATH = Path.home() / "AI_Agent" / "SOUL.md"
-_SLANG_SECTION_RE = re.compile(
-    r"^## User slang glossary\b.*?(?=\n## |\Z)",
-    re.DOTALL | re.MULTILINE,
-)
+def get_quick_chat_system_prompt() -> str:
+    """Compose the qwen3:4b quick_chat system prompt: full SOUL.md
+    (identity + tone + length + slang + uncertainty + conventions)
+    followed by quick_chat-specific output and capability rules."""
+    soul = _SOUL_CACHE if _SOUL_CACHE is not None else load_soul()
+    if soul:
+        return f"{soul}\n\n---\n\n{_QUICK_CHAT_OUTPUT_RULES}"
+    return _QUICK_CHAT_OUTPUT_RULES
 
 
-def _load_slang_overlay() -> str:
-    """Read the slang glossary section out of SOUL.md. Returns the
-    section markdown or an empty string if SOUL.md is missing or
-    doesn't have the section. Best-effort — never raises."""
-    try:
-        text = _SOUL_PATH.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    m = _SLANG_SECTION_RE.search(text)
-    return m.group(0).rstrip() if m else ""
-
-
-# Cached at import time — SOUL.md changes require a service restart to
-# pick up, which mirrors how nexus.load_static_prefix already works.
-_SLANG_OVERLAY = _load_slang_overlay()
+# Backwards-compat: a few comments + tests reference the old name. Keep
+# the symbol exported but pointed at the new composer so anything that
+# imports it still works.
+QUICK_CHAT_SYSTEM_PROMPT_BASE = get_quick_chat_system_prompt()
 
 
 # Phrases that flag a capability denial we want to retract. If any of
@@ -676,12 +680,10 @@ def quick_chat(message: str) -> str:
     """
     import time as _time  # noqa: PLC0415
 
-    # _SLANG_OVERLAY pulls the `## User slang glossary` section out of
-    # SOUL.md so qwen3:4b stops answering "lfg = looking for group" from
-    # training data. Empty string if SOUL.md is missing the section, in
-    # which case the prompt collapses back to base + datetime cleanly.
-    overlay = f"{_SLANG_OVERLAY}\n\n" if _SLANG_OVERLAY else ""
-    system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{overlay}{_datetime_context()}"
+    # SOUL.md is the single source of truth — `get_quick_chat_system_prompt`
+    # composes full SOUL + quick_chat-specific output / capability rules.
+    # _datetime_context appends real wall-clock so "what time is it" works.
+    system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
     t0 = _time.monotonic()
     try:
         primary = _ollama_quick_chat(QUICK_CHAT_MODEL, message, system_prompt)
@@ -752,12 +754,29 @@ _PICKER_SYSTEM = (
 )
 
 
-_FORMATTER_SYSTEM = (
+_FORMATTER_OUTPUT_RULES = (
     "Write a 2-3 sentence answer to the user's question using the tool "
     "result below. Plain prose. No preamble. No reasoning. No <think> tags. "
     "If the tool returned an error, say so plainly and suggest an alternative "
     "in 1 sentence. Never echo the raw tool output verbatim."
 )
+
+
+def get_formatter_system_prompt() -> str:
+    """Same SOUL-as-base pattern quick_chat uses. The lite_agent formatter
+    writes user-facing replies after a tool call, so tone consistency
+    with quick_chat / heavy agent matters. SOUL.md provides the persona,
+    tone, length rules, and slang glossary; the rules below add the
+    formatter-specific output constraints."""
+    soul = _SOUL_CACHE if _SOUL_CACHE is not None else load_soul()
+    if soul:
+        return f"{soul}\n\n---\n\n{_FORMATTER_OUTPUT_RULES}"
+    return _FORMATTER_OUTPUT_RULES
+
+
+# Backwards-compat alias kept for any imports that still reach for the
+# old name. Resolves to the composed prompt at module import.
+_FORMATTER_SYSTEM = get_formatter_system_prompt()
 
 
 def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250,
@@ -771,7 +790,11 @@ def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250
         "stream": False,
         "think": False,
         "keep_alive": -1,
-        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 4096},
+        # 8192 num_ctx leaves headroom for SOUL.md (~2700 tokens) plus
+        # tool result payloads (up to ~1500 tokens after truncation) plus
+        # the formatter output budget. The previous 4096 limit fit the
+        # old hardcoded constants but is too tight once SOUL is the base.
+        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 8192},
     }
     if fmt:
         kwargs["format"] = fmt
