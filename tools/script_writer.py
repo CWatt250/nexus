@@ -15,6 +15,7 @@ Output goes to content/scripts/YYYY-MM-DD_<slug>.md.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -25,11 +26,16 @@ from langchain_core.tools import tool
 
 from core import secrets
 
+log = logging.getLogger("nexus.script_writer")
+
 ROOT = Path.home() / "AI_Agent"
 SCRIPTS_DIR = ROOT / "content" / "scripts"
+ENTITIES_DIR = ROOT / "wiki" / "entities"
 SECONDS_PER_SCENE = 3.5  # spec says ~3-4s per scene; midpoint
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
 OLLAMA_MODEL = "qwen3.6:latest"
+MAX_WIKI_ENTITIES = 5  # cap injection to avoid prompt bloat
+MAX_WIKI_CONTENT_CHARS = 4000  # per-entity cap; trim if longer
 
 
 SYSTEM_PROMPT = """You are a short-form video scriptwriter for vertical-format (9:16) clips
@@ -70,6 +76,90 @@ class ScriptResult:
     raw_text: str
 
 
+# ── Wiki-aware context injection ───────────────────────────────────────
+# Bare topics like "bidwatt" used to make qwen3.6 hallucinate (it
+# invented a power device with cables and batteries). Same wiki-bypass
+# pattern as Bug 6 (May 1) but in a new code path. Fix: scan the topic
+# for known entity slugs and inject those wiki pages as authoritative
+# context before the LLM call.
+
+def find_wiki_entities(topic: str) -> list[dict]:
+    """Scan the topic string for matches against wiki/entities/*.md
+    filenames (case-insensitive substring match on the file stem).
+    Returns up to MAX_WIKI_ENTITIES entries shaped
+    {name, path, content}. Best-effort — never raises; returns []
+    when wiki/entities/ is missing or unreadable.
+
+    Matching is substring-based: "bidwatt" matches "BidWatt",
+    "BIDWATT", "show me bidwatt", and "bidwatt-promo". Real-world
+    entity slugs (colton, nexus, bidwatt, subwatt, argus) are
+    distinctive enough that false positives are unlikely.
+    """
+    if not topic or not ENTITIES_DIR.exists():
+        return []
+    topic_lower = topic.lower()
+    matches: list[dict] = []
+    try:
+        for entity_file in sorted(ENTITIES_DIR.glob("*.md")):
+            slug = entity_file.stem.lower()
+            if slug in topic_lower:
+                try:
+                    content = entity_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if len(content) > MAX_WIKI_CONTENT_CHARS:
+                    content = content[:MAX_WIKI_CONTENT_CHARS] + "\n\n[...truncated]"
+                matches.append({
+                    "name": slug,
+                    "path": str(entity_file),
+                    "content": content,
+                })
+                if len(matches) >= MAX_WIKI_ENTITIES:
+                    break
+    except OSError:
+        return []
+    return matches
+
+
+def _compose_user_prompt(topic: str, duration_seconds: int, tone: str) -> tuple[str, list[str]]:
+    """Build the user message both backends send to their LLM. Prepends
+    a `## Wiki context` block when known entities are mentioned in the
+    topic so the model writes from facts, not hallucination.
+
+    Returns (user_prompt, matched_entity_names) — the second value is
+    surfaced so callers can log / report which entities got injected.
+    """
+    target_scenes = max(3, round(duration_seconds / SECONDS_PER_SCENE))
+    base_block = (
+        f"Topic: {topic}\n"
+        f"Total duration: {duration_seconds} seconds\n"
+        f"Target scene count: {target_scenes} (~{SECONDS_PER_SCENE}s each)\n"
+        f"Tone: {tone}\n\n"
+        f"Write the script now. Output the markdown only, no extra commentary."
+    )
+    entities = find_wiki_entities(topic)
+    if not entities:
+        log.debug("script_writer: no wiki entities matched, using bare topic")
+        return base_block, []
+
+    names = [e["name"] for e in entities]
+    log.info("script_writer: injecting wiki context for %s", names)
+
+    sections = [
+        "## Wiki context",
+        "The user's topic mentions known entities. Use this authoritative info — do NOT invent facts about these. Quote details accurately.",
+        "",
+    ]
+    for e in entities:
+        sections.append(f"### {e['name']}")
+        sections.append(e["content"].rstrip())
+        sections.append("")
+    sections.append("---")
+    sections.append("")
+    sections.append(base_block)
+    return "\n".join(sections), names
+
+
 # ── Anthropic backend ───────────────────────────────────────────────────
 SONNET_INPUT_PER_M = 3.00
 SONNET_OUTPUT_PER_M = 15.00
@@ -81,14 +171,7 @@ def _anthropic_generate(topic: str, duration_seconds: int, tone: str) -> tuple[s
     api_key = secrets.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
-    target_scenes = max(3, round(duration_seconds / SECONDS_PER_SCENE))
-    user_prompt = (
-        f"Topic: {topic}\n"
-        f"Total duration: {duration_seconds} seconds\n"
-        f"Target scene count: {target_scenes} (~{SECONDS_PER_SCENE}s each)\n"
-        f"Tone: {tone}\n\n"
-        f"Write the script now. Output the markdown only, no extra commentary."
-    )
+    user_prompt, entities = _compose_user_prompt(topic, duration_seconds, tone)
     client = anthropic.Anthropic(api_key=api_key)
     resp = client.messages.create(
         model=ANTHROPIC_MODEL,
@@ -101,21 +184,17 @@ def _anthropic_generate(topic: str, duration_seconds: int, tone: str) -> tuple[s
     out_tok = getattr(resp.usage, "output_tokens", 0) or 0
     cost = (in_tok / 1_000_000 * SONNET_INPUT_PER_M
             + out_tok / 1_000_000 * SONNET_OUTPUT_PER_M)
-    return text, round(cost, 4), {"input_tokens": in_tok, "output_tokens": out_tok}
+    return text, round(cost, 4), {
+        "input_tokens": in_tok, "output_tokens": out_tok,
+        "wiki_entities": entities,
+    }
 
 
 # ── Ollama fallback ────────────────────────────────────────────────────
 def _ollama_generate(topic: str, duration_seconds: int, tone: str) -> tuple[str, float, dict]:
     """Returns (script_markdown, 0.0 cost, usage). Raises on failure."""
     import ollama  # noqa: PLC0415
-    target_scenes = max(3, round(duration_seconds / SECONDS_PER_SCENE))
-    user_prompt = (
-        f"Topic: {topic}\n"
-        f"Total duration: {duration_seconds} seconds\n"
-        f"Target scene count: {target_scenes} (~{SECONDS_PER_SCENE}s each)\n"
-        f"Tone: {tone}\n\n"
-        f"Write the script now. Output the markdown only, no extra commentary."
-    )
+    user_prompt, entities = _compose_user_prompt(topic, duration_seconds, tone)
     resp = ollama.Client(host="http://localhost:11434").chat(
         model=OLLAMA_MODEL,
         messages=[
@@ -130,7 +209,7 @@ def _ollama_generate(topic: str, duration_seconds: int, tone: str) -> tuple[str,
     text = (resp.get("message", {}) or {}).get("content", "") or ""
     # Strip any leaked <think> blocks the local model emits.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    return text, 0.0, {}
+    return text, 0.0, {"wiki_entities": entities}
 
 
 # ── Output parsing ─────────────────────────────────────────────────────
