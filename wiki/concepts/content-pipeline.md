@@ -1,21 +1,25 @@
 ---
 title: Content Pipeline
 date: 2026-05-02
-tags: [content, video, ffmpeg, kokoro, anthropic, ollama]
+tags: [content, video, ffmpeg, kokoro, anthropic, ollama, music, captions]
 status: active
 ---
 
 # Concept
 
 End-to-end original short-form video production from a single topic
-prompt. Topic in → 1080x1920 vertical mp4 out. Phase 21 Part 1.
+prompt. Topic in → 1080x1920 vertical mp4 (plus optional 1:1 / 16:9
+variants) with music, captions, transitions, and Ken Burns zoom out.
+Phase 21 Part 1 + Part 2.
 
-# Pipeline
+# Pipeline (Part 2)
 
 ```
 topic ─► script_writer.script_write_core
             (anthropic:claude-sonnet-4-5 if ANTHROPIC_API_KEY set,
              else local qwen3.6 via Ollama, free)
+            (find_wiki_entities pre-injects wiki/entities/*.md content
+             when topic mentions a known entity — prevents hallucination)
          │
          ▼
        content/scripts/<date>_<slug>.md
@@ -27,14 +31,26 @@ topic ─► script_writer.script_write_core
          │       └─► content/voiceovers/<slug>_scene_NN.wav
          ├─► visual_generator.visual_generate
          │       (image_gen_tool/ERNIE if ERNIE_API_KEY set,
-         │        else PIL solid-gradient + text overlay)
+         │        else tone-keyed palette + keyword typography + film grain)
          │       └─► content/stills/<slug>_scene_NN.png (1080x1920)
-         └─► ffmpeg (libx264 + tune stillimage + aac 192k + yuv420p + 30fps)
+         └─► ffmpeg per-scene clip:
+              - zoompan (Ken Burns: alternating zoom-in/zoom-out per scene)
+              - drawtext captions (one sentence chunk per slice of audio)
+              - libx264 + AAC 192k + yuv420p + 30fps
                  └─► content/stills/<slug>_scene_NN.mp4
          │
          ▼
-       ffmpeg concat demuxer (-c copy, re-encode fallback)
-         └─► content/final/<slug>.mp4
+       ffmpeg filter_complex:
+         - xfade (0.3s crossfade) chained pairwise across scene clips
+         - acrossfade for the audio side
+         - amix with music: voiceover at 1.0, music ducked to 0.15
+                            with 1.0s fade-in + 1.5s fade-out
+         └─► content/final/<slug>.mp4 (9:16 master)
+         │
+         ▼ (optional — aspects=("9x16","1x1","16x9"))
+       per-aspect re-render via scale + pad (no distortion)
+         └─► content/final/<slug>_1x1.mp4
+             content/final/<slug>_16x9.mp4
 ```
 
 # Tools
@@ -58,10 +74,11 @@ topic ─► script_writer.script_write_core
 
 # Backends + cost model
 
-- **Script** — Anthropic Claude Sonnet 4.5 (~$0.005-0.02 per script) preferred. Local qwen3.6 (free) fallback when key missing. Detected at module load via `core.secrets.get("ANTHROPIC_API_KEY")`.
+- **Script** — Anthropic Claude Sonnet 4.5 (~$0.005-0.02 per script) preferred. Local qwen3.6 (free) fallback when key missing. Detected at module load via `core.secrets.get("ANTHROPIC_API_KEY")`. Wiki entities matching the topic are auto-injected as authoritative context (`find_wiki_entities`) to prevent hallucination.
 - **TTS** — Kokoro-82M local. Voice resolution: env `SPARKY_VOICE` → preferred Kokoro list (`af_sky`, `af_nova`, `bf_emma`, `af_heart`). Bark installed but slow on this hardware; not used in the default pipeline.
-- **Visuals** — `image_gen_tool` (ERNIE) preferred. PIL solid-gradient + text overlay fallback when no key. Real video clips (Higgsfield/Seedance) deferred to Part 2.
-- **Assembly** — `ffmpeg` (system binary). libx264 + AAC 192k @ 30fps + yuv420p, padded to 1080x1920.
+- **Visuals** — `image_gen_tool` (ERNIE) preferred. Tone-keyed PIL fallback (warm/cool/dramatic/cinematic/minimal palettes, keyword-extracted typography, film-grain) when no key — see [[decisions/2026-05-02_image-gen-status]] for the deeper assessment. Real diffusion (SDXL/Flux/Higgsfield) deferred to Part 3.
+- **Music** — five procedurally-generated tracks at `content/music/<bucket>/<bucket>_01.mp3` (~60s each). `tools/music_picker.select_music(tone, duration_seconds)` maps tones → buckets and returns the path. Generator: `scripts/generate_music.py` (numpy/scipy additive sine+saw, royalty-free by construction). Returns None when buckets are empty so the pipeline skips music cleanly.
+- **Assembly** — `ffmpeg` (system binary). libx264 + AAC 192k @ 30fps + yuv420p, padded to 1080x1920. Part 2 adds zoompan (Ken Burns), drawtext (captions), xfade+acrossfade (transitions), amix (music ducking), and per-aspect scale+pad re-render.
 
 # Filesystem layout
 
