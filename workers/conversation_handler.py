@@ -1577,6 +1577,28 @@ _DISPATCH_PREFIX_RE = re.compile(
     r"^\s*(force\s+)?dispatch\s*[:>]\s*(.+)$",
     re.IGNORECASE | re.DOTALL,
 )
+
+# Phase 27 — local builder routing. "build me X / create X / make me X
+# / code X" gets handled directly via tools/local_builder using qwen3.6
+# instead of going through the heavy agent or Claude Code. The
+# dispatch: prefix still wins (intercepts first), so the user can
+# always force a Claude Code session for harder builds.
+_BUILD_INTENT_RE = re.compile(
+    r"^\s*(?:build\s+(?:me\s+)?|create\s+(?:me\s+)?|make\s+(?:me\s+)?|code\s+(?:me\s+)?)(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+# Optional "at <path>" suffix: pull the explicit target path. Match
+# everything up to "at <path>" so the description doesn't include it.
+_BUILD_AT_PATH_RE = re.compile(
+    r"^(.+?)\s+at\s+(\S+)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+# Tech-stack hint pulled from the description ("in HTML", "as a
+# python script", etc.). Default html for games / widgets.
+_BUILD_TECH_RE = re.compile(
+    r"\b(?:in|as|using)\s+(html|python|markdown|md|shell|bash)\b",
+    re.IGNORECASE,
+)
 _FULL_OUTPUT_RE = re.compile(
     r"^\s*(?:full|whole|complete|show)\s+(?:output|result)\s+([0-9a-f]{8,16})\s*$",
     re.IGNORECASE,
@@ -1690,6 +1712,63 @@ def _route_message_inner(message: str) -> dict:
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
+
+    # Phase 27 — "build me X" / "create X" / "make me X" / "code X"
+    # routes DIRECTLY to local_builder.build_thing using qwen3.6 (free,
+    # local, no Claude Code dispatch). The dispatch: prefix branch
+    # below still wins for users who explicitly want a Claude Code
+    # session — that's checked first via the queue prefix and
+    # immediately after this build branch via _DISPATCH_PREFIX_RE.
+    bm = _BUILD_INTENT_RE.match(msg)
+    if bm and not _DISPATCH_PREFIX_RE.match(msg):  # belt-and-suspenders
+        body = bm.group(1).strip()
+        # Pull out "at <path>" suffix if present.
+        at_m = _BUILD_AT_PATH_RE.match(body)
+        if at_m:
+            description = at_m.group(1).strip()
+            target_path = at_m.group(2).strip()
+        else:
+            description = body
+            # Default landing zone: ~/AI_Agent/games/ for HTML stuff,
+            # ~/AI_Agent/scratch/ otherwise. Slug from first 5 words.
+            slug_words = re.findall(r"[a-zA-Z0-9]+", description.lower())[:5]
+            slug = "-".join(slug_words) or "build"
+            target_path = f"~/AI_Agent/games/{slug}.html"
+        # Tech stack hint
+        tech_m = _BUILD_TECH_RE.search(description)
+        tech = tech_m.group(1).lower() if tech_m else "html"
+        if tech == "md":
+            tech = "markdown"
+        if tech == "bash":
+            tech = "shell"
+        try:
+            from tools import local_builder  # noqa: PLC0415
+            result = local_builder.build_thing_core(description, target_path, tech)
+        except RuntimeError as exc:
+            return {
+                "kind": "build", "reply": f"⚠️ build failed: {exc}",
+                "meta": {"target_path": target_path},
+            }
+        log.info(
+            "route: build-intent → %s (%d bytes, %.1fs, notes=%s)",
+            result.path, result.bytes_written, result.wall_seconds, result.notes,
+        )
+        notes_line = "" if result.notes == "ok" else f"\n  ⚠ {result.notes}"
+        return {
+            "kind": "build",
+            "reply": (
+                f"🛠️ built {result.path}\n"
+                f"  tech    : {result.tech_stack}\n"
+                f"  size    : {result.bytes_written} bytes / {result.lines} lines\n"
+                f"  wall    : {result.wall_seconds}s on {result.backend}{notes_line}"
+            ),
+            "meta": {
+                "target_path": result.path,
+                "tech_stack": result.tech_stack,
+                "wall_seconds": result.wall_seconds,
+                "notes": result.notes,
+            },
+        }
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
     # the prompt to the cc_dispatcher daemon (background Claude Code

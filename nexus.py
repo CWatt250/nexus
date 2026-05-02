@@ -75,6 +75,10 @@ from tools.wiki_tool import WIKI_TOOLS  # noqa: E402
 from tools.script_writer import SCRIPT_WRITER_TOOLS  # noqa: E402
 from tools.content_create import CONTENT_CREATE_TOOLS  # noqa: E402
 from tools.vision_tool import VISION_TOOLS  # noqa: E402
+from tools.file_write import FILE_WRITE_TOOLS  # noqa: E402
+from tools.bash_local import BASH_LOCAL_TOOLS  # noqa: E402
+from tools.git_local import GIT_LOCAL_TOOLS  # noqa: E402
+from tools.local_builder import LOCAL_BUILDER_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -160,6 +164,10 @@ TOOLS = [
     *SCRIPT_WRITER_TOOLS,
     *CONTENT_CREATE_TOOLS,
     *VISION_TOOLS,
+    *FILE_WRITE_TOOLS,
+    *BASH_LOCAL_TOOLS,
+    *GIT_LOCAL_TOOLS,
+    *LOCAL_BUILDER_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
