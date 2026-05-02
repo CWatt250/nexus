@@ -153,14 +153,114 @@ async def _content_create_in_background(update: Update, topic: str, duration: in
             logger.exception("background video send error")
 
 
+async def _build_in_background(update: Update, description: str, target_path: str, tech: str) -> None:
+    """Phase 27 — long-running local build (qwen3.6 takes 30-60s).
+    Mirrors _content_create_in_background: runs in a worker thread so
+    the listener event loop stays responsive, then sends the result
+    back to the same chat. Best-effort — exceptions surface as a
+    Telegram error reply."""
+    chat_id = update.effective_chat.id
+    bot = update.get_bot()
+    try:
+        from tools import local_builder  # noqa: PLC0415
+        result = await asyncio.to_thread(
+            local_builder.build_thing_core, description, target_path, tech,
+        )
+    except Exception as exc:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ build failed: {type(exc).__name__}: {exc}",
+            )
+        except Exception:
+            logger.exception("background build error-send failed")
+        return
+
+    notes_line = "" if result.notes == "ok" else f"\n  ⚠ {result.notes}"
+    msg = (
+        f"🛠️ built {result.path}\n"
+        f"  tech    : {result.tech_stack}\n"
+        f"  size    : {result.bytes_written} bytes / {result.lines} lines\n"
+        f"  wall    : {result.wall_seconds}s on {result.backend}{notes_line}"
+    )
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg)
+    except Exception:
+        logger.exception("background build success-send failed")
+
+
+# Phase 27 — build-intent regexes mirror conversation_handler so both
+# entry points (Telegram listener + direct route_message) agree on
+# what counts as a build command.
+import re as _re_p27  # noqa: E402  — local alias to avoid clashing with module-level re imports
+_TG_BUILD_INTENT_RE = _re_p27.compile(
+    r"^\s*(?:build\s+(?:me\s+)?|create\s+(?:me\s+)?|make\s+(?:me\s+)?|code\s+(?:me\s+)?)(.+)$",
+    _re_p27.IGNORECASE | _re_p27.DOTALL,
+)
+_TG_BUILD_AT_PATH_RE = _re_p27.compile(
+    r"^(.+?)\s+at\s+(\S+)\s*$", _re_p27.IGNORECASE | _re_p27.DOTALL,
+)
+_TG_BUILD_TECH_RE = _re_p27.compile(
+    r"\b(?:in|as|using)\s+(html|python|markdown|md|shell|bash)\b",
+    _re_p27.IGNORECASE,
+)
+
+
+def _extract_build_args(body: str) -> tuple[str, str, str]:
+    """Pull (description, target_path, tech) out of a build-intent body.
+    Same logic as conversation_handler._route_message_inner. Defaults:
+    target_path = ~/AI_Agent/games/<slug>.html, tech = html."""
+    at_m = _TG_BUILD_AT_PATH_RE.match(body)
+    if at_m:
+        description = at_m.group(1).strip()
+        target_path = at_m.group(2).strip()
+    else:
+        description = body
+        slug_words = _re_p27.findall(r"[a-zA-Z0-9]+", description.lower())[:5]
+        slug = "-".join(slug_words) or "build"
+        target_path = f"~/AI_Agent/games/{slug}.html"
+    tech_m = _TG_BUILD_TECH_RE.search(description)
+    tech = tech_m.group(1).lower() if tech_m else "html"
+    if tech == "md":
+        tech = "markdown"
+    if tech == "bash":
+        tech = "shell"
+    return description, target_path, tech
+
+
 async def _handle_content_command(update: Update, text: str) -> bool:
-    """Phase 21 — short-form content commands. Returns True if consumed.
+    """Phase 21 + 27 — short-form content + local build commands.
+    Returns True if consumed.
 
     Shapes:
         script <topic>           — generate script only (fast, ~10-30s)
         create video <topic>     — full pipeline, video sent when done
+        build me X / create X    — local build via qwen3.6 (Phase 27)
+        / make me X / code X       fast ack, file sent when done (~30-60s)
     """
     low = text.strip().lower()
+
+    # Phase 27 — build intent goes BEFORE route_message so the 25s
+    # asyncio.wait_for cap on the fallthrough path can't kill a 30-60s
+    # qwen3.6 build. Skip when "dispatch:" matches; that wins.
+    if not low.startswith("dispatch:") and not low.startswith("force dispatch:"):
+        bm = _TG_BUILD_INTENT_RE.match(text.strip())
+        if bm:
+            body = bm.group(1).strip()
+            if not body:
+                await update.message.reply_text("build: needs a description.")
+                return True
+            description, target_path, tech = _extract_build_args(body)
+            short_desc = description if len(description) < 80 else description[:77] + "…"
+            await update.message.reply_text(
+                f"🛠️ Building: {short_desc}\n"
+                f"  tech: {tech} | target: {target_path}\n"
+                f"  qwen3.6 local — typically 30-60s. I'll ping when done."
+            )
+            asyncio.create_task(
+                _build_in_background(update, description, target_path, tech)
+            )
+            return True
 
     if low.startswith("script "):
         topic = text.split(None, 1)[1].strip() if " " in text else ""
