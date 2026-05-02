@@ -1,5 +1,5 @@
 {
-  "_comment": "External MCP servers Nexus will spawn on startup. Each entry: {name, command (shell-split), env (optional), enabled (optional, default true), skip_if_missing_env (optional, default true — skip if any env value is empty). Tools appear in Nexus as '<name>__<tool>'.",
+  "_comment": "External MCP servers Nexus will spawn on startup. Each entry: {name, command (shell-split), env (optional), enabled (optional, default true), skip_if_missing_env (optional, default true — skip if any env value is empty), allowed_tools (optional list — when set, only tools in the list are exposed; everything else is filtered out, used to enforce read-only scope)}. Tools appear in Nexus as '<name>__<tool>'.",
   "servers": [
     {
       "name": "markitdown",
@@ -17,6 +17,51 @@
       "enabled": true,
       "skip_if_missing_env": true,
       "note": "Fill GITHUB_TOKEN (and GITHUB_PERSONAL_ACCESS_TOKEN) with a fine-grained PAT. The entry auto-skips while the values are empty so Nexus boots cleanly without a token."
+    },
+    {
+      "name": "mcp_fs",
+      "command": "npx -y @modelcontextprotocol/server-filesystem /home/cwatt250/AI_Agent /home/cwatt250/Dev",
+      "env": {},
+      "enabled": true,
+      "allowed_tools": [
+        "read_text_file",
+        "read_media_file",
+        "read_multiple_files",
+        "list_directory",
+        "list_directory_with_sizes",
+        "directory_tree",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories"
+      ],
+      "note": "Phase 16.10 — read-only filesystem access scoped to ~/AI_Agent and ~/Dev. Write tools (write_file, edit_file, create_directory, move_file) are intentionally excluded; enabling writes is a separate dispatch."
+    },
+    {
+      "name": "mcp_excel",
+      "command": "/home/cwatt250/AI_Agent/venv/bin/excel-mcp-server stdio",
+      "env": {},
+      "enabled": true,
+      "allowed_tools": [
+        "read_data_from_excel",
+        "get_workbook_metadata",
+        "get_merged_cells",
+        "validate_excel_range",
+        "validate_formula_syntax",
+        "get_data_validation_info"
+      ],
+      "note": "Phase 16.10 — read-only Excel access. Write/format/delete/insert tools are excluded. Server reads any .xlsx path passed in by the caller; no path scoping at the server level."
+    },
+    {
+      "name": "mcp_obsidian",
+      "command": "uvx mcp-obsidian",
+      "env": {
+        "OBSIDIAN_API_KEY": "",
+        "OBSIDIAN_HOST": "127.0.0.1",
+        "OBSIDIAN_PORT": "27124"
+      },
+      "enabled": false,
+      "skip_if_missing_env": true,
+      "note": "Phase 16.10 — disabled. No Obsidian vault present at ~/Obsidian on WattBott, and mcp-obsidian requires Obsidian's Local REST API plugin running with an API key. Re-enable after: (1) install Obsidian, (2) create vault at ~/Obsidian, (3) install Local REST API plugin, (4) set OBSIDIAN_API_KEY in .env, (5) flip enabled=true."
     }
   ]
 }

@@ -1,5 +1,22 @@
 # Nexus Build Changelog
 
+## 2026-05-02 — Phase 16.10 (MCP integrations: Filesystem + Excel) — PASS
+
+### 16.10 — read-only Filesystem + Excel MCP servers wired in
+- `mcp/client.py` gained an `allowed_tools` whitelist filter so a server's tool set can be scoped at boot. Tools missing from the upstream are warned, not fatal.
+- `mcp/servers.json` gained three entries:
+  - **mcp_fs** — `npx -y @modelcontextprotocol/server-filesystem ~/AI_Agent ~/Dev`, scoped read-only via `allowed_tools` (read_text_file, read_media_file, read_multiple_files, list_directory, list_directory_with_sizes, directory_tree, search_files, get_file_info, list_allowed_directories). Write tools intentionally excluded — separate dispatch with explicit approval to enable.
+  - **mcp_excel** — `excel-mcp-server stdio` (PyPI 0.1.8), read-only via `allowed_tools` (read_data_from_excel, get_workbook_metadata, get_merged_cells, validate_excel_range, validate_formula_syntax, get_data_validation_info). 19 write/format/delete/insert/copy tools excluded.
+  - **mcp_obsidian** — disabled. No vault at `~/Obsidian` and the package needs Obsidian's Local REST API plugin running with an API key. 5-step re-enable doc lives in `config/mcp_servers.yaml`.
+- `config/mcp_servers.yaml` written as the human-readable spec mirroring servers.json (intent, scope, allowed/excluded tools, deps, re-enable path).
+- Side effect: installing `excel-mcp-server` bumped the `mcp` SDK from 1.8.1 → 1.27.0. `markitdown-mcp` still imports and runs correctly despite its `mcp~=1.8.0` pin warning.
+- Verification: 16 MCP tools loaded at boot (1 markitdown + 9 mcp_fs + 6 mcp_excel; github skipped no-token, mcp_obsidian disabled).
+  - **Test 1 — Filesystem**: PASS. `mcp_fs__list_directory("~/AI_Agent")` returns real listing; `mcp_fs__read_text_file("~/AI_Agent/SOUL.md")` returns SOUL.md content.
+  - **Test 2 — Obsidian**: SKIPPED (no vault, documented).
+  - **Test 3 — Excel**: PASS. `get_workbook_metadata` and `read_data_from_excel` against a `/tmp/test.xlsx` fixture return correct sheet metadata and parsed cell values.
+  - **Test 4 — Registry**: PASS. All expected tool names present.
+  - **Read-only enforcement**: PASS. None of the forbidden write tools (write_file, edit_file, move_file, write_data_to_excel, create_workbook, delete_worksheet, …) appear in the tool list.
+
 ## 2026-04-28 — Phase 19 (Sparky Proactive Capabilities) starting
 
 ### 19.7 Phase 19 verification + final report — PASS

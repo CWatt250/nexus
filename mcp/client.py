@@ -208,7 +208,18 @@ def load_mcp_tools(*, config_path: Path = SERVERS_FILE) -> list[StructuredTool]:
         elapsed = time.time() - t0
         log.info("MCP server %s ready in %.2fs with %d tools", name, elapsed, len(worker.tools))
         _LOADED_WORKERS.append(worker)
-        for t in worker.tools:
+        allowed = cfg.get("allowed_tools")
+        if allowed is not None:
+            allowed_set = {str(x) for x in allowed}
+            filtered = [t for t in worker.tools if t.name in allowed_set]
+            missing = allowed_set - {t.name for t in worker.tools}
+            if missing:
+                log.warning("MCP %s: allowed_tools not found on server: %s", name, sorted(missing))
+            log.info("MCP %s: filtered %d tools -> %d via allowed_tools", name, len(worker.tools), len(filtered))
+            tools_to_wrap = filtered
+        else:
+            tools_to_wrap = worker.tools
+        for t in tools_to_wrap:
             try:
                 out.append(_wrap_as_langchain_tool(worker, t))
             except Exception as exc:

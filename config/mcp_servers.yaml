@@ -1,0 +1,109 @@
+# MCP servers — human-readable spec for the integrations Nexus loads at startup.
+#
+# This file is documentation. The runtime config is mcp/servers.json (loaded by
+# mcp/client.py via importlib at nexus.py boot). Keep this YAML in sync when
+# you change servers.json so the scope/intent stays auditable.
+#
+# Tools surface in Nexus as `<server name>__<tool>` (double underscore).
+
+phase: 16.10
+mode: read-only
+notes: |
+  Read-only Phase 1 of the local MCP integrations. Write tools (write_file,
+  edit_file, create_directory, move_file on the FS server, and the entire
+  create_*/write_*/delete_*/insert_*/format_*/apply_formula/merge_cells set on
+  the Excel server) are filtered out via the `allowed_tools` whitelist in
+  servers.json. Enabling writes requires a separate dispatch with explicit
+  user approval.
+
+servers:
+
+  - name: markitdown
+    purpose: convert PDFs/Word/Excel/PPT/URLs to markdown
+    state: enabled
+    command: ~/AI_Agent/venv/bin/markitdown-mcp
+    scope: any path the caller passes
+    notes: Pre-existing — not part of Phase 16.10.
+
+  - name: github
+    purpose: GitHub repo/issue/PR ops via official MCP server
+    state: disabled-pending-token
+    command: npx -y @modelcontextprotocol/server-github
+    scope: any repo the PAT can see
+    notes: Auto-skips while GITHUB_TOKEN is empty. Pre-existing.
+
+  - name: mcp_fs
+    purpose: read-only local filesystem access
+    state: enabled
+    command: npx -y @modelcontextprotocol/server-filesystem ~/AI_Agent ~/Dev
+    scope:
+      - ~/AI_Agent
+      - ~/Dev
+    allowed_tools:
+      - read_text_file
+      - read_media_file
+      - read_multiple_files
+      - list_directory
+      - list_directory_with_sizes
+      - directory_tree
+      - search_files
+      - get_file_info
+      - list_allowed_directories
+    excluded_tools:
+      # write set — kept disabled until a separate dispatch enables them
+      - write_file
+      - edit_file
+      - create_directory
+      - move_file
+      # deprecated alias for read_text_file
+      - read_file
+    requires: Node.js >= 18 (currently v18.19.1, npx 9.2.0)
+
+  - name: mcp_excel
+    purpose: read-only Excel workbook access
+    state: enabled
+    command: ~/AI_Agent/venv/bin/excel-mcp-server stdio
+    scope: any .xlsx path the caller passes (no path scoping at the server)
+    allowed_tools:
+      - read_data_from_excel
+      - get_workbook_metadata
+      - get_merged_cells
+      - validate_excel_range
+      - validate_formula_syntax
+      - get_data_validation_info
+    excluded_tools:
+      - apply_formula
+      - format_range
+      - write_data_to_excel
+      - create_workbook
+      - create_worksheet
+      - create_chart
+      - create_pivot_table
+      - create_table
+      - copy_worksheet
+      - delete_worksheet
+      - rename_worksheet
+      - merge_cells
+      - unmerge_cells
+      - copy_range
+      - delete_range
+      - insert_rows
+      - insert_columns
+      - delete_sheet_rows
+      - delete_sheet_columns
+    requires: excel-mcp-server (PyPI 0.1.8), openpyxl
+
+  - name: mcp_obsidian
+    purpose: read-only Obsidian vault access
+    state: disabled-no-vault
+    command: uvx mcp-obsidian
+    scope: vault at ~/Obsidian (not present yet)
+    notes: |
+      No Obsidian vault on WattBott — `~/Obsidian` does not exist. mcp-obsidian
+      also requires the Local REST API community plugin running inside
+      Obsidian with an API key (OBSIDIAN_API_KEY). Re-enable in five steps:
+        1. install Obsidian
+        2. create vault at ~/Obsidian
+        3. install the Local REST API plugin and start it
+        4. set OBSIDIAN_API_KEY in ~/AI_Agent/.env
+        5. flip enabled=true in mcp/servers.json
