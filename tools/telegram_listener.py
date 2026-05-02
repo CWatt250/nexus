@@ -95,6 +95,107 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Stop command received. (Not yet implemented)")
 
 
+async def _content_create_in_background(update: Update, topic: str, duration: int) -> None:
+    """Phase 21 — long-running content pipeline. Runs the orchestrator
+    in a worker thread so the listener event loop stays responsive,
+    then sends the final mp4 back to the same chat. Best-effort —
+    exceptions surface as a Telegram error reply."""
+    chat_id = update.effective_chat.id
+    try:
+        from tools import content_create as _cc  # noqa: PLC0415
+        info = await asyncio.to_thread(
+            _cc.content_create_core, topic, duration, "energetic",
+        )
+        final_path = info["final_video_path"]
+        # Send the final mp4 as a Telegram video. python-telegram-bot's
+        # send_video accepts a file path via open().
+        bot = update.get_bot()
+        try:
+            with open(final_path, "rb") as fh:
+                await bot.send_video(
+                    chat_id=chat_id,
+                    video=fh,
+                    caption=(
+                        f"🎬 {Path(final_path).name}\n"
+                        f"scenes: {info['scene_clips_built']} | "
+                        f"actual: {info['duration_actual_seconds']:.1f}s | "
+                        f"backend: {info['script_backend']} | "
+                        f"cost: ${info['cost_usd']:.4f}"
+                    ),
+                )
+        except Exception as send_exc:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"⚠️ Video built at {final_path} but send failed: "
+                    f"{type(send_exc).__name__}: {send_exc}"
+                ),
+            )
+    except Exception as exc:
+        try:
+            await update.get_bot().send_message(
+                chat_id=chat_id,
+                text=f"⚠️ create-video failed: {type(exc).__name__}: {exc}",
+            )
+        except Exception:
+            logger.exception("background video send error")
+
+
+async def _handle_content_command(update: Update, text: str) -> bool:
+    """Phase 21 — short-form content commands. Returns True if consumed.
+
+    Shapes:
+        script <topic>           — generate script only (fast, ~10-30s)
+        create video <topic>     — full pipeline, video sent when done
+    """
+    low = text.strip().lower()
+
+    if low.startswith("script "):
+        topic = text.split(None, 1)[1].strip() if " " in text else ""
+        if not topic:
+            await update.message.reply_text("script: needs a topic.")
+            return True
+        await update.message.chat.send_action("typing")
+        try:
+            from tools import script_writer  # noqa: PLC0415
+            result = await asyncio.wait_for(
+                asyncio.to_thread(script_writer.script_write_core, topic, 30, "energetic"),
+                timeout=120,
+            )
+        except asyncio.TimeoutError:
+            await update.message.reply_text("Script generation took >120s. Try again.")
+            return True
+        except Exception as exc:
+            await update.message.reply_text(f"⚠️ script: {type(exc).__name__}: {exc}")
+            return True
+        body = result.raw_text
+        if len(body) > 3500:
+            body = body[:3500] + "\n... [truncated, full at " + result.path + "]"
+        cost_str = f" | cost ${result.cost_usd:.4f}" if result.cost_usd else " | free (local)"
+        await update.message.reply_text(
+            f"📝 {result.scene_count} scenes | backend {result.backend}{cost_str}\n\n{body}"
+        )
+        return True
+
+    if low.startswith("create video ") or low.startswith("video: "):
+        if low.startswith("video: "):
+            topic = text.split(":", 1)[1].strip()
+        else:
+            topic = text.split(None, 2)[2].strip() if len(text.split()) >= 3 else ""
+        if not topic:
+            await update.message.reply_text("create video: needs a topic.")
+            return True
+        await update.message.reply_text(
+            "🎬 Generating script + voiceovers + visuals + final mp4. "
+            "Will send the file here when done (~2-5 min)."
+        )
+        # Run in background so the listener stays responsive.
+        asyncio.create_task(_content_create_in_background(update, topic, 30))
+        return True
+
+    return False
+
+
 async def _handle_dispatch_command(update: Update, text: str) -> bool:
     """Phase 22 — handle dispatch-control prefixes BEFORE conversation
     routing. Returns True if the message was consumed.
@@ -289,6 +390,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Phase 22 dispatch shortcuts run BEFORE the LLM router so they're
     # deterministic and never blocked on Ollama.
+    if await _handle_content_command(update, user_message):
+        return
+
     if await _handle_dispatch_command(update, user_message):
         return
 
