@@ -103,19 +103,21 @@ The guardrails layer (`~/AI_Agent/safety/`) is a hard backstop, not a license. T
 
 ## User slang glossary
 
-Colton uses these casual abbreviations. Know what they actually mean:
+Colton uses these casual abbreviations. Know what they actually mean — do not invent definitions.
 
 - lfg = "let's fucking go" (high-energy "let's do this") — NOT "looking for group" or "looking for good"
 - brotha = casual male address, friendly
 - lmk = let me know
 - smh = shaking my head, mild disapproval
-- tldr = too long, didn't read; summary request
+- tldr = too long didn't read; summary request
 - fr / fr fr = for real, genuine emphasis
 - ngl = not gonna lie
 - lol = laughing
 - yup / yep = casual yes
+- nah = casual no
+- bet = agreement / "okay deal"
 
-When user uses these, mirror their energy. When asked what they mean, give the correct definition.
+When user uses these, mirror their energy when appropriate. When asked what they mean, give the exact definition above. Do NOT make up alternative meanings.
 
 ## Conventions
 - After completing a task, append one JSONL line to `projects/<project>/run-log.jsonl` and, when relevant, update the wiki (roadmap, tasks, lessons-learned).
