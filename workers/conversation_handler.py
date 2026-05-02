@@ -195,6 +195,38 @@ QUICK_CHAT_SYSTEM_PROMPT_BASE = (
 )
 
 
+# ── Slang glossary overlay ─────────────────────────────────────────────
+# qwen3:4b doesn't see SOUL.md (only the heavy agent does via
+# nexus.load_static_prefix). When asked "what does lfg mean", the
+# model defaults to gaming-community training data ("looking for group")
+# instead of Colton's actual usage ("let's fucking go"). Pull just the
+# `## User slang glossary` section out of SOUL.md once at module load
+# and inject it into every quick_chat call so the model has the right
+# definitions in context.
+_SOUL_PATH = Path.home() / "AI_Agent" / "SOUL.md"
+_SLANG_SECTION_RE = re.compile(
+    r"^## User slang glossary\b.*?(?=\n## |\Z)",
+    re.DOTALL | re.MULTILINE,
+)
+
+
+def _load_slang_overlay() -> str:
+    """Read the slang glossary section out of SOUL.md. Returns the
+    section markdown or an empty string if SOUL.md is missing or
+    doesn't have the section. Best-effort — never raises."""
+    try:
+        text = _SOUL_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = _SLANG_SECTION_RE.search(text)
+    return m.group(0).rstrip() if m else ""
+
+
+# Cached at import time — SOUL.md changes require a service restart to
+# pick up, which mirrors how nexus.load_static_prefix already works.
+_SLANG_OVERLAY = _load_slang_overlay()
+
+
 # Phrases that flag a capability denial we want to retract. If any of
 # these appear in quick_chat output, route_message will discard the reply
 # and re-issue the message as a TASK so the agent can actually use tools.
@@ -644,7 +676,12 @@ def quick_chat(message: str) -> str:
     """
     import time as _time  # noqa: PLC0415
 
-    system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{_datetime_context()}"
+    # _SLANG_OVERLAY pulls the `## User slang glossary` section out of
+    # SOUL.md so qwen3:4b stops answering "lfg = looking for group" from
+    # training data. Empty string if SOUL.md is missing the section, in
+    # which case the prompt collapses back to base + datetime cleanly.
+    overlay = f"{_SLANG_OVERLAY}\n\n" if _SLANG_OVERLAY else ""
+    system_prompt = f"{QUICK_CHAT_SYSTEM_PROMPT_BASE}\n\n{overlay}{_datetime_context()}"
     t0 = _time.monotonic()
     try:
         primary = _ollama_quick_chat(QUICK_CHAT_MODEL, message, system_prompt)
