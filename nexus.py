@@ -74,6 +74,7 @@ from tools.restart_services_tool import RESTART_SERVICES_TOOLS  # noqa: E402
 from tools.wiki_tool import WIKI_TOOLS  # noqa: E402
 from tools.script_writer import SCRIPT_WRITER_TOOLS  # noqa: E402
 from tools.content_create import CONTENT_CREATE_TOOLS  # noqa: E402
+from tools.vision_tool import VISION_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -158,6 +159,7 @@ TOOLS = [
     *WIKI_TOOLS,
     *SCRIPT_WRITER_TOOLS,
     *CONTENT_CREATE_TOOLS,
+    *VISION_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
