@@ -105,11 +105,21 @@ async def _content_create_in_background(update: Update, topic: str, duration: in
         from tools import content_create as _cc  # noqa: PLC0415
         info = await asyncio.to_thread(
             _cc.content_create_core, topic, duration, "energetic",
+            True,  # prefer_real_visuals
+            True,  # add_music
+            ("9x16", "1x1", "16x9"),
         )
         final_path = info["final_video_path"]
-        # Send the final mp4 as a Telegram video. python-telegram-bot's
-        # send_video accepts a file path via open().
         bot = update.get_bot()
+        variants = info.get("aspect_variants", {})
+        variant_line = (
+            "variants: " + ", ".join(sorted(variants.keys())) + "\n"
+            if len(variants) > 1 else ""
+        )
+        music_line = (
+            f"music: {Path(info['music_track']).stem}\n"
+            if info.get("music_used") else "music: (none)\n"
+        )
         try:
             with open(final_path, "rb") as fh:
                 await bot.send_video(
@@ -118,7 +128,9 @@ async def _content_create_in_background(update: Update, topic: str, duration: in
                     caption=(
                         f"🎬 {Path(final_path).name}\n"
                         f"scenes: {info['scene_clips_built']} | "
-                        f"actual: {info['duration_actual_seconds']:.1f}s | "
+                        f"actual: {info['duration_actual_seconds']:.1f}s\n"
+                        f"{music_line}"
+                        f"{variant_line}"
                         f"backend: {info['script_backend']} | "
                         f"cost: ${info['cost_usd']:.4f}"
                     ),
