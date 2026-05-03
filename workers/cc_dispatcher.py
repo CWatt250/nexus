@@ -96,6 +96,15 @@ def _git_files_changed_since(start_sha: str) -> int:
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
+# Phase 28 — slash-built dispatches inject a "Write the output to
+# ~/AI_Agent/games/<slug>.html" hint into the prompt body. We pluck
+# that path back out so the reporter can auto-attach the file to
+# Telegram. Match a leading "Write the ... output to <path>" line.
+_TARGET_PATH_RE = re.compile(
+    r"Write\s+the\s+(?:complete,\s+self-contained\s+)?output\s+to\s+(\S+\.\w{1,5})",
+    re.IGNORECASE,
+)
+
 
 def _summarize_log_tail(log_path: Path) -> str:
     """Pluck a one-liner from the last lines of the log. Strips ANSI.
@@ -130,19 +139,61 @@ def _error_tail(log_path: Path, n: int = 100) -> str:
     return text.strip()[-n:]
 
 
-def _spawn_claude(prompt_body: str, log_path: Path) -> subprocess.Popen:
+# Phase 28 — tier → ~/.claude-* env file the launcher sources before
+# exec'ing claude. 'real' uses the genuine Anthropic API key; flash/pro
+# point at DeepSeek's Anthropic-compatible endpoint.
+_TIER_ENV_FILE = {
+    "flash": "~/.claude-deepseek-flash",
+    "pro":   "~/.claude-deepseek-pro",
+    "real":  "~/.claude-anthropic",
+}
+
+
+def _load_secret(name: str) -> str:
+    """Read a key from config/secrets.yaml. Best-effort, returns ''."""
+    try:
+        from core import secrets as _secrets  # noqa: PLC0415
+        return _secrets.get(name) or ""
+    except Exception:
+        return ""
+
+
+def _build_dispatch_env(tier: str) -> dict[str, str]:
+    """Compose the subprocess env. The ~/.claude-* env files reference
+    ${DEEPSEEK_API_KEY} / ${REAL_ANTHROPIC_KEY}; we resolve those from
+    secrets.yaml before sourcing so the subprocess sees concrete tokens
+    (the dispatcher service runs without an interactive bash, so the
+    .bashrc exports aren't loaded)."""
+    env = {**os.environ, "CI": "1"}
+    env["DEEPSEEK_API_KEY"] = _load_secret("DEEPSEEK_API_KEY")
+    env["REAL_ANTHROPIC_KEY"] = _load_secret("ANTHROPIC_API_KEY")
+    return env
+
+
+def _spawn_claude(prompt_body: str, log_path: Path,
+                  tier: str = "real") -> subprocess.Popen:
     """Start `claude --dangerously-skip-permissions` with the prompt on
-    stdin and stdout+stderr piped to log_path."""
+    stdin and stdout+stderr piped to log_path. For tier in (flash/pro/
+    real) we source the matching ~/.claude-* env file first so claude
+    routes to the right backend (DeepSeek vs real Anthropic)."""
     log_fh = log_path.open("wb", buffering=0)
-    claude_bin = shutil.which("claude") or "/usr/local/bin/claude"
+    env_file = _TIER_ENV_FILE.get(tier, _TIER_ENV_FILE["real"])
+    # Use bash -c so the env file's exports stay scoped to this child;
+    # `exec claude ...` replaces the bash process so signal-handling /
+    # killpg behaviour is unchanged from the Phase 22 path.
+    cmd = [
+        "bash", "-c",
+        f"source {env_file} 2>/dev/null && exec claude "
+        f"--dangerously-skip-permissions --print",
+    ]
     proc = subprocess.Popen(
-        [claude_bin, "--dangerously-skip-permissions", "--print"],
+        cmd,
         stdin=subprocess.PIPE,
         stdout=log_fh,
         stderr=subprocess.STDOUT,
         cwd=str(ROOT),
         start_new_session=True,
-        env={**os.environ, "CI": "1"},
+        env=_build_dispatch_env(tier),
     )
     if proc.stdin:
         try:
@@ -156,6 +207,69 @@ def _spawn_claude(prompt_body: str, log_path: Path) -> subprocess.Popen:
             except Exception:
                 pass
     return proc
+
+
+def _run_local_qwen(prompt_body: str, log_path: Path,
+                    budget_seconds: float, stop_event_check) -> tuple[int, bool, bool]:
+    """Phase 28 — tier='local'. Calls qwen3-coder:30b via Ollama instead
+    of spawning claude. Streams output into log_path so the same
+    inactivity / budget machinery in _run_one applies. Returns
+    (exit_code, killed_by_timeout, killed_by_inactivity)."""
+    log_fh = log_path.open("w", encoding="utf-8")
+    started = time.monotonic()
+    last_chunk = started
+    killed_timeout = False
+    killed_inactivity = False
+    exit_code = 0
+    try:
+        import ollama  # noqa: PLC0415
+    except Exception as exc:
+        log_fh.write(f"[local-tier] ollama package missing: {exc}\n")
+        log_fh.close()
+        return 1, False, False
+    try:
+        client = ollama.Client(host="http://localhost:11434")
+        stream = client.chat(
+            model="qwen3-coder:30b",
+            messages=[
+                {"role": "system", "content": (
+                    "You are a senior software engineer. Output complete, working code "
+                    "with brief explanations. No markdown fences around full files."
+                )},
+                {"role": "user", "content": prompt_body},
+            ],
+            stream=True,
+            think=False,
+            keep_alive=300,
+            options={"temperature": 0.4, "num_ctx": 16384, "num_predict": 8192},
+        )
+        for chunk in stream:
+            if stop_event_check():
+                killed_inactivity = False
+                exit_code = -1
+                break
+            elapsed = time.monotonic() - started
+            if elapsed >= budget_seconds:
+                killed_timeout = True
+                exit_code = -1
+                log_fh.write("\n[local-tier] killed: time budget exceeded\n")
+                break
+            content = (chunk.get("message", {}) or {}).get("content", "")
+            if content:
+                log_fh.write(content)
+                log_fh.flush()
+                last_chunk = time.monotonic()
+            if (time.monotonic() - last_chunk) > INACTIVITY_KILL_SECONDS:
+                killed_inactivity = True
+                exit_code = -1
+                log_fh.write("\n[local-tier] killed: inactivity\n")
+                break
+    except Exception as exc:
+        log_fh.write(f"\n[local-tier] failed: {type(exc).__name__}: {exc}\n")
+        exit_code = 1
+    finally:
+        log_fh.close()
+    return exit_code, killed_timeout, killed_inactivity
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -188,6 +302,48 @@ def _file_idle_seconds(path: Path) -> float:
         return time.time() - path.stat().st_mtime
     except OSError:
         return 0.0
+
+
+def _detect_artifact_paths(prompt_body: str, started_iso: str) -> list[str]:
+    """Phase 28 — find files claude (or qwen) wrote during this dispatch.
+    Two sources:
+      1. Explicit target path injected by `_enqueue_tiered_dispatch`
+         (prepended "Write the output to <path>" hint).
+      2. Recently-modified files under ~/AI_Agent/games/ (the conventional
+         slash-build landing zone).
+    Returns absolute paths, deduped, capped at 10."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    m = _TARGET_PATH_RE.search(prompt_body or "")
+    if m:
+        candidate = Path(m.group(1)).expanduser()
+        if candidate.exists() and candidate.is_file():
+            p = str(candidate.resolve())
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+
+    try:
+        started_epoch = datetime.fromisoformat(started_iso).timestamp()
+    except (ValueError, TypeError):
+        started_epoch = time.time() - 600  # last 10 min as a sane fallback
+
+    games_dir = Path.home() / "AI_Agent" / "games"
+    if games_dir.exists():
+        for f in sorted(games_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not f.is_file():
+                continue
+            if f.stat().st_mtime < started_epoch:
+                continue
+            p = str(f.resolve())
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+            if len(out) >= 10:
+                break
+    return out
 
 
 def _remote_publish(event: str, **fields) -> None:
@@ -229,58 +385,117 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     eighty_pct = budget_seconds * 0.8
     eighty_pct_sent = False
 
-    log.info("dispatch %s starting (budget=%dm)", meta.dispatch_id, meta.time_budget_minutes)
+    # Phase 28 — pre-flight cost ceiling check. Per-day kills new dispatch
+    # immediately; per-dispatch is a projected upper-bound (full budget
+    # × tier rate). Fall back gracefully so a missing yaml never blocks.
+    tier = getattr(meta, "tier", "real") or "real"
+    limits = cc_dispatch.get_cost_limits()
+    projected_max, _, _ = cc_dispatch.estimate_cost(budget_seconds, tier)
+    day_so_far = cc_dispatch.day_spend_usd()
+    if projected_max > limits["per_dispatch_usd"]:
+        msg = (
+            f"⛔ `{meta.dispatch_id}` — {meta.label} refused: projected cost "
+            f"${projected_max:.3f} > per-dispatch ceiling "
+            f"${limits['per_dispatch_usd']:.2f}. Edit "
+            f"~/AI_Agent/config/cost_limits.yaml to raise."
+        )
+        _telegram(msg)
+        result_blocked = cc_dispatch.DispatchResult(
+            dispatch_id=meta.dispatch_id, status="failed",
+            error_tail="blocked: per-dispatch cost ceiling exceeded",
+            tier=tier, model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
+            started_at=started_iso, finished_at=_now_iso(),
+        )
+        cc_dispatch.write_result(result_blocked)
+        cc_dispatch.archive_after_run(meta.dispatch_id)
+        cc_dispatch.clear_lock()
+        cc_dispatch.log_dispatch(meta, result_blocked)
+        return
+    if day_so_far >= limits["per_day_usd"]:
+        msg = (
+            f"⛔ `{meta.dispatch_id}` — {meta.label} refused: daily spend "
+            f"${day_so_far:.2f} ≥ ${limits['per_day_usd']:.2f}. Resets at UTC midnight."
+        )
+        _telegram(msg)
+        result_blocked = cc_dispatch.DispatchResult(
+            dispatch_id=meta.dispatch_id, status="failed",
+            error_tail="blocked: per-day cost ceiling exceeded",
+            tier=tier, model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
+            started_at=started_iso, finished_at=_now_iso(),
+        )
+        cc_dispatch.write_result(result_blocked)
+        cc_dispatch.archive_after_run(meta.dispatch_id)
+        cc_dispatch.clear_lock()
+        cc_dispatch.log_dispatch(meta, result_blocked)
+        return
+
+    log.info("dispatch %s starting (budget=%dm tier=%s)",
+             meta.dispatch_id, meta.time_budget_minutes, tier)
     _remote_publish("cc_dispatch_started", dispatch_id=meta.dispatch_id,
-                    label=meta.label, time_budget_minutes=meta.time_budget_minutes)
+                    label=meta.label, time_budget_minutes=meta.time_budget_minutes,
+                    tier=tier)
     _telegram(
         f"⚙️ Starting `{meta.dispatch_id}` — {meta.label} "
-        f"(budget {meta.time_budget_minutes}m)"
+        f"(tier {tier}, budget {meta.time_budget_minutes}m)"
     )
 
-    proc = _spawn_claude(body, log_path)
     killed_by_timeout = False
     killed_by_inactivity = False
     exit_code: Optional[int] = None
+    proc: Optional[subprocess.Popen] = None
 
-    try:
-        while True:
-            if stop_event_check():
-                log.info("dispatcher shutting down — killing %s", meta.dispatch_id)
-                _kill_tree(proc)
-                break
-            ret = proc.poll()
-            if ret is not None:
-                exit_code = ret
-                break
-            elapsed = time.monotonic() - started_mono
-            if not eighty_pct_sent and elapsed >= eighty_pct:
-                eighty_pct_sent = True
-                pct_left = max(0, meta.time_budget_minutes - int(elapsed / 60))
-                _telegram(
-                    f"⏱️ `{meta.dispatch_id}` — {meta.label} at 80% of budget "
-                    f"({pct_left}m left)."
-                )
-                _remote_publish("cc_dispatch_warn80",
-                                dispatch_id=meta.dispatch_id,
-                                elapsed_seconds=round(elapsed, 1))
-            if elapsed >= budget_seconds:
-                log.warning("dispatch %s hit budget — killing", meta.dispatch_id)
-                killed_by_timeout = True
-                _kill_tree(proc)
-                exit_code = proc.returncode
-                break
-            if _file_idle_seconds(log_path) >= INACTIVITY_KILL_SECONDS:
-                log.warning("dispatch %s log idle %ds — killing",
-                            meta.dispatch_id, INACTIVITY_KILL_SECONDS)
-                killed_by_inactivity = True
-                _kill_tree(proc)
-                exit_code = proc.returncode
-                break
-            time.sleep(POLL_SECONDS)
-    except Exception as exc:
-        log.exception("dispatcher loop crashed: %s", exc)
-        _kill_tree(proc)
-        exit_code = -1
+    if tier == "local":
+        # No subprocess to poll — _run_local_qwen handles its own
+        # streaming + budget/inactivity/stop checks and writes the
+        # log inline.
+        try:
+            exit_code, killed_by_timeout, killed_by_inactivity = _run_local_qwen(
+                body, log_path, budget_seconds, stop_event_check
+            )
+        except Exception as exc:
+            log.exception("local-tier dispatch crashed: %s", exc)
+            exit_code = -1
+    else:
+        proc = _spawn_claude(body, log_path, tier=tier)
+        try:
+            while True:
+                if stop_event_check():
+                    log.info("dispatcher shutting down — killing %s", meta.dispatch_id)
+                    _kill_tree(proc)
+                    break
+                ret = proc.poll()
+                if ret is not None:
+                    exit_code = ret
+                    break
+                elapsed = time.monotonic() - started_mono
+                if not eighty_pct_sent and elapsed >= eighty_pct:
+                    eighty_pct_sent = True
+                    pct_left = max(0, meta.time_budget_minutes - int(elapsed / 60))
+                    _telegram(
+                        f"⏱️ `{meta.dispatch_id}` — {meta.label} at 80% of budget "
+                        f"({pct_left}m left)."
+                    )
+                    _remote_publish("cc_dispatch_warn80",
+                                    dispatch_id=meta.dispatch_id,
+                                    elapsed_seconds=round(elapsed, 1))
+                if elapsed >= budget_seconds:
+                    log.warning("dispatch %s hit budget — killing", meta.dispatch_id)
+                    killed_by_timeout = True
+                    _kill_tree(proc)
+                    exit_code = proc.returncode
+                    break
+                if _file_idle_seconds(log_path) >= INACTIVITY_KILL_SECONDS:
+                    log.warning("dispatch %s log idle %ds — killing",
+                                meta.dispatch_id, INACTIVITY_KILL_SECONDS)
+                    killed_by_inactivity = True
+                    _kill_tree(proc)
+                    exit_code = proc.returncode
+                    break
+                time.sleep(POLL_SECONDS)
+        except Exception as exc:
+            log.exception("dispatcher loop crashed: %s", exc)
+            _kill_tree(proc)
+            exit_code = -1
 
     duration = time.monotonic() - started_mono
     commits = _git_commits_since(head_before)
@@ -299,7 +514,27 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
         status = "failed"
         err_tail = _error_tail(log_path)
 
-    cost_usd, in_tok, out_tok = cc_dispatch.estimate_cost(duration)
+    cost_usd, in_tok, out_tok = cc_dispatch.estimate_cost(duration, tier)
+
+    artifacts = _detect_artifact_paths(body, started_iso)
+    needs_review = False
+    review_notes = ""
+    # Phase 28 — visual verification step. For HTML artifacts, screenshot
+    # via Playwright and ask qwen2.5vl whether anything looks broken.
+    # Best-effort: any verification failure leaves needs_review=False
+    # and the dispatch reports normally.
+    html_artifacts = [p for p in artifacts if p.lower().endswith((".html", ".htm"))]
+    if html_artifacts and status == "done":
+        try:
+            from tools import visual_verify  # noqa: PLC0415
+            verdict = visual_verify.verify_html_artifact(html_artifacts[0])
+            needs_review = bool(verdict.get("needs_review"))
+            review_notes = verdict.get("notes", "") or ""
+            screenshot_path = verdict.get("screenshot_path", "")
+            if screenshot_path:
+                artifacts.append(screenshot_path)
+        except Exception as exc:
+            log.warning("visual_verify failed for %s: %s", html_artifacts[0], exc)
 
     result = cc_dispatch.DispatchResult(
         dispatch_id=meta.dispatch_id,
@@ -316,6 +551,11 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
         estimated_cost_usd=cost_usd,
         estimated_input_tokens=in_tok,
         estimated_output_tokens=out_tok,
+        tier=tier,
+        model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
+        artifact_paths=artifacts,
+        needs_review=needs_review,
+        review_notes=review_notes,
     )
     cc_dispatch.write_result(result)
     cc_dispatch.archive_after_run(meta.dispatch_id)

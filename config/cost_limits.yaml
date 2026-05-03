@@ -1,0 +1,12 @@
+# Phase 28 — Claude Code dispatch cost guardrails.
+#
+# per_dispatch_usd: kill switch — if a single dispatch's projected cost
+#   would exceed this, the dispatcher refuses to start it. Use 'force
+#   dispatch:' / `/code` (which routes through the same path) to override
+#   per-call by raising this value or temporarily widening on disk.
+# per_day_usd: rolling 24h ceiling across ALL tiers. Above 80% the
+#   dispatcher posts a warning to Telegram; at 100% new dispatches are
+#   refused until the day rolls over (UTC).
+
+per_dispatch_usd: 0.50
+per_day_usd: 5.00

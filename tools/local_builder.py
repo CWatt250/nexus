@@ -119,9 +119,11 @@ def _basic_sanity(content: str, tech: str) -> Optional[str]:
     return None
 
 
-def _generate_via_ollama(description: str, tech: str) -> tuple[str, str]:
-    """Call qwen3.6 and return (code, error_or_empty). Uses ollama Python
-    client. Caller handles the persistence step."""
+def _generate_via_ollama(description: str, tech: str,
+                         model: str = OLLAMA_MODEL) -> tuple[str, str]:
+    """Call the Ollama chat API and return (code, error_or_empty). The
+    `model` param defaults to qwen3.6 (Phase 27 contract); /local and
+    SIMPLE_BUILD pass qwen3-coder:30b for stronger code output."""
     try:
         import ollama  # noqa: PLC0415
     except Exception as exc:
@@ -133,7 +135,7 @@ def _generate_via_ollama(description: str, tech: str) -> tuple[str, str]:
     )
     try:
         resp = ollama.Client(host=OLLAMA_HOST).chat(
-            model=OLLAMA_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt},
@@ -158,6 +160,7 @@ def build_thing_core(
     description: str,
     target_path: str,
     tech_stack: str = DEFAULT_TECH,
+    model: Optional[str] = None,
 ) -> BuildResult:
     """Programmatic entry point for the @tool wrapper, the conversation-
     handler routing path, and unit tests. Raises only on scope refusal
@@ -168,7 +171,8 @@ def build_thing_core(
         tech = DEFAULT_TECH
 
     started = time.monotonic()
-    code, err = _generate_via_ollama(description, tech)
+    chosen_model = model or OLLAMA_MODEL
+    code, err = _generate_via_ollama(description, tech, model=chosen_model)
     if err:
         raise RuntimeError(f"local_builder generation failed: {err}")
 
@@ -189,7 +193,7 @@ def build_thing_core(
         tech_stack=tech,
         description=description,
         wall_seconds=wall,
-        backend=f"ollama:{OLLAMA_MODEL}",
+        backend=f"ollama:{chosen_model}",
         notes=notes,
         code_excerpt=excerpt,
     )

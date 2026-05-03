@@ -1578,6 +1578,158 @@ _DISPATCH_PREFIX_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# ─── Phase 28 — slash-command lookup table + parser ──────────────────────
+# Slash commands are the manual override fast lane: they trump intent
+# classification, build-intent regex, dispatch: prefix, and the entity-
+# question wiki short-circuit. Defined in one dict so /help can list them
+# and the parser can return a structured route decision in one shot.
+SLASH_COMMANDS: dict[str, dict] = {
+    "/code":  {"tool": "claude_code", "tier": "flash", "blurb": "DeepSeek V4-Flash build (~$0.005)"},
+    "/pro":   {"tool": "claude_code", "tier": "pro",   "blurb": "DeepSeek V4-Pro build (~$0.05)"},
+    "/real":  {"tool": "claude_code", "tier": "real",  "blurb": "Anthropic Sonnet 4.6 build (~$0.20)"},
+    "/local": {"tool": "local_builder", "model": "qwen3-coder:30b", "blurb": "qwen3-coder:30b local build (free)"},
+    "/quick": {"tool": "quick_chat", "model": "qwen3:4b", "blurb": "qwen3:4b quick answer (no thinking, no tools)"},
+}
+
+
+def parse_slash_command(text: str) -> dict | None:
+    """Return {command, prompt, **route_meta} when `text` starts with a
+    Phase 28 slash command, else None. Whitespace-tolerant; the prompt
+    is everything after the first space (empty string if none)."""
+    if not text or not text.startswith("/"):
+        return None
+    parts = text.split(" ", 1)
+    cmd = parts[0].lower()
+    prompt = parts[1].strip() if len(parts) > 1 else ""
+    if cmd in SLASH_COMMANDS:
+        return {"command": cmd, "prompt": prompt, **SLASH_COMMANDS[cmd]}
+    return None
+
+
+# Phase 28 — smart-routing regexes for non-slash messages. SIMPLE wins
+# when the user explicitly asks for a quick/simple build; otherwise the
+# existing _BUILD_INTENT_RE captures the broader "build me X" shape and
+# upgrades it to a cloud dispatch so the heavier multi-file builds get
+# the smarter (cheap-cloud) model instead of qwen3.6 alone.
+SIMPLE_BUILD_RE = re.compile(
+    r"^\s*(make|create|write)\s+(a\s+)?(simple|quick|basic|tiny|small)\b",
+    re.IGNORECASE,
+)
+COMPLEX_BUILD_RE = re.compile(
+    r"\b(build|create|make|fix|debug|refactor)\b.*(app|component|page|api|database|auth)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
+                             label: str | None = None) -> dict:
+    """Drop a Phase 28 cloud-tier prompt into the cc_dispatcher inbox.
+    Returns a route dict {kind, reply, meta} so callers can hand it
+    straight back to the user.
+
+    Prepends a "write to ~/AI_Agent/games/<slug>.html" hint so the
+    dispatcher's after-run check can find and auto-attach the artifact
+    to Telegram (fixes the Phase 27 auto-attach bug for slash builds)."""
+    from core import cc_dispatch as _ccd  # noqa: PLC0415
+    if not prompt.strip():
+        return {"kind": "dispatch", "reply": f"slash {tier}: needs a prompt.", "meta": {}}
+    slug_words = re.findall(r"[a-zA-Z0-9]+", prompt.lower())[:5]
+    slug = "-".join(slug_words) or "build"
+    target_path = f"~/AI_Agent/games/{slug}.html"
+    augmented = (
+        f"Write the complete, self-contained output to {target_path} "
+        f"(create the directory if needed). It should be a single file "
+        f"that runs by opening in a browser — no build step, no CDN.\n\n"
+        f"Build request:\n{prompt}"
+    )
+    risky = _ccd.is_risky(prompt)
+    meta = _ccd.DispatchMeta.new(
+        label=(label or prompt.splitlines()[0])[:60],
+        time_budget_minutes=10 if tier in ("flash", "pro", "local") else 30,
+        risky_match=risky,
+        tier=tier,
+    )
+    _ccd.write_prompt(meta, augmented, pending=bool(risky))
+    log.info("slash dispatch tier=%s id=%s risky=%s",
+             tier, meta.dispatch_id, bool(risky))
+    if risky:
+        reply = (
+            f"🚨 Risky prompt held (matched: {risky}). "
+            f"Reply 'go {meta.dispatch_id}' to dispatch."
+        )
+    else:
+        reply = (
+            f"🚀 On it — routing to Claude Code (tier {tier}). "
+            f"id={meta.dispatch_id}. I'll ping when it's done."
+        )
+    return {
+        "kind": "dispatch",
+        "reply": reply,
+        "meta": {"dispatch_id": meta.dispatch_id, "tier": tier, "risky": bool(risky)},
+    }
+
+
+def _slash_local_build(prompt: str) -> dict:
+    """Phase 28 /local — qwen3-coder:30b local build via local_builder."""
+    if not prompt.strip():
+        return {"kind": "build", "reply": "/local: needs a description.", "meta": {}}
+    from tools import local_builder  # noqa: PLC0415
+    description = prompt
+    slug_words = re.findall(r"[a-zA-Z0-9]+", description.lower())[:5]
+    slug = "-".join(slug_words) or "build"
+    target_path = f"~/AI_Agent/games/{slug}.html"
+    tech_m = _BUILD_TECH_RE.search(description)
+    tech = tech_m.group(1).lower() if tech_m else "html"
+    if tech == "md":
+        tech = "markdown"
+    if tech == "bash":
+        tech = "shell"
+    try:
+        result = local_builder.build_thing_core(
+            description, target_path, tech, model="qwen3-coder:30b",
+        )
+    except RuntimeError as exc:
+        return {
+            "kind": "build", "reply": f"⚠️ /local build failed: {exc}",
+            "meta": {"target_path": target_path},
+        }
+    notes_line = "" if result.notes == "ok" else f"\n  ⚠ {result.notes}"
+    return {
+        "kind": "build",
+        "reply": (
+            f"🛠️ /local built {result.path}\n"
+            f"  tech    : {result.tech_stack}\n"
+            f"  size    : {result.bytes_written} bytes / {result.lines} lines\n"
+            f"  wall    : {result.wall_seconds}s on {result.backend}{notes_line}"
+        ),
+        "meta": {
+            "target_path": result.path, "tech_stack": result.tech_stack,
+            "wall_seconds": result.wall_seconds, "notes": result.notes,
+        },
+    }
+
+
+def _route_slash_command(parsed: dict) -> dict:
+    """Dispatch a parsed slash command to the right backend. Synchronous
+    for /quick + /local (they're either fast or the listener wraps them
+    in a background task). /code, /pro, /real return immediately because
+    the cc_dispatcher daemon picks up the inbox file out-of-band."""
+    tool = parsed["tool"]
+    prompt = parsed["prompt"]
+    if tool == "claude_code":
+        return _enqueue_tiered_dispatch(prompt, parsed["tier"])
+    if tool == "local_builder":
+        return _slash_local_build(prompt)
+    if tool == "quick_chat":
+        if not prompt.strip():
+            return {"kind": "chat", "reply": "/quick: needs a question.", "meta": {}}
+        try:
+            reply = quick_chat(prompt)
+        except Exception as exc:
+            return {"kind": "chat", "reply": f"/quick error: {type(exc).__name__}: {exc}", "meta": {}}
+        return {"kind": "chat", "reply": reply, "meta": {"slash": parsed["command"]}}
+    return {"kind": "empty", "reply": f"unknown slash route: {tool}", "meta": {}}
+
 # Phase 27 — local builder routing. "build me X / create X / make me X
 # / code X" gets handled directly via tools/local_builder using qwen3.6
 # instead of going through the heavy agent or Claude Code. The
@@ -1693,6 +1845,14 @@ def _route_message_inner(message: str) -> dict:
     if not msg:
         return {"kind": "empty", "reply": "(empty message)", "meta": {}}
 
+    # Phase 28 — slash commands trump all other routing. Manual override
+    # fast lane, no wiki/intent/dispatch-prefix surprises in the way.
+    slash = parse_slash_command(msg)
+    if slash:
+        log.info("route: slash %s tool=%s tier=%s",
+                 slash["command"], slash["tool"], slash.get("tier", ""))
+        return _route_slash_command(slash)
+
     # BUG 6 — entity questions ("what is X", "tell me about X", "who is
     # X", "explain X") MUST hit the wiki before any other classification.
     # Returns None when the pattern doesn't match so the rest of routing
@@ -1713,62 +1873,26 @@ def _route_message_inner(message: str) -> dict:
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
 
-    # Phase 27 — "build me X" / "create X" / "make me X" / "code X"
-    # routes DIRECTLY to local_builder.build_thing using qwen3.6 (free,
-    # local, no Claude Code dispatch). The dispatch: prefix branch
-    # below still wins for users who explicitly want a Claude Code
-    # session — that's checked first via the queue prefix and
-    # immediately after this build branch via _DISPATCH_PREFIX_RE.
+    # Phase 28 — tiered build routing replaces the Phase 27 always-local
+    # flow. Order:
+    #   1. SIMPLE_BUILD ("make a quick fizzbuzz", "write a tiny ...") →
+    #      local qwen3-coder:30b. Fast, free, no API.
+    #   2. BUILD_INTENT ("build me X", "create X", etc.) → cloud DeepSeek
+    #      V4-Flash via cc_dispatcher. Smarter for multi-feature builds,
+    #      typically <$0.01.
+    #   dispatch:/queue: prefixes still win above this branch (queue is
+    #   handled earlier; dispatch is checked immediately after).
     bm = _BUILD_INTENT_RE.match(msg)
     if bm and not _DISPATCH_PREFIX_RE.match(msg):  # belt-and-suspenders
-        body = bm.group(1).strip()
-        # Pull out "at <path>" suffix if present.
-        at_m = _BUILD_AT_PATH_RE.match(body)
-        if at_m:
-            description = at_m.group(1).strip()
-            target_path = at_m.group(2).strip()
-        else:
-            description = body
-            # Default landing zone: ~/AI_Agent/games/ for HTML stuff,
-            # ~/AI_Agent/scratch/ otherwise. Slug from first 5 words.
-            slug_words = re.findall(r"[a-zA-Z0-9]+", description.lower())[:5]
-            slug = "-".join(slug_words) or "build"
-            target_path = f"~/AI_Agent/games/{slug}.html"
-        # Tech stack hint
-        tech_m = _BUILD_TECH_RE.search(description)
-        tech = tech_m.group(1).lower() if tech_m else "html"
-        if tech == "md":
-            tech = "markdown"
-        if tech == "bash":
-            tech = "shell"
-        try:
-            from tools import local_builder  # noqa: PLC0415
-            result = local_builder.build_thing_core(description, target_path, tech)
-        except RuntimeError as exc:
-            return {
-                "kind": "build", "reply": f"⚠️ build failed: {exc}",
-                "meta": {"target_path": target_path},
-            }
-        log.info(
-            "route: build-intent → %s (%d bytes, %.1fs, notes=%s)",
-            result.path, result.bytes_written, result.wall_seconds, result.notes,
+        if SIMPLE_BUILD_RE.search(msg):
+            log.info("route: build-intent SIMPLE → /local")
+            return _slash_local_build(bm.group(1).strip())
+        # Otherwise upgrade to cloud flash — the cheap-cloud default for
+        # broader build requests.
+        log.info("route: build-intent → claude_code tier=flash")
+        return _enqueue_tiered_dispatch(
+            bm.group(1).strip(), "flash", label=bm.group(1).strip()[:60],
         )
-        notes_line = "" if result.notes == "ok" else f"\n  ⚠ {result.notes}"
-        return {
-            "kind": "build",
-            "reply": (
-                f"🛠️ built {result.path}\n"
-                f"  tech    : {result.tech_stack}\n"
-                f"  size    : {result.bytes_written} bytes / {result.lines} lines\n"
-                f"  wall    : {result.wall_seconds}s on {result.backend}{notes_line}"
-            ),
-            "meta": {
-                "target_path": result.path,
-                "tech_stack": result.tech_stack,
-                "wall_seconds": result.wall_seconds,
-                "notes": result.notes,
-            },
-        }
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
     # the prompt to the cc_dispatcher daemon (background Claude Code

@@ -72,10 +72,17 @@ class DispatchMeta:
     time_budget_minutes: int
     requesting_user: str = "colton"
     risky_match: str = ""
+    # Phase 28 — tier picks the model + env file the dispatcher sources
+    # before spawning claude. flash/pro = DeepSeek (cheap), real =
+    # Anthropic Sonnet (premium, default for backwards compat with
+    # Phase 22 callers that don't set tier), local = qwen3-coder:30b
+    # via Ollama (no subprocess, no API call).
+    tier: str = "real"
 
     @classmethod
     def new(cls, label: str, time_budget_minutes: int, *,
-            requesting_user: str = "colton", risky_match: str = "") -> "DispatchMeta":
+            requesting_user: str = "colton", risky_match: str = "",
+            tier: str = "real") -> "DispatchMeta":
         return cls(
             dispatch_id=new_dispatch_id(),
             label=label or "(unlabeled)",
@@ -83,6 +90,7 @@ class DispatchMeta:
             time_budget_minutes=time_budget_minutes,
             requesting_user=requesting_user,
             risky_match=risky_match,
+            tier=tier if tier in TIER_PRICING else "real",
         )
 
     def to_header(self) -> str:
@@ -109,6 +117,14 @@ class DispatchResult:
     estimated_cost_usd: float = 0.0
     estimated_input_tokens: int = 0
     estimated_output_tokens: int = 0
+    # Phase 28 — which tier actually ran (matches meta.tier unless the
+    # dispatcher fell back on DeepSeek-unreachable; "" preserves
+    # backwards compat for pre-28 result files on disk).
+    tier: str = ""
+    model_used: str = ""
+    artifact_paths: list[str] = field(default_factory=list)
+    needs_review: bool = False
+    review_notes: str = ""
 
 
 def ensure_dirs() -> None:
@@ -264,22 +280,88 @@ def list_results(limit: int = 20) -> list[DispatchResult]:
 
 # ── Cost tracking ──────────────────────────────────────────────────────────
 # Conservative estimate model: every dispatch is logged with a flat token
-# guess that scales with duration. Real cost only known via Anthropic API
-# which the CLI doesn't expose. Treated as a soft budget alarm, not billing.
+# guess that scales with duration. Real cost only known via the upstream
+# API which the CLI doesn't expose. Treated as a soft budget alarm, not
+# billing.
 DEFAULT_INPUT_TOKENS_PER_MINUTE = 8000   # ~8k input tokens/minute amortized
 DEFAULT_OUTPUT_TOKENS_PER_MINUTE = 1200  # ~1.2k output tokens/minute
-SONNET_INPUT_PER_M = 3.00
-SONNET_OUTPUT_PER_M = 15.00
+
+# Phase 28 — per-tier $/M token pricing. Local is free.
+TIER_PRICING: dict[str, tuple[float, float]] = {
+    "flash": (0.14, 0.28),     # DeepSeek V4-Flash
+    "pro":   (0.30, 0.50),     # DeepSeek V4-Pro
+    "real":  (3.00, 15.00),    # Anthropic Sonnet 4.6
+    "local": (0.0, 0.0),       # qwen3-coder:30b via Ollama
+}
+TIER_MODELS: dict[str, str] = {
+    "flash": "deepseek-v4-flash",
+    "pro":   "deepseek-v4-pro",
+    "real":  "claude-sonnet-4-6",
+    "local": "qwen3-coder:30b",
+}
+
+# Backwards-compat aliases (used by legacy code paths that hardcoded these).
+SONNET_INPUT_PER_M = TIER_PRICING["real"][0]
+SONNET_OUTPUT_PER_M = TIER_PRICING["real"][1]
 
 
-def estimate_cost(duration_seconds: float) -> tuple[float, int, int]:
-    """Return (usd, input_tokens, output_tokens). Sonnet 4.6 pricing default."""
+def estimate_cost(duration_seconds: float, tier: str = "real") -> tuple[float, int, int]:
+    """Return (usd, input_tokens, output_tokens). Pricing follows the
+    tier; defaults to 'real' (Sonnet) for backwards compat with Phase 22
+    callers that don't pass a tier."""
     minutes = max(0.1, duration_seconds / 60.0)
     in_tok = int(DEFAULT_INPUT_TOKENS_PER_MINUTE * minutes)
     out_tok = int(DEFAULT_OUTPUT_TOKENS_PER_MINUTE * minutes)
-    usd = (in_tok / 1_000_000 * SONNET_INPUT_PER_M
-           + out_tok / 1_000_000 * SONNET_OUTPUT_PER_M)
+    in_per_m, out_per_m = TIER_PRICING.get(tier, TIER_PRICING["real"])
+    usd = (in_tok / 1_000_000 * in_per_m + out_tok / 1_000_000 * out_per_m)
     return round(usd, 4), in_tok, out_tok
+
+
+# Phase 28 — cost guardrails. Per-dispatch and rolling-day ceilings live
+# in config/cost_limits.yaml so Colton can edit without redeploying.
+_COST_LIMITS_PATH = Path.home() / "AI_Agent" / "config" / "cost_limits.yaml"
+_COST_LIMIT_DEFAULTS = {"per_dispatch_usd": 0.50, "per_day_usd": 5.00}
+
+
+def get_cost_limits() -> dict:
+    """Return {per_dispatch_usd, per_day_usd}. Falls back to defaults
+    on any read error so a missing/corrupt file never wedges dispatch."""
+    try:
+        import yaml  # noqa: PLC0415
+        if _COST_LIMITS_PATH.exists():
+            data = yaml.safe_load(_COST_LIMITS_PATH.read_text(encoding="utf-8")) or {}
+            return {
+                "per_dispatch_usd": float(data.get("per_dispatch_usd", _COST_LIMIT_DEFAULTS["per_dispatch_usd"])),
+                "per_day_usd": float(data.get("per_day_usd", _COST_LIMIT_DEFAULTS["per_day_usd"])),
+            }
+    except Exception:
+        pass
+    return dict(_COST_LIMIT_DEFAULTS)
+
+
+def day_spend_usd() -> float:
+    """Sum estimated_cost_usd for the current calendar day (UTC)."""
+    if not METRICS_LOG.exists():
+        return 0.0
+    now = datetime.now(timezone.utc)
+    prefix = now.strftime("%Y-%m-%d")
+    total = 0.0
+    try:
+        with METRICS_LOG.open("r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not str(rec.get("ts", "")).startswith(prefix):
+                    continue
+                total += float(rec.get("estimated_cost_usd") or 0)
+    except OSError:
+        pass
+    return round(total, 4)
 
 
 def log_dispatch(meta: DispatchMeta, result: DispatchResult) -> None:
@@ -297,6 +379,8 @@ def log_dispatch(meta: DispatchMeta, result: DispatchResult) -> None:
         "estimated_cost_usd": result.estimated_cost_usd,
         "estimated_input_tokens": result.estimated_input_tokens,
         "estimated_output_tokens": result.estimated_output_tokens,
+        "tier": getattr(meta, "tier", "") or result.tier,
+        "model_used": result.model_used,
     }
     with METRICS_LOG.open("a", encoding="utf-8") as f:
         f.write(json_safe.dumps(line, ensure_ascii=False) + "\n")

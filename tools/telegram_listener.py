@@ -153,18 +153,20 @@ async def _content_create_in_background(update: Update, topic: str, duration: in
             logger.exception("background video send error")
 
 
-async def _build_in_background(update: Update, description: str, target_path: str, tech: str) -> None:
-    """Phase 27 — long-running local build (qwen3.6 takes 30-60s).
-    Mirrors _content_create_in_background: runs in a worker thread so
-    the listener event loop stays responsive, then sends the result
-    back to the same chat. Best-effort — exceptions surface as a
-    Telegram error reply."""
+async def _build_in_background(update: Update, description: str, target_path: str, tech: str,
+                               *, model: str | None = None) -> None:
+    """Phase 27 + 28 — long-running local build. Mirrors
+    _content_create_in_background: runs in a worker thread so the
+    listener event loop stays responsive, then sends the result back
+    to the same chat AND auto-attaches the generated file (Phase 28
+    fix for the missing-file bug). `model` overrides the default
+    qwen3.6 → /local + SIMPLE_BUILD pass qwen3-coder:30b for code."""
     chat_id = update.effective_chat.id
     bot = update.get_bot()
     try:
         from tools import local_builder  # noqa: PLC0415
         result = await asyncio.to_thread(
-            local_builder.build_thing_core, description, target_path, tech,
+            local_builder.build_thing_core, description, target_path, tech, model,
         )
     except Exception as exc:
         try:
@@ -187,6 +189,47 @@ async def _build_in_background(update: Update, description: str, target_path: st
         await bot.send_message(chat_id=chat_id, text=msg)
     except Exception:
         logger.exception("background build success-send failed")
+    # Phase 28 — auto-attach the generated file so the user can play
+    # with it without ssh-ing into the box. Best-effort: skipped on
+    # files >10MB, errors swallowed.
+    try:
+        from pathlib import Path as _Path  # noqa: PLC0415
+        artifact = _Path(result.path).expanduser()
+        if artifact.exists() and artifact.is_file() and artifact.stat().st_size <= 10 * 1024 * 1024:
+            with open(artifact, "rb") as fh:
+                await bot.send_document(
+                    chat_id=chat_id, document=fh,
+                    caption=f"{artifact.name} — {tech} build via {result.backend}",
+                )
+    except Exception:
+        logger.exception("background build attach failed")
+    # Phase 28 — visual verify HTML builds and warn if the page looks
+    # broken. Heavyweight (Playwright + qwen2.5vl), but only fires for
+    # html outputs and never blocks the success message above.
+    if (result.tech_stack or "").lower() in ("html", "htm"):
+        try:
+            from tools import visual_verify  # noqa: PLC0415
+            verdict = await asyncio.to_thread(
+                visual_verify.verify_html_artifact_safe, result.path,
+            )
+            if verdict.get("needs_review"):
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=("⚠️ visual verify flagged this build for review — "
+                          + verdict.get("notes", "")[:240]),
+                )
+            shot = verdict.get("screenshot_path") or ""
+            if shot:
+                from pathlib import Path as _Path  # noqa: PLC0415
+                shot_p = _Path(shot)
+                if shot_p.exists():
+                    with open(shot_p, "rb") as fh:
+                        await bot.send_photo(
+                            chat_id=chat_id, photo=fh,
+                            caption="visual verify screenshot",
+                        )
+        except Exception:
+            logger.exception("background build visual verify failed")
 
 
 # Phase 27 — build-intent regexes mirror conversation_handler so both
@@ -226,6 +269,131 @@ def _extract_build_args(body: str) -> tuple[str, str, str]:
     if tech == "bash":
         tech = "shell"
     return description, target_path, tech
+
+
+# ─── Phase 28 — slash command handlers ────────────────────────────────
+# /code, /pro, /real → enqueue tier-aware Claude Code dispatch.
+# /local → background qwen3-coder:30b build with auto-attach.
+# /quick → synchronous quick_chat.
+# All five ack within 2 seconds; the cc_dispatcher daemon + reporter
+# handle long-running cloud dispatches out-of-band.
+
+async def _handle_slash_dispatch(update: Update, tier: str, prompt: str) -> None:
+    """Shared body for /code /pro /real. Routes through the tier-aware
+    cc_dispatcher inbox. Acks immediately; the reporter daemon posts
+    the completion + auto-attaches artifacts."""
+    if not is_authorized(update):
+        return
+    if not prompt.strip():
+        await update.message.reply_text(
+            f"/{ {'flash':'code','pro':'pro','real':'real'}[tier] }: needs a prompt."
+        )
+        return
+    try:
+        from workers import conversation_handler as ch  # noqa: PLC0415
+        result = await asyncio.to_thread(ch._enqueue_tiered_dispatch, prompt, tier)
+    except Exception as exc:
+        await update.message.reply_text(f"⚠️ slash dispatch error: {type(exc).__name__}: {exc}")
+        return
+    await update.message.reply_text(result.get("reply", "(no reply)"))
+
+
+async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/code <prompt> — DeepSeek V4-Flash cloud build (cheap default)."""
+    prompt = " ".join(context.args).strip() if context.args else ""
+    await _handle_slash_dispatch(update, "flash", prompt)
+
+
+async def pro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pro <prompt> — DeepSeek V4-Pro cloud build (smarter, $0.05ish)."""
+    prompt = " ".join(context.args).strip() if context.args else ""
+    await _handle_slash_dispatch(update, "pro", prompt)
+
+
+async def real_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/real <prompt> — Anthropic Sonnet 4.6 cloud build (premium tier)."""
+    prompt = " ".join(context.args).strip() if context.args else ""
+    await _handle_slash_dispatch(update, "real", prompt)
+
+
+async def local_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/local <prompt> — qwen3-coder:30b local build, no API cost."""
+    if not is_authorized(update):
+        return
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text("/local: needs a description.")
+        return
+    description, target_path, tech = _extract_build_args(prompt)
+    short_desc = description if len(description) < 80 else description[:77] + "…"
+    await update.message.reply_text(
+        f"🛠️ /local Building: {short_desc}\n"
+        f"  tech: {tech} | target: {target_path}\n"
+        f"  qwen3-coder:30b — typically 30-90s. I'll ping when done."
+    )
+    asyncio.create_task(
+        _build_in_background(update, description, target_path, tech, model="qwen3-coder:30b")
+    )
+
+
+async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/quick <prompt> — qwen3:4b one-shot quick chat (no thinking)."""
+    if not is_authorized(update):
+        return
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text("/quick: needs a question.")
+        return
+    await update.message.chat.send_action("typing")
+    try:
+        from workers import conversation_handler as ch  # noqa: PLC0415
+        reply = await asyncio.wait_for(
+            asyncio.to_thread(ch.quick_chat, prompt), timeout=30,
+        )
+    except asyncio.TimeoutError:
+        await update.message.reply_text("/quick took >30s — try /local or rephrase.")
+        return
+    except Exception as exc:
+        await update.message.reply_text(f"/quick error: {type(exc).__name__}: {exc}")
+        return
+    if not reply:
+        reply = "(no reply)"
+    if len(reply) > 4000:
+        reply = reply[:4000] + "\n... [truncated]"
+    await update.message.reply_text(reply)
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/help — list every command Sparky responds to."""
+    if not is_authorized(update):
+        return
+    await update.message.reply_text(
+        "Sparky commands:\n\n"
+        "Phase 28 slash commands:\n"
+        "  /code <prompt>  — DeepSeek V4-Flash cloud build (~$0.005)\n"
+        "  /pro <prompt>   — DeepSeek V4-Pro cloud build (~$0.05)\n"
+        "  /real <prompt>  — Anthropic Sonnet 4.6 cloud build (~$0.20)\n"
+        "  /local <prompt> — qwen3-coder:30b local build (free)\n"
+        "  /quick <prompt> — qwen3:4b quick answer (no thinking)\n\n"
+        "Wiki:\n"
+        "  wiki <query>     — search the Knowledge Garden\n"
+        "  ingest <text|url> — add to the Knowledge Garden\n\n"
+        "Dispatch (legacy):\n"
+        "  dispatch: <prompt>       — Anthropic Sonnet via cc_dispatcher\n"
+        "  force dispatch: <prompt> — bypass monthly budget cap\n"
+        "  go cc_xxx                — release a held risky prompt\n"
+        "  cancel cc_xxx            — drop a queued prompt\n"
+        "  queue                    — show current queue + budget\n"
+        "  retry cc_xxx             — re-run an archived dispatch\n"
+        "  extend cc_xxx <minutes>  — re-dispatch with bigger budget\n"
+        "  restart cc_xxx | nexus-* — bounce services\n\n"
+        "Other:\n"
+        "  /status   — Nexus health\n"
+        "  /tasks    — recent tasks\n"
+        "  /stop     — stop current task\n"
+        "  build me X / make X / create X / code X — auto-routes (cheap cloud)\n"
+        "  script <topic> | create video <topic>   — Phase 21 content stack"
+    )
 
 
 async def _handle_content_command(update: Update, text: str) -> bool:
@@ -554,6 +722,13 @@ def main() -> None:
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("tasks", tasks_command))
     application.add_handler(CommandHandler("stop", stop_command))
+    application.add_handler(CommandHandler("help", help_command))
+    # Phase 28 — slash commands for tier-aware Claude Code routing.
+    application.add_handler(CommandHandler("code", code_command))
+    application.add_handler(CommandHandler("pro", pro_command))
+    application.add_handler(CommandHandler("real", real_command))
+    application.add_handler(CommandHandler("local", local_command))
+    application.add_handler(CommandHandler("quick", quick_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start the bot
