@@ -111,3 +111,14 @@ HEARTBEAT.log
 # Backups + tarballs
 *.bak
 *.tar.gz
+
+# Runtime SQLite WAL drift
+memory/checkpoints.db-shm
+memory/checkpoints.db-wal
+
+# Dispatch artifacts (operational, not source)
+cc_artifacts/
+games/
+
+# Node lockfile (unclear provenance, regenerable)
+package-lock.json
