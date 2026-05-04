@@ -197,6 +197,22 @@ _QUICK_CHAT_OUTPUT_RULES = (
     "Do NOT count sentences. Do NOT think out loud. Do NOT meta-comment. "
     "Respond as if the user can only see your final words. If you catch "
     "yourself starting to reason, STOP and just give the answer.\n\n"
+    # Phase 30 — qwen3:4b kept emitting untagged CoT after the SOUL.md
+    # tone fix (probably triggered by the new "Reply vocabulary" section
+    # being verbose enough to invite analysis). Generic "don't reason"
+    # rules slid off; the model honors a literal anti-pattern list.
+    "FORBIDDEN OPENERS — do NOT start the reply with these or anything "
+    "structurally like them:\n"
+    "  - 'User says ...' / 'The user is asking ...' / 'User asked ...'\n"
+    "  - 'Best reply: \"...\"' / 'Final reply: ...' / 'My reply: ...'\n"
+    "  - 'First, gotta ...' / 'First, check ...' / 'First, match his energy'\n"
+    "  - 'I must respond ...' / 'I should respond ...' / 'I need to ...'\n"
+    "  - 'Key points: ...' / 'Possible replies: ...' / 'Following the rules ...'\n"
+    "  - 'We are in a situation where ...' / 'As Nexus, I ...' / 'Classic Colton'\n"
+    "  - 'Okay, let's break this down ...' / 'Let me think about this'\n"
+    "Just emit the reply itself. No analysis sentence in front of it. No "
+    "quoted 'Best reply:' framing. No 'Why?' explanation after. The first "
+    "character of your response is the first character of the answer.\n\n"
     "CAPABILITY RULES (critical):\n"
     "- You DO have tools — browser_tool, web search, GitHub, file read/write, "
     "  terminal, RAG memory, computer use, and ~85 more. Never say 'I can't "
@@ -570,6 +586,38 @@ _LEAK_SENTINELS = (
     "i'm supposed to",
     "i'm being told to",
     "the persona says",
+    # Phase 30 — qwen3:4b started leaking new untagged-reasoning shapes
+    # after the SOUL.md tone fix. These sentinels catch the openers we've
+    # observed in production:
+    "user says ",
+    "user says \"",
+    "user says '",
+    "best reply:",
+    "final reply:",
+    "first, gotta",
+    "first, check",
+    "first, match",
+    "first, i need",
+    "first, i should",
+    "i must respond",
+    "i should respond",
+    "key points from",
+    "key points:",
+    "possible replies",
+    "possible replies:",
+    "following the rules",
+    "we are in a situation",
+    "we are given the message",
+    "the user wants",
+    "the user is using",
+    "classic colton",
+    "match his energy",
+    "match colton's energy",
+    "as nexus, i must",
+    "as nexus, i should",
+    "as nexus,",
+    "okay, let's break",
+    "let's break this down",
 )
 
 
@@ -608,12 +656,50 @@ def _wants_synthesis(message: str) -> bool:
     return any(kw in low for kw in _SYNTHESIS_KEYWORDS)
 
 
+# Phase 30 — qwen3:4b often leaks a CoT chain that *ends* with the
+# intended answer wrapped in quotes after a "Best reply:" / "Final
+# reply:" / "My reply:" marker. When that pattern is present we
+# extract just the quoted answer and skip the prefix scrubber, since
+# everything before the marker is reasoning by definition.
+_BEST_REPLY_EXTRACT_RE = _re.compile(
+    r"(?:best|final|my)\s+reply\s*:?\s*[\"\u201c\u2018']([^\"\u201d\u2019'\n]{2,400})[\"\u201d\u2019']",
+    _re.IGNORECASE,
+)
+
+
+def _extract_best_reply(text: str) -> str | None:
+    """Return the quoted answer following a 'Best reply:' marker, or
+    None when no such marker is present. Used as a short-circuit by
+    `_strip_think_final` to recover the intended reply when the
+    surrounding CoT is too dense for sentinel-based stripping."""
+    if not text:
+        return None
+    low = text.lower()
+    if "reply:" not in low and "reply :" not in low:
+        return None
+    m = _BEST_REPLY_EXTRACT_RE.search(text)
+    if not m:
+        return None
+    answer = m.group(1).strip()
+    # Sanity guard — refuse extracted answers that themselves look
+    # like leaked reasoning so we don't replace one leak with another.
+    if any(s in answer.lower() for s in _LEAK_SENTINELS):
+        return None
+    return answer
+
+
 def _strip_think_final(text: str) -> str:
     """Final reply scrubber. Removes <think>...</think>, dangling
     <think>..., and a known set of leaked-reasoning prefix lines.
-    Idempotent — safe to apply on already-clean text."""
+    Idempotent — safe to apply on already-clean text.
+
+    Phase 30 short-circuit: if the input is dense CoT that contains
+    `Best reply: '...'`, pluck the quoted answer and return only that."""
     if not text:
         return text
+    extracted = _extract_best_reply(text)
+    if extracted:
+        return extracted
     out = _THINK_BLOCK_RE.sub("", text)
     out = _OPEN_THINK_RE.sub("", out)
     # Drop any leading line whose lowercased prefix matches a sentinel.
