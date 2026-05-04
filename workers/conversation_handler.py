@@ -1578,32 +1578,76 @@ _DISPATCH_PREFIX_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# ─── Phase 28 — slash-command lookup table + parser ──────────────────────
+# ─── Phase 28 + 29 — slash-command lookup table + parser ─────────────────
 # Slash commands are the manual override fast lane: they trump intent
 # classification, build-intent regex, dispatch: prefix, and the entity-
 # question wiki short-circuit. Defined in one dict so /help can list them
 # and the parser can return a structured route decision in one shot.
+#
+# Phase 29 ladder (from cheapest → most expensive marginal cost):
+#   /max   — Claude Code via Max plan (no env file, $0 marginal)
+#   /local — qwen3-coder:30b via Ollama (offline, $0)
+#   /quick — qwen3:4b chat (no thinking, $0)
+#   /code  — DeepSeek V4-Flash (~$0.005, saves Max quota for small builds)
+#   /pro   — DeepSeek V4-Pro (~$0.05)
+#   /api   — Anthropic Sonnet 4.6 via API key (~$0.10–1.00 fallback)
+#   /real  — DEPRECATED alias for /api kept so muscle memory still works
 SLASH_COMMANDS: dict[str, dict] = {
-    "/code":  {"tool": "claude_code", "tier": "flash", "blurb": "DeepSeek V4-Flash build (~$0.005)"},
-    "/pro":   {"tool": "claude_code", "tier": "pro",   "blurb": "DeepSeek V4-Pro build (~$0.05)"},
-    "/real":  {"tool": "claude_code", "tier": "real",  "blurb": "Anthropic Sonnet 4.6 build (~$0.20)"},
-    "/local": {"tool": "local_builder", "model": "qwen3-coder:30b", "blurb": "qwen3-coder:30b local build (free)"},
-    "/quick": {"tool": "quick_chat", "model": "qwen3:4b", "blurb": "qwen3:4b quick answer (no thinking, no tools)"},
+    "/max":   {"tool": "claude_code", "tier": "max",
+               "blurb": "Claude Sonnet 4.6 via Max plan ($0 marginal)"},
+    "/code":  {"tool": "claude_code", "tier": "flash",
+               "blurb": "DeepSeek V4-Flash build (~$0.005)"},
+    "/pro":   {"tool": "claude_code", "tier": "pro",
+               "blurb": "DeepSeek V4-Pro build (~$0.05)"},
+    "/api":   {"tool": "claude_code", "tier": "api",
+               "blurb": "Anthropic Sonnet 4.6 via API key (fallback, paid)"},
+    # Phase 29 — /real keeps working but logs a deprecation warning.
+    "/real":  {"tool": "claude_code", "tier": "api",
+               "blurb": "[DEPRECATED] alias for /api",
+               "deprecated_alias_for": "/api"},
+    "/local": {"tool": "local_builder", "model": "qwen3-coder:30b",
+               "blurb": "qwen3-coder:30b local build (free)"},
+    "/quick": {"tool": "quick_chat", "model": "qwen3:4b",
+               "blurb": "qwen3:4b quick answer (no thinking, no tools)"},
 }
+
+
+_DEPRECATION_LOG = Path.home() / "AI_Agent" / "cc_logs" / "_deprecation.log"
+
+
+def _log_deprecation(line: str) -> None:
+    """Append a one-liner to cc_logs/_deprecation.log. Best-effort —
+    silent on any I/O failure."""
+    try:
+        _DEPRECATION_LOG.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        with _DEPRECATION_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"{ts} {line}\n")
+    except OSError:
+        pass
 
 
 def parse_slash_command(text: str) -> dict | None:
     """Return {command, prompt, **route_meta} when `text` starts with a
-    Phase 28 slash command, else None. Whitespace-tolerant; the prompt
-    is everything after the first space (empty string if none)."""
+    Phase 28/29 slash command, else None. Whitespace-tolerant; the
+    prompt is everything after the first space (empty string if none).
+
+    Phase 29 — /real triggers a one-line deprecation log to
+    cc_logs/_deprecation.log so the move to /api is auditable, while
+    the alias still routes correctly so muscle memory keeps working."""
     if not text or not text.startswith("/"):
         return None
     parts = text.split(" ", 1)
     cmd = parts[0].lower()
     prompt = parts[1].strip() if len(parts) > 1 else ""
-    if cmd in SLASH_COMMANDS:
-        return {"command": cmd, "prompt": prompt, **SLASH_COMMANDS[cmd]}
-    return None
+    if cmd not in SLASH_COMMANDS:
+        return None
+    spec = SLASH_COMMANDS[cmd]
+    if spec.get("deprecated_alias_for"):
+        target = spec["deprecated_alias_for"]
+        _log_deprecation(f"[DEPRECATED] {cmd} is now {target} — please update muscle memory")
+        log.warning("slash %s is deprecated — alias for %s", cmd, target)
+    return {"command": cmd, "prompt": prompt, **spec}
 
 
 # Phase 28 — smart-routing regexes for non-slash messages. SIMPLE wins
@@ -1643,9 +1687,17 @@ def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
         f"Build request:\n{prompt}"
     )
     risky = _ccd.is_risky(prompt)
+    # Phase 29 — budget tiers: short for cheap/free models, longer for
+    # the smarter (and slower) max + api Sonnet runs.
+    if tier in ("flash", "pro", "local"):
+        budget = 10
+    elif tier == "max":
+        budget = 30
+    else:  # api / fallback
+        budget = 30
     meta = _ccd.DispatchMeta.new(
         label=(label or prompt.splitlines()[0])[:60],
-        time_budget_minutes=10 if tier in ("flash", "pro", "local") else 30,
+        time_budget_minutes=budget,
         risky_match=risky,
         tier=tier,
     )
@@ -1873,25 +1925,24 @@ def _route_message_inner(message: str) -> dict:
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
 
-    # Phase 28 — tiered build routing replaces the Phase 27 always-local
-    # flow. Order:
+    # Phase 28 + 29 — tiered build routing. Order:
     #   1. SIMPLE_BUILD ("make a quick fizzbuzz", "write a tiny ...") →
     #      local qwen3-coder:30b. Fast, free, no API.
-    #   2. BUILD_INTENT ("build me X", "create X", etc.) → cloud DeepSeek
-    #      V4-Flash via cc_dispatcher. Smarter for multi-feature builds,
-    #      typically <$0.01.
-    #   dispatch:/queue: prefixes still win above this branch (queue is
-    #   handled earlier; dispatch is checked immediately after).
+    #   2. BUILD_INTENT ("build me X", "create X", etc.) → tier=max
+    #      (Claude Code via Max plan, $0 marginal). Phase 29 flipped
+    #      this default from /code (DeepSeek Flash) → /max because
+    #      Colton already pays for the Max subscription, so burning
+    #      DeepSeek tokens for the default routing doesn't save money.
+    #   dispatch:/queue: prefixes still win above this branch.
     bm = _BUILD_INTENT_RE.match(msg)
     if bm and not _DISPATCH_PREFIX_RE.match(msg):  # belt-and-suspenders
         if SIMPLE_BUILD_RE.search(msg):
             log.info("route: build-intent SIMPLE → /local")
             return _slash_local_build(bm.group(1).strip())
-        # Otherwise upgrade to cloud flash — the cheap-cloud default for
-        # broader build requests.
-        log.info("route: build-intent → claude_code tier=flash")
+        # Phase 29 — default to Max plan, not paid DeepSeek.
+        log.info("route: build-intent → claude_code tier=max")
         return _enqueue_tiered_dispatch(
-            bm.group(1).strip(), "flash", label=bm.group(1).strip()[:60],
+            bm.group(1).strip(), "max", label=bm.group(1).strip()[:60],
         )
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands

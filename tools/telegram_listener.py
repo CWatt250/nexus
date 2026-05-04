@@ -278,16 +278,21 @@ def _extract_build_args(body: str) -> tuple[str, str, str]:
 # All five ack within 2 seconds; the cc_dispatcher daemon + reporter
 # handle long-running cloud dispatches out-of-band.
 
+_TIER_TO_USER_FACING_CMD = {
+    "max": "max", "flash": "code", "pro": "pro",
+    "api": "api", "real": "real",
+}
+
+
 async def _handle_slash_dispatch(update: Update, tier: str, prompt: str) -> None:
-    """Shared body for /code /pro /real. Routes through the tier-aware
-    cc_dispatcher inbox. Acks immediately; the reporter daemon posts
-    the completion + auto-attaches artifacts."""
+    """Shared body for /max /code /pro /api /real. Routes through the
+    tier-aware cc_dispatcher inbox. Acks immediately; the reporter
+    daemon posts the completion + auto-attaches artifacts."""
     if not is_authorized(update):
         return
     if not prompt.strip():
-        await update.message.reply_text(
-            f"/{ {'flash':'code','pro':'pro','real':'real'}[tier] }: needs a prompt."
-        )
+        cmd = _TIER_TO_USER_FACING_CMD.get(tier, tier)
+        await update.message.reply_text(f"/{cmd}: needs a prompt.")
         return
     try:
         from workers import conversation_handler as ch  # noqa: PLC0415
@@ -298,22 +303,36 @@ async def _handle_slash_dispatch(update: Update, tier: str, prompt: str) -> None
     await update.message.reply_text(result.get("reply", "(no reply)"))
 
 
+async def max_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/max <prompt> — Claude Sonnet via Max plan ($0 marginal). Phase 29 default."""
+    prompt = " ".join(context.args).strip() if context.args else ""
+    await _handle_slash_dispatch(update, "max", prompt)
+
+
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/code <prompt> — DeepSeek V4-Flash cloud build (cheap default)."""
+    """/code <prompt> — DeepSeek V4-Flash cloud build (saves Max quota)."""
     prompt = " ".join(context.args).strip() if context.args else ""
     await _handle_slash_dispatch(update, "flash", prompt)
 
 
 async def pro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/pro <prompt> — DeepSeek V4-Pro cloud build (smarter, $0.05ish)."""
+    """/pro <prompt> — DeepSeek V4-Pro cloud build (smarter, ~$0.05)."""
     prompt = " ".join(context.args).strip() if context.args else ""
     await _handle_slash_dispatch(update, "pro", prompt)
 
 
-async def real_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/real <prompt> — Anthropic Sonnet 4.6 cloud build (premium tier)."""
+async def api_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/api <prompt> — Anthropic Sonnet 4.6 via API key (paid fallback)."""
     prompt = " ".join(context.args).strip() if context.args else ""
-    await _handle_slash_dispatch(update, "real", prompt)
+    await _handle_slash_dispatch(update, "api", prompt)
+
+
+async def real_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/real <prompt> — DEPRECATED alias for /api. Logs to cc_logs/_deprecation.log."""
+    from workers.conversation_handler import _log_deprecation  # noqa: PLC0415
+    _log_deprecation("[DEPRECATED] /real is now /api — please update muscle memory")
+    prompt = " ".join(context.args).strip() if context.args else ""
+    await _handle_slash_dispatch(update, "api", prompt)
 
 
 async def local_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -369,12 +388,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     await update.message.reply_text(
         "Sparky commands:\n\n"
-        "Phase 28 slash commands:\n"
-        "  /code <prompt>  — DeepSeek V4-Flash cloud build (~$0.005)\n"
-        "  /pro <prompt>   — DeepSeek V4-Pro cloud build (~$0.05)\n"
-        "  /real <prompt>  — Anthropic Sonnet 4.6 cloud build (~$0.20)\n"
-        "  /local <prompt> — qwen3-coder:30b local build (free)\n"
-        "  /quick <prompt> — qwen3:4b quick answer (no thinking)\n\n"
+        "Coding router (Phase 29 ladder, cheapest first):\n"
+        "  /max <prompt>   — Claude Sonnet 4.6 via Max plan ($0 marginal) ★ default\n"
+        "  /code <prompt>  — DeepSeek V4-Flash (~$0.005, saves Max quota)\n"
+        "  /pro <prompt>   — DeepSeek V4-Pro (~$0.05)\n"
+        "  /api <prompt>   — Sonnet 4.6 via API key (~$0.10–1.00, fallback)\n"
+        "  /real <prompt>  — DEPRECATED alias for /api\n"
+        "  /local <prompt> — qwen3-coder:30b local (free, offline)\n"
+        "  /quick <prompt> — qwen3:4b quick chat (free)\n\n"
         "Wiki:\n"
         "  wiki <query>     — search the Knowledge Garden\n"
         "  ingest <text|url> — add to the Knowledge Garden\n\n"
@@ -391,7 +412,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "  /status   — Nexus health\n"
         "  /tasks    — recent tasks\n"
         "  /stop     — stop current task\n"
-        "  build me X / make X / create X / code X — auto-routes (cheap cloud)\n"
+        "  build me X / make X / create X / code X — auto-routes to /max\n"
+        "  make a quick/simple X                   — auto-routes to /local\n"
         "  script <topic> | create video <topic>   — Phase 21 content stack"
     )
 
@@ -724,9 +746,12 @@ def main() -> None:
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler("help", help_command))
     # Phase 28 — slash commands for tier-aware Claude Code routing.
+    # Phase 29 added /max (default) + /api (renamed from /real).
+    application.add_handler(CommandHandler("max", max_command))
     application.add_handler(CommandHandler("code", code_command))
     application.add_handler(CommandHandler("pro", pro_command))
-    application.add_handler(CommandHandler("real", real_command))
+    application.add_handler(CommandHandler("api", api_command))
+    application.add_handler(CommandHandler("real", real_command))  # deprecated alias
     application.add_handler(CommandHandler("local", local_command))
     application.add_handler(CommandHandler("quick", quick_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

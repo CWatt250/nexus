@@ -82,7 +82,13 @@ class DispatchMeta:
     @classmethod
     def new(cls, label: str, time_budget_minutes: int, *,
             requesting_user: str = "colton", risky_match: str = "",
-            tier: str = "real") -> "DispatchMeta":
+            tier: str = "api") -> "DispatchMeta":
+        # Phase 29 — coerce legacy "real" → "api" so on-disk metas
+        # always carry the canonical tier name. Unknown tiers fall
+        # back to "api" (API key, paid Sonnet) as the safest default.
+        canonical = normalize_tier(tier)
+        if canonical not in TIER_PRICING:
+            canonical = "api"
         return cls(
             dispatch_id=new_dispatch_id(),
             label=label or "(unlabeled)",
@@ -90,7 +96,7 @@ class DispatchMeta:
             time_budget_minutes=time_budget_minutes,
             requesting_user=requesting_user,
             risky_match=risky_match,
-            tier=tier if tier in TIER_PRICING else "real",
+            tier=canonical,
         )
 
     def to_header(self) -> str:
@@ -286,57 +292,152 @@ def list_results(limit: int = 20) -> list[DispatchResult]:
 DEFAULT_INPUT_TOKENS_PER_MINUTE = 8000   # ~8k input tokens/minute amortized
 DEFAULT_OUTPUT_TOKENS_PER_MINUTE = 1200  # ~1.2k output tokens/minute
 
-# Phase 28 — per-tier $/M token pricing. Local is free.
+# Phase 28 + 29 — per-tier $/M token pricing.
+#   max:   $0 marginal (covered by Claude Max subscription, no API key)
+#   flash: DeepSeek V4-Flash
+#   pro:   DeepSeek V4-Pro
+#   api:   Anthropic Sonnet 4.6 via API key (renamed from "real" in P29)
+#   local: qwen3-coder:30b via Ollama
+#   quick: qwen3:4b (not a dispatcher tier — kept here for entity-table
+#     symmetry; quick_chat doesn't go through cc_dispatcher)
 TIER_PRICING: dict[str, tuple[float, float]] = {
-    "flash": (0.14, 0.28),     # DeepSeek V4-Flash
-    "pro":   (0.30, 0.50),     # DeepSeek V4-Pro
-    "real":  (3.00, 15.00),    # Anthropic Sonnet 4.6
-    "local": (0.0, 0.0),       # qwen3-coder:30b via Ollama
+    "max":   (0.0, 0.0),
+    "flash": (0.14, 0.28),
+    "pro":   (0.30, 0.50),
+    "api":   (3.00, 15.00),
+    "local": (0.0, 0.0),
+    "quick": (0.0, 0.0),
 }
 TIER_MODELS: dict[str, str] = {
+    "max":   "claude-sonnet-4-6 (max plan)",
     "flash": "deepseek-v4-flash",
     "pro":   "deepseek-v4-pro",
-    "real":  "claude-sonnet-4-6",
+    "api":   "claude-sonnet-4-6",
     "local": "qwen3-coder:30b",
+    "quick": "qwen3:4b",
 }
 
+# Phase 29 — tier-name back-compat. "real" was the Phase 28 name for
+# the API-key Anthropic tier; renamed to "api" so it reads as the
+# fallback. Old result/meta JSON files on disk + the /real Telegram
+# alias both flow through this normalizer so cumulative stats merge.
+_TIER_ALIASES = {"real": "api"}
+
+
+def normalize_tier(tier: str) -> str:
+    """Map legacy tier names ('real') to current ones ('api'). Unknown
+    or empty inputs pass through unchanged so the caller can decide
+    how to handle them (default-to-api at write time, or skip at
+    read time)."""
+    if not tier:
+        return tier
+    return _TIER_ALIASES.get(tier, tier)
+
+
+# Tiers whose cost is metered by the API and counts against the daily
+# budget. max + local + quick are free at the margin so they bypass
+# the daily-spend gate (Phase 29 #5).
+PAID_TIERS = frozenset({"flash", "pro", "api"})
+
+
+def is_paid_tier(tier: str) -> bool:
+    """True for tiers that bill per-token. Phase 29 daily ceiling logic
+    only counts these."""
+    return normalize_tier(tier) in PAID_TIERS
+
+
 # Backwards-compat aliases (used by legacy code paths that hardcoded these).
-SONNET_INPUT_PER_M = TIER_PRICING["real"][0]
-SONNET_OUTPUT_PER_M = TIER_PRICING["real"][1]
+SONNET_INPUT_PER_M = TIER_PRICING["api"][0]
+SONNET_OUTPUT_PER_M = TIER_PRICING["api"][1]
 
 
-def estimate_cost(duration_seconds: float, tier: str = "real") -> tuple[float, int, int]:
+def estimate_cost(duration_seconds: float, tier: str = "api") -> tuple[float, int, int]:
     """Return (usd, input_tokens, output_tokens). Pricing follows the
-    tier; defaults to 'real' (Sonnet) for backwards compat with Phase 22
-    callers that don't pass a tier."""
+    tier; defaults to 'api' (Sonnet via API key) for backwards compat
+    with Phase 22 callers that don't pass a tier. Phase 29 makes 'max'
+    return $0 (Max plan covers it)."""
     minutes = max(0.1, duration_seconds / 60.0)
     in_tok = int(DEFAULT_INPUT_TOKENS_PER_MINUTE * minutes)
     out_tok = int(DEFAULT_OUTPUT_TOKENS_PER_MINUTE * minutes)
-    in_per_m, out_per_m = TIER_PRICING.get(tier, TIER_PRICING["real"])
+    canon = normalize_tier(tier) or "api"
+    in_per_m, out_per_m = TIER_PRICING.get(canon, TIER_PRICING["api"])
     usd = (in_tok / 1_000_000 * in_per_m + out_tok / 1_000_000 * out_per_m)
     return round(usd, 4), in_tok, out_tok
 
 
-# Phase 28 — cost guardrails. Per-dispatch and rolling-day ceilings live
-# in config/cost_limits.yaml so Colton can edit without redeploying.
+# Phase 28 + 29 — cost guardrails. Per-tier and rolling-day ceilings
+# live in config/cost_limits.yaml so Colton can edit without redeploying.
+# Phase 29 schema is tier-specific:
+#   per_tier:
+#     max: null     # no limit
+#     flash: 0.10
+#     pro: 0.50
+#     api: 2.00
+#     local: null
+#     quick: null
+#   per_day_usd: 15.00     # applies to PAID_TIERS only
+# Phase 28 legacy schema (per_dispatch_usd / per_day_usd) still parses
+# as a uniform ceiling for back-compat.
 _COST_LIMITS_PATH = Path.home() / "AI_Agent" / "config" / "cost_limits.yaml"
-_COST_LIMIT_DEFAULTS = {"per_dispatch_usd": 0.50, "per_day_usd": 5.00}
+_COST_LIMIT_DEFAULTS_PER_TIER = {
+    "max": None,
+    "flash": 0.10,
+    "pro": 0.50,
+    "api": 2.00,
+    "local": None,
+    "quick": None,
+}
+_COST_LIMIT_DEFAULTS_PER_DAY = 15.00
 
 
 def get_cost_limits() -> dict:
-    """Return {per_dispatch_usd, per_day_usd}. Falls back to defaults
-    on any read error so a missing/corrupt file never wedges dispatch."""
+    """Return {per_tier: {tier: usd|None}, per_day_usd: float}. Falls
+    back to Phase 29 defaults on any read error so a missing/corrupt
+    file never wedges dispatch.
+
+    Accepts Phase 28 legacy schema (per_dispatch_usd as a single number)
+    by broadcasting it to all paid tiers."""
+    per_tier = dict(_COST_LIMIT_DEFAULTS_PER_TIER)
+    per_day = _COST_LIMIT_DEFAULTS_PER_DAY
     try:
         import yaml  # noqa: PLC0415
         if _COST_LIMITS_PATH.exists():
             data = yaml.safe_load(_COST_LIMITS_PATH.read_text(encoding="utf-8")) or {}
-            return {
-                "per_dispatch_usd": float(data.get("per_dispatch_usd", _COST_LIMIT_DEFAULTS["per_dispatch_usd"])),
-                "per_day_usd": float(data.get("per_day_usd", _COST_LIMIT_DEFAULTS["per_day_usd"])),
-            }
+            if "per_day_usd" in data:
+                try:
+                    per_day = float(data["per_day_usd"])
+                except (TypeError, ValueError):
+                    pass
+            if isinstance(data.get("per_tier"), dict):
+                # Phase 29 schema — explicit per-tier ceilings; null means no limit.
+                for tier, val in data["per_tier"].items():
+                    canon = normalize_tier(tier)
+                    if val is None or (isinstance(val, str) and val.lower() in ("none", "null", "")):
+                        per_tier[canon] = None
+                    else:
+                        try:
+                            per_tier[canon] = float(val)
+                        except (TypeError, ValueError):
+                            pass
+            elif "per_dispatch_usd" in data:
+                # Phase 28 legacy — broadcast single ceiling to paid tiers.
+                try:
+                    legacy = float(data["per_dispatch_usd"])
+                except (TypeError, ValueError):
+                    legacy = None
+                if legacy is not None:
+                    for t in PAID_TIERS:
+                        per_tier[t] = legacy
     except Exception:
         pass
-    return dict(_COST_LIMIT_DEFAULTS)
+    return {"per_tier": per_tier, "per_day_usd": per_day}
+
+
+def per_dispatch_ceiling(tier: str) -> float | None:
+    """Return the dollar cap for one dispatch on `tier`, or None when
+    the tier is uncapped (max / local / quick)."""
+    limits = get_cost_limits()
+    return limits["per_tier"].get(normalize_tier(tier))
 
 
 def day_spend_usd() -> float:

@@ -1,12 +1,29 @@
-# Phase 28 — Claude Code dispatch cost guardrails.
+# Phase 28 + 29 — Claude Code dispatch cost guardrails.
 #
-# per_dispatch_usd: kill switch — if a single dispatch's projected cost
-#   would exceed this, the dispatcher refuses to start it. Use 'force
-#   dispatch:' / `/code` (which routes through the same path) to override
-#   per-call by raising this value or temporarily widening on disk.
-# per_day_usd: rolling 24h ceiling across ALL tiers. Above 80% the
-#   dispatcher posts a warning to Telegram; at 100% new dispatches are
-#   refused until the day rolls over (UTC).
+# per_tier: per-dispatch ceiling in USD per tier. null = no limit.
+#   max:    null  — covered by Max plan subscription, no marginal $ to gate
+#   flash:  0.10  — DeepSeek V4-Flash; tiny prompts cost ~$0.005, cap leaves
+#                   plenty of headroom for an outlier
+#   pro:    0.50  — DeepSeek V4-Pro; ~$0.05 typical
+#   api:    2.00  — Anthropic Sonnet 4.6 via API key; this is the fallback
+#                   path when /max isn't appropriate, so the cap reflects
+#                   that — Sonnet runs ~$0.10–1.00 typical, 2.00 catches
+#                   runaways
+#   local:  null  — qwen3-coder:30b on-box, no marginal cost
+#   quick:  null  — qwen3:4b chat path, not a dispatcher tier (kept here
+#                   for symmetry; cc_dispatcher never sees this tier)
+#
+# per_day_usd: rolling 24h ceiling across PAID tiers only (flash + pro
+#   + api). max / local / quick spend is excluded since they don't bill
+#   per-token. Above 80% the dispatcher posts a warning to Telegram;
+#   at 100% new paid-tier dispatches are refused until UTC midnight.
 
-per_dispatch_usd: 0.50
-per_day_usd: 5.00
+per_tier:
+  max:   null
+  flash: 0.10
+  pro:   0.50
+  api:   2.00
+  local: null
+  quick: null
+
+per_day_usd: 15.00

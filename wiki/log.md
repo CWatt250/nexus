@@ -6,6 +6,14 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-04 02:13 UTC — Phase 28 dispatch | tier=max | "a working analog clock with all 12 numbers, smooth" | 67.1s | $0.0000 | done
+
+2026-05-03 — Phase 29 shipped: coding router fixed to default to /max (Claude Sonnet via Max plan, $0 marginal) instead of /code (paid DeepSeek Flash). Renamed /real → /api with /real kept as a deprecation-logging alias (writes to cc_logs/_deprecation.log on every use). Tier-specific cost ceilings replace the Phase 28 uniform per_dispatch_usd: max/local/quick uncapped, flash $0.10, pro $0.50, api $2.00; daily $15 ceiling now applies only to paid tiers (flash+pro+api). Dispatcher's _spawn_claude(tier="max") skips the env-file source step so claude reads ~/.claude/ Max session auth directly; _build_dispatch_env scrubs every ANTHROPIC_* var for tier=max so a stray parent-env key can't shadow the Max session. Smart build-intent routing ("build me X", "create X", etc.) now upgrades to /max instead of /code. core.cc_dispatch.normalize_tier() merges legacy tier="real" rows into "api" bucket so cumulative stats stay consistent. CLAUDE.md gains a coding-router section documenting the new ladder. 7/7 gates passed; /max test build (analog clock) verified CLEAN by qwen2.5vl. Cook cost: $0 (all test routing went through /max). 15/15 Phase 22 dispatch tests still green.
+
+2026-05-03 19:02 UTC — Phase 28 dispatch | tier=real | "say hello in one sentence" | 10.8s | $0.0075 | done
+
+2026-05-03 18:32 UTC — Phase 28 dispatch | tier=real | "say hello in one sentence" | 0.0s | $0.0000 | failed
+
 2026-05-03 — Phase 28 shipped: tier-aware Claude Code router (flash/pro/real/local) folded into existing cc_dispatch / cc_dispatcher / cc_result_reporter (no new claude_code_dispatch.py per Colton). Five slash commands live: /code (DeepSeek V4-Flash, default cloud), /pro (DeepSeek V4-Pro), /real (Anthropic Sonnet 4.6), /local (qwen3-coder:30b via Ollama), /quick (qwen3:4b). Smart-routing regex (SIMPLE_BUILD vs general build intent) auto-upgrades plain "build me X" → tier=flash dispatch. Visual-verify pipeline (Playwright headless screenshot + qwen2.5vl CLEAN/BROKEN verdict, with description-override for unambiguous blank/garbled pages) flags broken HTML before posting. Phase 27 auto-attach bug fixed: reporter + listener now send HTML + screenshot via Telegram sendDocument. New entity wiki/entities/coding-router.md auto-rewritten by reporter on every dispatch. Cost guardrails in config/cost_limits.yaml (per-dispatch $0.50, per-day $5.00). 10/10 test gates passed; total cook cost $0.012 across 5 cloud dispatches (4 flash + 1 pro). 15/15 Phase 22 dispatch tests still green. Limit: ANTHROPIC_API_KEY missing from secrets.yaml — /real tier routes but subprocess fails until key added.
 
 2026-05-03 18:07 UTC — Phase 28 dispatch | tier=flash | "reply with the word ACK only" | 22.6s | $0.0005 | done

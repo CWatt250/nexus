@@ -50,6 +50,39 @@ Nexus can now act as a coding agent on any repo, not just chat. The tools live i
 
 Every tool is registered in both `nexus.TOOLS` and `mcp/server.py`. Total tool count after this phase: **75 native + MCP**.
 
+## Phases 28 + 29 — Coding Router (slash-command tier ladder)
+When you (or an automated path) need to dispatch coding work, prefer
+the slash commands over the legacy `dispatch:` prefix. Phase 29 made
+`/max` the default for complex builds because Colton already pays for
+a Claude Max subscription, so the API-key path is now a fallback —
+not the first choice.
+
+Tier ladder (cheapest marginal cost first):
+
+| Slash | Backend | Marginal cost | When to use |
+|-------|---------|---------------|-------------|
+| `/max` | Claude Sonnet 4.6 via Max plan | $0 | **Default for complex builds.** Multi-file work, refactors, anything you'd reach for Claude Code on. |
+| `/local` | qwen3-coder:30b via Ollama | $0 | Offline work, simple builds, "make a quick X". |
+| `/quick` | qwen3:4b chat | $0 | One-shot Q&A, no thinking trace, no tools. Not for code. |
+| `/code` | DeepSeek V4-Flash | ~$0.005 | Save Max plan quota when the build is small + cheap. |
+| `/pro` | DeepSeek V4-Pro | ~$0.05 | DeepSeek mid-tier; rarely needed. |
+| `/api` | Sonnet 4.6 via API key | ~$0.10–1.00 | Fallback when Max session limits hit. Spends real $$. |
+| `/real` | _alias for `/api`_ | _same as /api_ | DEPRECATED — logs to `cc_logs/_deprecation.log`. Update muscle memory. |
+
+Routing without an explicit slash:
+- Casual chat → `/quick` (qwen3:4b, fast no-thinking)
+- `make a quick/simple/tiny X` → `/local` (qwen3-coder:30b)
+- `build me X` / `create X` / `make me X` / `code X` → `/max`
+  (Phase 29 default — was `/code` in Phase 28)
+
+Cost guardrails live in `config/cost_limits.yaml` with tier-specific
+ceilings (`max`/`local`/`quick` are uncapped). Daily ceiling applies
+to paid tiers only (`flash`/`pro`/`api`). Edit the YAML to change.
+
+Cumulative router stats are auto-rewritten to
+`wiki/entities/coding-router.md` after every dispatch — query with
+`wiki coding router` from Telegram.
+
 ---
 
 # Karpathy Coding Principles

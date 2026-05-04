@@ -7,7 +7,7 @@ COMPLETE
 NONE
 
 ## Last Completed Task
-Phase 28 — Smart Coding Router + Slash Commands (10/10 gates, $0.012 cook cost)
+Phase 29 — /max default, /api rename, tier-specific cost gates (7/7 gates)
 
 ## Phase Status
 - Phase 12: SKIPPED
@@ -22,6 +22,55 @@ Phase 28 — Smart Coding Router + Slash Commands (10/10 gates, $0.012 cook cost
 - Phase 22: COMPLETE (2026-04-30, dispatch tool + watcher daemon + reporter + Telegram routing + 15/15 tests)
 - Phase 27: COMPLETE (2026-05-02, scope-guarded local builder + build intent → qwen3.6)
 - Phase 28: COMPLETE (2026-05-03, tier-aware Claude Code router + 5 slash commands, 10/10 gates)
+- Phase 29: COMPLETE (2026-05-03, /max default + /api rename + tier-specific cost ceilings, 7/7 gates)
+
+## Phase 29 — /max Default + /api Rename (2026-05-03)
+The Phase 28 default for complex builds was `/code` (DeepSeek Flash).
+That was the wrong default — Colton already pays $200/mo for Claude
+Max, which includes Claude Code with Sonnet/Opus over `claude` auth
+without an API key. Phase 29 promotes `/max` (no env file sourced,
+uses ~/.claude/ session) to the default, demotes API-key Sonnet to
+a paid fallback, and renames `/real` → `/api`.
+
+Code:
+- `core/cc_dispatch.py` — TIER_PRICING/TIER_MODELS gain `max` ($0)
+  and `api` (renamed from `real`); `normalize_tier()` maps legacy
+  `real` → `api`; `is_paid_tier()` + `PAID_TIERS = {flash, pro, api}`
+  helper; `per_dispatch_ceiling(tier)` reads tier-specific limit;
+  `get_cost_limits()` parses Phase 29 schema (per_tier dict with null
+  = uncapped) AND Phase 28 legacy schema for back-compat.
+- `workers/cc_dispatcher.py` — `_TIER_ENV_FILE` gains `api` (kept
+  `real` as alias for in-flight prompts); `_spawn_claude(tier="max")`
+  branch skips env-file source so claude reads ~/.claude/ Max auth;
+  `_build_dispatch_env(tier="max")` strips every ANTHROPIC_* var so
+  a stray API key in the parent env can't shadow Max session;
+  pre-flight cost gate uses tier-specific ceiling + applies daily
+  ceiling only to PAID_TIERS.
+- `workers/conversation_handler.py` — SLASH_COMMANDS gains `/max`
+  (tier=max, default), `/api` (tier=api), keeps `/real` as deprecated
+  alias that logs to `cc_logs/_deprecation.log` on every use; smart
+  build-intent routing now defaults to tier=max (was tier=flash);
+  budget tier-aware (10m for cheap/free, 30m for max/api).
+- `workers/cc_result_reporter.py` — coding-router entity rewriter
+  reflects Phase 29 ladder + normalizes legacy `real` rows into `api`
+  bucket; tier rows ordered by ladder position.
+- `tools/telegram_listener.py` — CommandHandlers for `/max` + `/api`
+  registered alongside the Phase 28 set; `/real` handler logs
+  deprecation before delegating; `/help` text rewritten.
+- `config/cost_limits.yaml` — Phase 29 schema: per_tier dict with
+  max/local/quick uncapped, flash $0.10, pro $0.50, api $2.00; per_day
+  $15.00 applies to paid tiers only.
+- `CLAUDE.md` — new "Phases 28 + 29 — Coding Router" section with
+  the tier ladder + non-slash routing rules.
+
+Test gates (7/7 PASS):
+- /max parses + dispatches with no env file sourced
+- No-slash complex build → /max (was /code in Phase 28)
+- /real still works as alias for /api + logs deprecation
+- cost_limits.yaml new schema parses; legacy schema also parses
+- CLAUDE.md, STATE.md, coding-router entity, wiki/log.md updated
+- /max test build (analog clock) completes; visual_verify CLEAN
+- No regressions on /code, /pro, /local, /quick (still routed correctly)
 
 ## Phase 28 — Smart Coding Router + Slash Commands (2026-05-03)
 Folded tier (flash/pro/real/local) into existing dispatch infrastructure

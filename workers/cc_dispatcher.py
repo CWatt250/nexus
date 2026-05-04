@@ -139,12 +139,19 @@ def _error_tail(log_path: Path, n: int = 100) -> str:
     return text.strip()[-n:]
 
 
-# Phase 28 — tier → ~/.claude-* env file the launcher sources before
-# exec'ing claude. 'real' uses the genuine Anthropic API key; flash/pro
-# point at DeepSeek's Anthropic-compatible endpoint.
+# Phase 28 + 29 — tier → ~/.claude-* env file the launcher sources
+# before exec'ing claude.
+#   flash/pro → DeepSeek Anthropic-compatible endpoint
+#   api       → real Anthropic via API key (renamed from "real" in P29)
+#   max       → NO env file sourced — claude uses the user's Max plan
+#               auth straight from ~/.claude/ (Phase 29 default for
+#               complex builds, $0 marginal cost)
 _TIER_ENV_FILE = {
     "flash": "~/.claude-deepseek-flash",
     "pro":   "~/.claude-deepseek-pro",
+    "api":   "~/.claude-anthropic",
+    # Legacy alias kept readable for any pre-Phase-29 inbox files that
+    # land mid-rollout. New writes always carry tier="api".
     "real":  "~/.claude-anthropic",
 }
 
@@ -163,29 +170,60 @@ def _build_dispatch_env(tier: str) -> dict[str, str]:
     ${DEEPSEEK_API_KEY} / ${REAL_ANTHROPIC_KEY}; we resolve those from
     secrets.yaml before sourcing so the subprocess sees concrete tokens
     (the dispatcher service runs without an interactive bash, so the
-    .bashrc exports aren't loaded)."""
+    .bashrc exports aren't loaded).
+
+    Phase 29 — for tier='max' we DROP every Anthropic-related key from
+    the inherited env so claude falls through to the Max plan auth
+    stored in ~/.claude/ (.credentials.json). Otherwise a stray
+    ANTHROPIC_API_KEY from the parent shell would silently switch the
+    subprocess to API billing."""
     env = {**os.environ, "CI": "1"}
+    if tier == "max":
+        for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                  "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
+                  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+                  "CLAUDE_CODE_SUBAGENT_MODEL"):
+            env.pop(k, None)
+        return env
     env["DEEPSEEK_API_KEY"] = _load_secret("DEEPSEEK_API_KEY")
     env["REAL_ANTHROPIC_KEY"] = _load_secret("ANTHROPIC_API_KEY")
     return env
 
 
 def _spawn_claude(prompt_body: str, log_path: Path,
-                  tier: str = "real") -> subprocess.Popen:
+                  tier: str = "api") -> subprocess.Popen:
     """Start `claude --dangerously-skip-permissions` with the prompt on
-    stdin and stdout+stderr piped to log_path. For tier in (flash/pro/
-    real) we source the matching ~/.claude-* env file first so claude
-    routes to the right backend (DeepSeek vs real Anthropic)."""
+    stdin and stdout+stderr piped to log_path.
+
+    Phase 29 tier dispatch:
+      max          — exec claude directly, no env file sourced. claude
+                     reads ~/.claude/ for Max plan auth.
+      flash / pro  — source ~/.claude-deepseek-* before exec → DeepSeek
+                     via Anthropic-compatible endpoint.
+      api          — source ~/.claude-anthropic before exec → real
+                     Anthropic via API key.
+      real         — alias for api (back-compat for in-flight prompts).
+    """
     log_fh = log_path.open("wb", buffering=0)
-    env_file = _TIER_ENV_FILE.get(tier, _TIER_ENV_FILE["real"])
-    # Use bash -c so the env file's exports stay scoped to this child;
-    # `exec claude ...` replaces the bash process so signal-handling /
-    # killpg behaviour is unchanged from the Phase 22 path.
-    cmd = [
-        "bash", "-c",
-        f"source {env_file} 2>/dev/null && exec claude "
-        f"--dangerously-skip-permissions --print",
-    ]
+    canonical = cc_dispatch.normalize_tier(tier) or "api"
+    if canonical == "max":
+        # Phase 29 — Max plan path. Skip env-file source so claude picks
+        # up Colton's existing ~/.claude/ session credentials. Same
+        # bash-c wrapper as the other tiers so killpg / signal-handling
+        # behaviour is uniform across the dispatcher.
+        cmd = [
+            "bash", "-c",
+            "exec claude --dangerously-skip-permissions --print",
+        ]
+    else:
+        env_file = _TIER_ENV_FILE.get(canonical, _TIER_ENV_FILE["api"])
+        cmd = [
+            "bash", "-c",
+            f"source {env_file} 2>/dev/null && exec claude "
+            f"--dangerously-skip-permissions --print",
+        ]
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
@@ -193,7 +231,7 @@ def _spawn_claude(prompt_body: str, log_path: Path,
         stderr=subprocess.STDOUT,
         cwd=str(ROOT),
         start_new_session=True,
-        env=_build_dispatch_env(tier),
+        env=_build_dispatch_env(canonical),
     )
     if proc.stdin:
         try:
@@ -385,24 +423,25 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     eighty_pct = budget_seconds * 0.8
     eighty_pct_sent = False
 
-    # Phase 28 — pre-flight cost ceiling check. Per-day kills new dispatch
-    # immediately; per-dispatch is a projected upper-bound (full budget
-    # × tier rate). Fall back gracefully so a missing yaml never blocks.
-    tier = getattr(meta, "tier", "real") or "real"
-    limits = cc_dispatch.get_cost_limits()
+    # Phase 28 + 29 — pre-flight cost ceiling check. Tier-specific:
+    #   max / local / quick → uncapped (no marginal cost)
+    #   flash / pro / api   → per-tier ceiling from cost_limits.yaml
+    #   per-day ceiling     → applies only to PAID_TIERS
+    # Fall back gracefully so a missing yaml never blocks dispatch.
+    tier = cc_dispatch.normalize_tier(getattr(meta, "tier", "api") or "api")
     projected_max, _, _ = cc_dispatch.estimate_cost(budget_seconds, tier)
-    day_so_far = cc_dispatch.day_spend_usd()
-    if projected_max > limits["per_dispatch_usd"]:
+    tier_ceiling = cc_dispatch.per_dispatch_ceiling(tier)
+    if tier_ceiling is not None and projected_max > tier_ceiling:
         msg = (
             f"⛔ `{meta.dispatch_id}` — {meta.label} refused: projected cost "
-            f"${projected_max:.3f} > per-dispatch ceiling "
-            f"${limits['per_dispatch_usd']:.2f}. Edit "
-            f"~/AI_Agent/config/cost_limits.yaml to raise."
+            f"${projected_max:.3f} > {tier} ceiling ${tier_ceiling:.2f}. "
+            f"Edit ~/AI_Agent/config/cost_limits.yaml to raise, or use /max "
+            f"(uncapped, covered by Max plan)."
         )
         _telegram(msg)
         result_blocked = cc_dispatch.DispatchResult(
             dispatch_id=meta.dispatch_id, status="failed",
-            error_tail="blocked: per-dispatch cost ceiling exceeded",
+            error_tail=f"blocked: {tier} per-dispatch cost ceiling exceeded",
             tier=tier, model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
             started_at=started_iso, finished_at=_now_iso(),
         )
@@ -411,23 +450,27 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
         cc_dispatch.clear_lock()
         cc_dispatch.log_dispatch(meta, result_blocked)
         return
-    if day_so_far >= limits["per_day_usd"]:
-        msg = (
-            f"⛔ `{meta.dispatch_id}` — {meta.label} refused: daily spend "
-            f"${day_so_far:.2f} ≥ ${limits['per_day_usd']:.2f}. Resets at UTC midnight."
-        )
-        _telegram(msg)
-        result_blocked = cc_dispatch.DispatchResult(
-            dispatch_id=meta.dispatch_id, status="failed",
-            error_tail="blocked: per-day cost ceiling exceeded",
-            tier=tier, model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
-            started_at=started_iso, finished_at=_now_iso(),
-        )
-        cc_dispatch.write_result(result_blocked)
-        cc_dispatch.archive_after_run(meta.dispatch_id)
-        cc_dispatch.clear_lock()
-        cc_dispatch.log_dispatch(meta, result_blocked)
-        return
+    if cc_dispatch.is_paid_tier(tier):
+        day_limit = cc_dispatch.get_cost_limits()["per_day_usd"]
+        day_so_far = cc_dispatch.day_spend_usd()
+        if day_so_far >= day_limit:
+            msg = (
+                f"⛔ `{meta.dispatch_id}` — {meta.label} refused: paid-tier "
+                f"daily spend ${day_so_far:.2f} ≥ ${day_limit:.2f}. "
+                f"Resets at UTC midnight, or use /max to bypass."
+            )
+            _telegram(msg)
+            result_blocked = cc_dispatch.DispatchResult(
+                dispatch_id=meta.dispatch_id, status="failed",
+                error_tail="blocked: paid-tier daily cost ceiling exceeded",
+                tier=tier, model_used=cc_dispatch.TIER_MODELS.get(tier, ""),
+                started_at=started_iso, finished_at=_now_iso(),
+            )
+            cc_dispatch.write_result(result_blocked)
+            cc_dispatch.archive_after_run(meta.dispatch_id)
+            cc_dispatch.clear_lock()
+            cc_dispatch.log_dispatch(meta, result_blocked)
+            return
 
     log.info("dispatch %s starting (budget=%dm tier=%s)",
              meta.dispatch_id, meta.time_budget_minutes, tier)

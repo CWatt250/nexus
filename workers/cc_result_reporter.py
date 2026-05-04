@@ -184,9 +184,10 @@ def _log_dispatch_to_wiki(label: str, result: cc_dispatch.DispatchResult) -> Non
 
 def _bump_router_entity_stats(result: cc_dispatch.DispatchResult) -> None:
     """Recompute + rewrite wiki/entities/coding-router.md with cumulative
-    Phase 28 dispatch stats (count by tier, total $, success rate).
-    Source of truth = cc_metrics/dispatches.jsonl, which already has all
-    the fields we need."""
+    dispatch stats (count by tier, total $, success rate). Source of
+    truth = cc_metrics/dispatches.jsonl. Phase 29: legacy tier='real'
+    is normalized to 'api' so the historical /real dispatches roll up
+    into the renamed bucket cleanly."""
     if not getattr(result, "tier", ""):
         return
     try:
@@ -208,9 +209,10 @@ def _bump_router_entity_stats(result: cc_dispatch.DispatchResult) -> None:
                     rec = _json.loads(raw)
                 except _json.JSONDecodeError:
                     continue
-                tier = rec.get("tier") or ""
-                if not tier:
+                raw_tier = rec.get("tier") or ""
+                if not raw_tier:
                     continue  # Skip pre-Phase-28 entries.
+                tier = cc_dispatch.normalize_tier(raw_tier)
                 total_count += 1
                 cost = float(rec.get("estimated_cost_usd") or 0)
                 total_cost += cost
@@ -223,8 +225,13 @@ def _bump_router_entity_stats(result: cc_dispatch.DispatchResult) -> None:
                 if done:
                     stats["done"] += 1
         success_rate = (total_done / total_count * 100) if total_count else 0.0
+        # Stable order matches the Phase 29 ladder (cheapest marginal
+        # cost first, paid fallbacks last).
+        tier_order = ["max", "local", "quick", "flash", "pro", "api"]
         rows = []
-        for tier in sorted(per_tier):
+        for tier in tier_order + sorted(t for t in per_tier if t not in tier_order):
+            if tier not in per_tier:
+                continue
             s = per_tier[tier]
             sr = (s["done"] / s["count"] * 100) if s["count"] else 0.0
             rows.append(
@@ -236,25 +243,36 @@ def _bump_router_entity_stats(result: cc_dispatch.DispatchResult) -> None:
             f"type: entity\n"
             f"updated: {_dt.now(timezone.utc).isoformat()}\n"
             f"---\n\n"
-            f"# Coding Router (Phase 28)\n\n"
+            f"# Coding Router (Phase 28 + 29)\n\n"
             f"Tracks dispatches routed through the tier-aware Claude Code "
-            f"dispatcher. Source: `cc_metrics/dispatches.jsonl`. "
-            f"Last update auto-rewritten by `workers/cc_result_reporter`.\n\n"
+            f"dispatcher. Source: `cc_metrics/dispatches.jsonl`. Last "
+            f"update auto-rewritten by `workers/cc_result_reporter`.\n\n"
+            f"Phase 29 made `/max` the default for complex builds — Colton "
+            f"already pays for the Max subscription, so the API-key path "
+            f"became a rare fallback.\n\n"
             f"## Cumulative\n\n"
             f"- Total dispatches: **{total_count}**\n"
             f"- Successful: **{total_done}** ({success_rate:.0f}%)\n"
-            f"- Total estimated cost: **${total_cost:.4f}**\n\n"
+            f"- Total estimated cost (API-billed only): **${total_cost:.4f}**\n\n"
             f"## By tier\n\n"
             f"| tier | count | done | est. cost | success |\n"
             f"|------|-------|------|-----------|---------|\n"
             + ("\n".join(rows) if rows else "| (none yet) | 0 | 0 | $0.00 | 0% |")
             + "\n\n"
-            f"## Slash commands\n\n"
-            f"- `/code <prompt>` — DeepSeek V4-Flash (cheap default, ~$0.005)\n"
-            f"- `/pro <prompt>`  — DeepSeek V4-Pro (~$0.05)\n"
-            f"- `/real <prompt>` — Anthropic Sonnet 4.6 (~$0.20)\n"
-            f"- `/local <prompt>` — qwen3-coder:30b local (free)\n"
-            f"- `/quick <prompt>` — qwen3:4b quick chat (free)\n"
+            f"## Slash commands (Phase 29 ladder)\n\n"
+            f"- `/max <prompt>`   — Claude Sonnet 4.6 via Max plan ($0 marginal — uses subscription) **default for complex builds**\n"
+            f"- `/code <prompt>`  — DeepSeek V4-Flash (~$0.005 — saves Max quota on small builds)\n"
+            f"- `/pro <prompt>`   — DeepSeek V4-Pro (~$0.05 — DeepSeek mid-tier)\n"
+            f"- `/api <prompt>`   — Sonnet 4.6 via API key (~$0.10–1.00 — fallback if Max limits hit)\n"
+            f"- `/local <prompt>` — qwen3-coder:30b local ($0 — offline)\n"
+            f"- `/quick <prompt>` — qwen3:4b chat ($0 — chat, not code)\n"
+            f"- `/real <prompt>`  — *deprecated alias for /api; logged to "
+            f"  `cc_logs/_deprecation.log` whenever used*\n\n"
+            f"## Routing without a slash\n\n"
+            f"- Casual chat → `/quick`\n"
+            f"- `make a quick/simple/tiny X` → `/local`\n"
+            f"- `build me X` / `create X` / `make me X` / `code X` → "
+            f"  `/max` (Phase 29 default; was `/code` in Phase 28)\n"
         )
         _ROUTER_ENTITY_PATH.parent.mkdir(parents=True, exist_ok=True)
         _ROUTER_ENTITY_PATH.write_text(body, encoding="utf-8")
