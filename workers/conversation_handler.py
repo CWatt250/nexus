@@ -1751,27 +1751,67 @@ COMPLEX_BUILD_RE = re.compile(
 )
 
 
+# Phase 31 — only inject the "write to games/<slug>.html, single browser
+# file" preamble when the prompt actually asks for a UI build. Before
+# this gate, every slash dispatch (incl. plain shell tasks like "create
+# file X" or "ollama pull Y") was forced into HTML-game shape, and
+# Claude obeyed by also producing a stray HTML alongside the real work.
+_UI_BUILD_KEYWORDS_RE = re.compile(
+    r"\b("
+    r"html|webpage|web\s+page|landing\s+page|"
+    r"game|widget|dashboard|component|"
+    r"clock|chart|graph|svg|canvas|animation|"
+    r"ui|interface|form|button"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_ui_build(prompt: str) -> bool:
+    """True when the prompt mentions a UI/HTML build target. Conservative
+    — must contain at least one explicit UI keyword. Plain shell tasks
+    ("create file X", "run ollama pull Y", "echo Z") fall through and
+    skip the HTML augmentation path."""
+    return bool(_UI_BUILD_KEYWORDS_RE.search(prompt or ""))
+
+
+def _slugify_for_filename(prompt: str, max_tokens: int = 6) -> str:
+    """Lowercase alphanumeric tokens joined with '-'. Model-version style
+    tokens (gemma4:26b, qwen3:4b) are kept as one logical unit so the
+    suffix survives — ':' becomes '-'."""
+    parts = re.findall(r"[a-zA-Z0-9]+(?::[a-zA-Z0-9]+)?", (prompt or "").lower())
+    parts = parts[:max_tokens]
+    if not parts:
+        return "build"
+    return "-".join(p.replace(":", "-") for p in parts)
+
+
 def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
                              label: str | None = None) -> dict:
     """Drop a Phase 28 cloud-tier prompt into the cc_dispatcher inbox.
     Returns a route dict {kind, reply, meta} so callers can hand it
     straight back to the user.
 
-    Prepends a "write to ~/AI_Agent/games/<slug>.html" hint so the
-    dispatcher's after-run check can find and auto-attach the artifact
-    to Telegram (fixes the Phase 27 auto-attach bug for slash builds)."""
+    Phase 31 — augmentation is now gated on UI-build intent. UI prompts
+    get the "write to games/<slug>.html, single browser file" preamble
+    so the after-run check can auto-attach. Non-UI prompts (file ops,
+    shell commands, model pulls) pass through verbatim — Claude is no
+    longer pushed into producing a stray HTML game alongside the real
+    work."""
     from core import cc_dispatch as _ccd  # noqa: PLC0415
     if not prompt.strip():
         return {"kind": "dispatch", "reply": f"slash {tier}: needs a prompt.", "meta": {}}
-    slug_words = re.findall(r"[a-zA-Z0-9]+", prompt.lower())[:5]
-    slug = "-".join(slug_words) or "build"
-    target_path = f"~/AI_Agent/games/{slug}.html"
-    augmented = (
-        f"Write the complete, self-contained output to {target_path} "
-        f"(create the directory if needed). It should be a single file "
-        f"that runs by opening in a browser — no build step, no CDN.\n\n"
-        f"Build request:\n{prompt}"
-    )
+    if _looks_like_ui_build(prompt):
+        slug = _slugify_for_filename(prompt, max_tokens=5)
+        target_path = f"~/AI_Agent/games/{slug}.html"
+        body_to_dispatch = (
+            f"Write the complete, self-contained output to {target_path} "
+            f"(create the directory if needed). It should be a single file "
+            f"that runs by opening in a browser — no build step, no CDN.\n\n"
+            f"Build request:\n{prompt}"
+        )
+    else:
+        body_to_dispatch = prompt
     risky = _ccd.is_risky(prompt)
     # Phase 29 — budget tiers: short for cheap/free models, longer for
     # the smarter (and slower) max + api Sonnet runs.
@@ -1782,12 +1822,15 @@ def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
     else:  # api / fallback
         budget = 30
     meta = _ccd.DispatchMeta.new(
-        label=(label or prompt.splitlines()[0])[:60],
+        # Phase 31 — bumped 60 → 80 so model-version suffixes (gemma4:26b,
+        # qwen3-coder:30b) survive the Telegram label without losing
+        # the trailing chars.
+        label=(label or prompt.splitlines()[0])[:80],
         time_budget_minutes=budget,
         risky_match=risky,
         tier=tier,
     )
-    _ccd.write_prompt(meta, augmented, pending=bool(risky))
+    _ccd.write_prompt(meta, body_to_dispatch, pending=bool(risky))
     log.info("slash dispatch tier=%s id=%s risky=%s",
              tier, meta.dispatch_id, bool(risky))
     if risky:
