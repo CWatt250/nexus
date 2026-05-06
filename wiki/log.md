@@ -6,6 +6,26 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-06 03:29 UTC — Phase 28 dispatch | tier=flash | "echo "evening live test" and exit" | 11.1s | $0.0003 | done
+
+2026-05-05 11:36 UTC — Phase 28 dispatch | tier=flash | "echo "phase 31 live verification" and exit" | 17.1s | $0.0004 | done
+
+2026-05-05 11:27 UTC — Phase 28 dispatch | tier=flash | "echo "ollama pull gemma4:26b" (do not actually pul" | 6.8s | $0.0002 | done
+
+2026-05-05 11:27 UTC — Phase 28 dispatch | tier=flash | "build a simple analog clock html page" | 30.8s | $0.0007 | done
+
+2026-05-05 11:26 UTC — Phase 28 dispatch | tier=flash | "create ~/AI_Agent/test_phase31.txt with the text "" | 14.8s | $0.0004 | done
+
+2026-05-04 14:49 UTC — Phase 28 dispatch | tier=api | "extend(60m): Pull the Ollama model gemma4:26b. Run" | 0.0s | $0.0000 | failed
+
+2026-05-04 14:48 UTC — Phase 28 dispatch | tier=flash | "Pull the Ollama model gemma4:26b. Run "ollama pull" | 601.0s | $0.0146 | timeout
+
+2026-05-04 13:48 UTC — Phase 28 dispatch | tier=api | "create a file at ~/AI_Agent/test_pipeline_v2.txt w" | 0.0s | $0.0000 | failed
+
+2026-05-04 13:40 UTC — Phase 28 dispatch | tier=flash | "create a file at ~/AI_Agent/test_pipeline.txt with" | 106.8s | $0.0026 | done
+
+2026-05-04 03:28 UTC — Phase 28 dispatch | tier=api | "SOUL.md tone fix — "lfg" is input vocabulary, not " | 0.0s | $0.0000 | failed
+
 2026-05-04 02:13 UTC — Phase 28 dispatch | tier=max | "a working analog clock with all 12 numbers, smooth" | 67.1s | $0.0000 | done
 
 2026-05-03 — Phase 29 shipped: coding router fixed to default to /max (Claude Sonnet via Max plan, $0 marginal) instead of /code (paid DeepSeek Flash). Renamed /real → /api with /real kept as a deprecation-logging alias (writes to cc_logs/_deprecation.log on every use). Tier-specific cost ceilings replace the Phase 28 uniform per_dispatch_usd: max/local/quick uncapped, flash $0.10, pro $0.50, api $2.00; daily $15 ceiling now applies only to paid tiers (flash+pro+api). Dispatcher's _spawn_claude(tier="max") skips the env-file source step so claude reads ~/.claude/ Max session auth directly; _build_dispatch_env scrubs every ANTHROPIC_* var for tier=max so a stray parent-env key can't shadow the Max session. Smart build-intent routing ("build me X", "create X", etc.) now upgrades to /max instead of /code. core.cc_dispatch.normalize_tier() merges legacy tier="real" rows into "api" bucket so cumulative stats stay consistent. CLAUDE.md gains a coding-router section documenting the new ladder. 7/7 gates passed; /max test build (analog clock) verified CLEAN by qwen2.5vl. Cook cost: $0 (all test routing went through /max). 15/15 Phase 22 dispatch tests still green.

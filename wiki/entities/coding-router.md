@@ -1,7 +1,7 @@
 ---
 name: coding-router
 type: entity
-updated: 2026-05-04T02:13:50.857670+00:00
+updated: 2026-05-06T03:29:28.556566+00:00
 ---
 
 # Coding Router (Phase 28 + 29)
@@ -12,18 +12,18 @@ Phase 29 made `/max` the default for complex builds — Colton already pays for 
 
 ## Cumulative
 
-- Total dispatches: **8**
-- Successful: **7** (88%)
-- Total estimated cost (API-billed only): **$0.0142**
+- Total dispatches: **18**
+- Successful: **13** (72%)
+- Total estimated cost (API-billed only): **$0.0334**
 
 ## By tier
 
 | tier | count | done | est. cost | success |
 |------|-------|------|-----------|---------|
 | max | 1 | 1 | $0.0000 | 100% |
-| flash | 4 | 4 | $0.0057 | 100% |
+| flash | 11 | 10 | $0.0249 | 91% |
 | pro | 1 | 1 | $0.0010 | 100% |
-| api | 2 | 1 | $0.0075 | 50% |
+| api | 5 | 1 | $0.0075 | 20% |
 
 ## Slash commands (Phase 29 ladder)
 
