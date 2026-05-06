@@ -27,3 +27,25 @@ per_tier:
   quick: null
 
 per_day_usd: 15.00
+
+# Phase 32 — quick_chat / classifier provider config.
+#
+#   provider:             'deepseek' (default) routes the chat + intent
+#                         classifier through DeepSeek's API. Set to
+#                         'ollama' to force the local fallback path
+#                         without a code change (offline, debugging).
+#   deepseek_model:       which DeepSeek chat model to call. Pinned so
+#                         a model deprecation can't silently shift cost.
+#   daily_cost_max_usd:   safety ceiling on DeepSeek quick_chat spend
+#                         per UTC day. When today's running total in
+#                         memory/quick_chat_costs.jsonl crosses this,
+#                         further calls fall back to Ollama and a one-
+#                         shot Telegram warning fires.
+#   ollama_fallback_model: the local model used whenever DeepSeek is
+#                         skipped — circuit breaker open, daily ceiling
+#                         hit, network failure, or provider='ollama'.
+quick_chat:
+  provider: deepseek
+  deepseek_model: deepseek-chat
+  daily_cost_max_usd: 5.00
+  ollama_fallback_model: qwen3:4b

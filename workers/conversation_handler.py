@@ -43,23 +43,27 @@ log = logging.getLogger("nexus.conversation_handler")
 
 HANDLER_MODEL = "qwen3:4b"
 
-# qwen3.6 outperforms qwen3:4b on intent classification by ~18x latency
-# (517ms vs 9190ms mean) and is more accurate (10/10 vs 9/10 on the test
-# set). qwen3:4b's chain-of-thought blows through num_predict on every
-# call even with think=False. qwen3.6 follows the bare-label instruction
-# directly. Both models are pinned by prewarm, so picking the better one
-# is free.
-CLASSIFIER_MODEL = "qwen3.6"
-
-# Quick-chat is the QUERY_INLINE / CHAT path — short factual answers,
-# no tools, no agent loop. qwen3:4b is ~5x faster wall-clock than
-# qwen3.6 (warm: ~1.5s vs ~8s). It denies capabilities slightly more
-# often, which we catch via _looks_like_denial and retry on the
-# heavier model exactly once. Net win: most turns land in 1-2s, the
-# rare denial pays the qwen3.6 round-trip but still produces a real
-# answer.
-QUICK_CHAT_MODEL = "qwen3:4b"
+# Phase 32 — provider abstraction. DeepSeek's deepseek-chat is the
+# primary for both quick_chat and the intent classifier; Ollama is
+# kept as the offline fallback. The Ollama branch preserves the
+# qwen3:4b → qwen3.6 denial-retry behavior unchanged. On any DeepSeek
+# error (timeout, 5xx, network, breaker open, daily ceiling) the call
+# falls through to Ollama so a network outage or DeepSeek incident
+# can't take quick_chat down.
+QUICK_CHAT_PROVIDER = "deepseek"
+QUICK_CHAT_FALLBACK_PROVIDER = "ollama"
+QUICK_CHAT_OLLAMA_MODEL = "qwen3:4b"
 QUICK_CHAT_DENIAL_FALLBACK_MODEL = "qwen3.6"
+
+CLASSIFIER_PROVIDER = "deepseek"
+CLASSIFIER_FALLBACK = "ollama:qwen3.6"
+CLASSIFIER_OLLAMA_MODEL = "qwen3.6"
+
+# Backwards-compat aliases — older comments, tests, and other modules
+# still import these names. They now name the *Ollama-fallback* model
+# in each path, which is consistent with the role they used to play.
+QUICK_CHAT_MODEL = QUICK_CHAT_OLLAMA_MODEL
+CLASSIFIER_MODEL = CLASSIFIER_OLLAMA_MODEL
 
 INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label:
 CHAT, QUERY_INLINE, QUERY_TOOL, TASK, or STATUS.
@@ -750,32 +754,56 @@ def _clean_quick_chat(text: str) -> str:
 def quick_chat(message: str) -> str:
     """Inline conversational reply for CHAT and QUERY_INLINE intents.
 
-    Two-tier model strategy (Fix #4 v2 — qwen3:4b CoT-leak repair):
-      1. qwen3:4b primary in JSON-mode + tight num_predict + strict
-         system prompt. ~0.4-1.5s warm, 5-15x faster than qwen3.6.
-      2. If the reply trips `_looks_like_denial` (model refused) OR
-         `looks_like_thinking_leak` (model leaked CoT prose despite
-         the JSON+strict-prompt+post-processing pipeline), log it and
-         retry ONCE on qwen3.6. Five total leak-or-denial events in
-         24h fires a Telegram alert so we can revert if qwen3:4b
-         starts regressing.
+    Phase 32 provider ladder:
+      1. DeepSeek deepseek-chat (15s timeout). On any ProviderError
+         (timeout, 5xx, network, breaker open, daily ceiling hit), fall
+         through to the Ollama path below.
+      2. Ollama qwen3:4b primary in JSON-mode + tight num_predict +
+         strict system prompt. ~0.4-1.5s warm.
+      3. If the qwen3:4b reply trips `_looks_like_denial` (model refused)
+         OR `looks_like_thinking_leak` (CoT prose leaked through the
+         JSON+strict-prompt+post-processing pipeline), log it and retry
+         ONCE on qwen3.6. Five total leak-or-denial events in 24h fires
+         a Telegram alert so a regression is visible.
 
     Real datetime is injected into the system prompt every call so the
     model can answer "what time is it" correctly instead of
     hallucinating from training data.
     """
     import time as _time  # noqa: PLC0415
+    from workers import quick_chat_providers as _qcp  # noqa: PLC0415
 
     # SOUL.md is the single source of truth — `get_quick_chat_system_prompt`
     # composes full SOUL + quick_chat-specific output / capability rules.
     # _datetime_context appends real wall-clock so "what time is it" works.
     system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
     t0 = _time.monotonic()
+
+    # ── Tier 1: DeepSeek ─────────────────────────────────────────
+    # Honor the runtime config override too — flipping cost_limits.yaml
+    # `quick_chat.provider: ollama` forces local without a code change.
+    use_deepseek = (
+        QUICK_CHAT_PROVIDER == "deepseek"
+        and _qcp.get_configured_provider() == "deepseek"
+    )
+    if use_deepseek:
+        try:
+            reply, _usage = _qcp.deepseek_chat(message, system_prompt,
+                                               max_tokens=512, timeout=15.0)
+            elapsed = _time.monotonic() - t0
+            _record_cleanliness(_qcp.get_deepseek_model(), elapsed,
+                                clean=True, fallback_used=False)
+            return reply
+        except _qcp.ProviderError as exc:
+            log.info("quick_chat deepseek failed (%s) — falling back to ollama", exc)
+            # Fall through to the Ollama branch below.
+
+    # ── Tier 2: Ollama qwen3:4b ──────────────────────────────────
     try:
-        primary = _ollama_quick_chat(QUICK_CHAT_MODEL, message, system_prompt)
+        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, message, system_prompt)
     except Exception as exc:
         elapsed = _time.monotonic() - t0
-        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
                             clean=False, fallback_used=False, leak_kind="error")
         return f"(quick_chat error: {type(exc).__name__}: {exc})"
 
@@ -787,14 +815,14 @@ def quick_chat(message: str) -> str:
 
     if leak_kind is None:
         elapsed = _time.monotonic() - t0
-        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
                             clean=True, fallback_used=False)
         return primary
 
     log.info("quick_chat %s leak (%s) — retrying on %s. preview=%r msg=%r",
-             QUICK_CHAT_MODEL, leak_kind, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
+             QUICK_CHAT_OLLAMA_MODEL, leak_kind, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
              primary[:120], message[:120])
-    _record_denial(message, QUICK_CHAT_MODEL, kind=leak_kind)
+    _record_denial(message, QUICK_CHAT_OLLAMA_MODEL, kind=leak_kind)
     _maybe_alert_telegram(_denials_in_last_24h())
 
     try:
@@ -804,7 +832,7 @@ def quick_chat(message: str) -> str:
     except Exception as exc:
         elapsed = _time.monotonic() - t0
         log.warning("quick_chat fallback failed: %s — returning primary reply", exc)
-        _record_cleanliness(QUICK_CHAT_MODEL, elapsed,
+        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
                             clean=False, fallback_used=True, leak_kind=leak_kind)
         return primary
 
@@ -1125,8 +1153,21 @@ def lite_agent(message: str) -> dict:
     return {"ok": True, "tool": tool_name, "reply": reply}
 
 
+_CLASSIFIER_STRICT_SUFFIX = (
+    "\n\nReturn EXACTLY one label and nothing else: "
+    "CHAT | QUERY_INLINE | QUERY_TOOL | TASK | STATUS. "
+    "No explanation. No reasoning. No quotes. Just the bare label."
+)
+
+
 def classify_intent_llm(message: str) -> Intent:
-    """LLM-based intent classifier on qwen3.6. ~500ms warm.
+    """LLM-based intent classifier.
+
+    Phase 32 ladder:
+      1. DeepSeek deepseek-chat (15s) — strict label-only prompt,
+         max_tokens=32. ~300ms typical.
+      2. Ollama qwen3.6 fallback on ProviderError — preserves the
+         pre-Phase-32 behavior, just slower (~500ms warm, ~25s cold).
 
     Returns an `Intent` Pydantic object. Defaults to CHAT on parse failure
     so the user gets a conversational reply instead of an unwanted task.
@@ -1134,9 +1175,32 @@ def classify_intent_llm(message: str) -> Intent:
     msg = (message or "").strip()
     if not msg:
         return Intent(kind="CHAT", raw="")
+
+    from workers import quick_chat_providers as _qcp  # noqa: PLC0415
+
+    use_deepseek = (
+        CLASSIFIER_PROVIDER == "deepseek"
+        and _qcp.get_configured_provider() == "deepseek"
+    )
+    if use_deepseek:
+        try:
+            reply, _usage = _qcp.deepseek_chat(
+                msg,
+                INTENT_SYSTEM_PROMPT + _CLASSIFIER_STRICT_SUFFIX,
+                max_tokens=32,
+                temperature=0.0,
+                timeout=15.0,
+            )
+            matches = _LABEL_RE.findall(reply.upper())
+            if matches:
+                return Intent(kind=matches[-1], raw=reply)  # type: ignore[arg-type]
+            log.info("classifier deepseek: no label in %r; falling back to ollama", reply[:80])
+        except _qcp.ProviderError as exc:
+            log.info("classifier deepseek failed (%s); falling back to ollama", exc)
+
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-            model=CLASSIFIER_MODEL,
+            model=CLASSIFIER_OLLAMA_MODEL,
             messages=[
                 {"role": "system", "content": INTENT_SYSTEM_PROMPT},
                 {"role": "user", "content": msg},
