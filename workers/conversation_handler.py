@@ -694,16 +694,29 @@ def _extract_best_reply(text: str) -> str | None:
 
 def _strip_think_final(text: str) -> str:
     """Final reply scrubber. Removes <think>...</think>, dangling
-    <think>..., and a known set of leaked-reasoning prefix lines.
-    Idempotent — safe to apply on already-clean text.
+    <think>..., bare orphan </think> closers (qwen3:4b emits CoT prose
+    then a closer with no opener — see `_split_unbalanced_close_think`),
+    and a known set of leaked-reasoning prefix lines. Idempotent — safe
+    to apply on already-clean text.
 
     Phase 30 short-circuit: if the input is dense CoT that contains
-    `Best reply: '...'`, pluck the quoted answer and return only that."""
+    `Best reply: '...'`, pluck the quoted answer and return only that.
+
+    Phase 32.1: handle bare orphan `</think>` (no opener) before the
+    paired/open regexes so all four shapes — matched pair, open-only,
+    orphan close, no tags — flow through one path."""
     if not text:
         return text
     extracted = _extract_best_reply(text)
     if extracted:
         return extracted
+    # Orphan-close strip: only run when `</think>` exists with no
+    # preceding `<think>` opener, so paired blocks aren't double-handled.
+    close_idx = text.find("</think>")
+    if close_idx >= 0:
+        open_idx = text.find("<think>")
+        if open_idx < 0 or close_idx < open_idx:
+            text = _split_unbalanced_close_think(text)
     out = _THINK_BLOCK_RE.sub("", text)
     out = _OPEN_THINK_RE.sub("", out)
     # Drop any leading line whose lowercased prefix matches a sentinel.
