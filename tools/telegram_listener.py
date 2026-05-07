@@ -382,6 +382,96 @@ async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(reply)
 
 
+async def computer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/computer <task> — Phase 36 Computer Use agent. Drives the browser
+    on Xvfb :99 to do dashboard tasks (Supabase, Vercel, Stripe, ...).
+    Hard caps: 30 min, $5. Telegram updates every 30s with screenshots."""
+    if not is_authorized(update):
+        return
+    task = " ".join(context.args).strip() if context.args else ""
+    if not task:
+        await update.message.reply_text(
+            "/computer: needs a task. e.g. /computer resume the bidwatt supabase project"
+        )
+        return
+    unsafe = "--unsafe" in task
+    if unsafe:
+        task = task.replace("--unsafe", "").strip()
+    short = task if len(task) < 80 else task[:77] + "…"
+    await update.message.reply_text(
+        f"🖥️ /computer running: {short}\n"
+        f"  display: :99 | safety: {'OFF (unsafe)' if unsafe else 'on'}\n"
+        f"  caps: 30min, $5. I'll ping every 30s with a screenshot."
+    )
+    asyncio.create_task(_run_computer_in_background(update, task, unsafe))
+
+
+async def _run_computer_in_background(update: Update, task: str, unsafe: bool) -> None:
+    import time as _t  # noqa: PLC0415
+    from tools import computer_agent, cu_browser, cu_recorder  # noqa: PLC0415
+
+    bot = update.get_bot()
+    chat_id = update.effective_chat.id
+    last_update_at = [_t.monotonic()]
+    last_iter = [-1]
+
+    def _on_iter(iter_num: int, screenshot_path, model_text: str) -> None:
+        # Throttle to ~one update per 30s; always ship the latest screenshot.
+        now = _t.monotonic()
+        if now - last_update_at[0] < 30 and iter_num != 1:
+            return
+        last_update_at[0] = now
+        last_iter[0] = iter_num
+        caption = (model_text or "(working)")[:900]
+        try:
+            with open(screenshot_path, "rb") as fh:
+                asyncio.run_coroutine_threadsafe(
+                    bot.send_photo(chat_id=chat_id, photo=fh,
+                                   caption=f"iter {iter_num}: {caption}"),
+                    asyncio.get_event_loop(),
+                )
+        except Exception:
+            logger.exception("/computer iter update failed")
+
+    try:
+        cu_browser.launch("about:blank")
+    except Exception as exc:
+        await update.message.reply_text(f"⚠️ /computer browser launch failed: {exc}")
+        return
+
+    task_id = f"cu_{int(_t.time())}"
+    rec = cu_recorder.Recorder((Path.home() / "AI_Agent" / "cu_logs" / task_id / "session.mp4"))
+    try:
+        rec.start()
+        result = await asyncio.to_thread(
+            computer_agent.run_task, task,
+            task_id=task_id, unsafe=unsafe, on_iteration=_on_iter,
+        )
+    except Exception as exc:
+        logger.exception("/computer crashed")
+        await update.message.reply_text(f"⚠️ /computer crashed: {type(exc).__name__}: {exc}")
+        return
+    finally:
+        rec.stop()
+
+    summary = (
+        f"🖥️ /computer {result.status}\n"
+        f"  iters: {result.iterations} | elapsed: {result.elapsed_seconds:.0f}s | "
+        f"cost: ${result.cost_usd:.3f}\n"
+        f"  reason: {(result.reason or '')[:300]}\n"
+        f"  log: {result.log_dir}"
+    )
+    if result.halt_reason:
+        summary += f"\n  HALT: {result.halt_reason[:200]}"
+    await update.message.reply_text(summary)
+    if result.final_screenshot and Path(result.final_screenshot).exists():
+        try:
+            with open(result.final_screenshot, "rb") as fh:
+                await bot.send_photo(chat_id=chat_id, photo=fh, caption="final screen")
+        except Exception:
+            logger.exception("final screenshot send failed")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/help — list every command Sparky responds to."""
     if not is_authorized(update):
@@ -396,6 +486,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "  /real <prompt>  — DEPRECATED alias for /api\n"
         "  /local <prompt> — qwen3-coder:30b local (free, offline)\n"
         "  /quick <prompt> — qwen3:4b quick chat (free)\n\n"
+        "Computer Use (Phase 36):\n"
+        "  /computer <task> — drives the :99 browser to do dashboard tasks\n"
+        "                     hard caps: 30min wall clock, $5 spend\n"
+        "                     append --unsafe to skip destructive-action stops\n\n"
         "Wiki:\n"
         "  wiki <query>     — search the Knowledge Garden\n"
         "  ingest <text|url> — add to the Knowledge Garden\n\n"
@@ -754,6 +848,8 @@ def main() -> None:
     application.add_handler(CommandHandler("real", real_command))  # deprecated alias
     application.add_handler(CommandHandler("local", local_command))
     application.add_handler(CommandHandler("quick", quick_command))
+    # Phase 36 — Computer Use agent (Anthropic native, drives :99 browser).
+    application.add_handler(CommandHandler("computer", computer_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start the bot

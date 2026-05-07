@@ -69,3 +69,22 @@ quick_chat:
   deepseek_model: deepseek-chat
   daily_cost_max_usd: 5.00
   ollama_fallback_model: qwen3:4b
+
+# Phase 36 — Computer Use agent (Anthropic native API).
+#
+#   per_task_usd:    hard ceiling per /computer invocation. Loop aborts
+#                    when running cost exceeds this. Default $5 covers
+#                    a typical 10-30 iteration dashboard task at sonnet
+#                    4.6 prices ($3 in / $15 out per M tokens).
+#   per_day_usd:     rolling 24h ceiling for /computer spend specifically.
+#                    Counts toward this only — not the broader paid-tier
+#                    ceiling above, since Computer Use is a separate path.
+#   max_wall_seconds: hard wall-clock cap per task.
+#   max_iterations:  agent loop iteration ceiling (defense-in-depth alongside
+#                    the cost cap — catches a model that emits free-tier
+#                    actions in a tight loop).
+computer_use:
+  per_task_usd: 5.00
+  per_day_usd: 25.00
+  max_wall_seconds: 1800
+  max_iterations: 200
