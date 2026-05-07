@@ -14,6 +14,7 @@ Pairs (per spec):
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -116,18 +117,39 @@ def _read_clipboard() -> str:
     return text[:4000] if text else "[clipboard: empty]"
 
 
+def _resolve_display_for_scrot() -> str | None:
+    """Return DISPLAY to use for scrot — real env first, :99 headless fallback."""
+    current = os.environ.get("DISPLAY")
+    if current:
+        return current
+    try:
+        if subprocess.run(
+            ["xdpyinfo", "-display", ":99"],
+            capture_output=True, timeout=2,
+        ).returncode == 0:
+            return ":99"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def _take_screenshot() -> str:
     out_dir = Path.home() / "AI_Agent" / "output" / "screenshots"
     out_dir.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     target = out_dir / f"screen-{stamp}.png"
+    display = _resolve_display_for_scrot()
+    if not display:
+        return "[scrot: no display available (real or :99)]"
+    env = {**os.environ, "DISPLAY": display}
     try:
         subprocess.run(
             ["scrot", str(target)],
             check=True,
             capture_output=True,
             timeout=5,
+            env=env,
         )
     except FileNotFoundError:
         return "[scrot not installed]"

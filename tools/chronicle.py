@@ -76,15 +76,45 @@ def _screen_locked() -> bool:
     return False
 
 
+_HEADLESS_DISPLAY = ":99"
+
+
+def _resolve_display() -> str | None:
+    """Return a usable DISPLAY value.
+
+    Prefers whatever is already set in the environment. Falls back to the
+    nexus-xvfb.service virtual display at :99 when no real display is set."""
+    current = os.environ.get("DISPLAY")
+    if current:
+        return current
+    try:
+        proc = subprocess.run(
+            ["xdpyinfo", "-display", _HEADLESS_DISPLAY],
+            capture_output=True, timeout=2,
+        )
+        if proc.returncode == 0:
+            os.environ["DISPLAY"] = _HEADLESS_DISPLAY
+            log.debug("chronicle: using headless display %s", _HEADLESS_DISPLAY)
+            return _HEADLESS_DISPLAY
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def _take_screenshot(dest: Path) -> bool:
     scrot = shutil.which("scrot")
     if not scrot:
         log.warning("scrot not on PATH — install with: sudo apt install -y scrot")
         return False
+    display = _resolve_display()
+    if not display:
+        log.debug("no DISPLAY available for scrot")
+        return False
+    env = {**os.environ, "DISPLAY": display}
     try:
         res = subprocess.run(
             [scrot, "-o", str(dest)],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, env=env,
         )
     except subprocess.TimeoutExpired:
         return False
@@ -165,8 +195,8 @@ def _rag_store(summary: str) -> None:
 
 
 def _tick() -> None:
-    if not os.environ.get("DISPLAY"):
-        log.debug("DISPLAY not set; skipping")
+    if not _resolve_display():
+        log.debug("no display available (real or :99); skipping")
         return
     if _screen_locked():
         log.debug("screen is locked; skipping")

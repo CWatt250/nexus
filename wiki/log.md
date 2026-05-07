@@ -6,6 +6,9 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-07 — phase 35: nexus-xvfb.service unit created; chronicle + parallel_tools gain :99 fallback; 8 tests green; sudo-commands.sh written — display :99 active after `sudo /tmp/sudo-commands.sh`
+2026-05-07 15:30 UTC — Phase 28 dispatch | tier=max | "audit all 27 services in the credentials registry " | 125.0s | $0.0000 | done
+
 2026-05-07 — Phase 32.2 shipped: result reporter multi-message chunking. workers/cc_result_reporter.py gains _chunk_text (splits at newline/table boundaries, preserves ``` fences), _telegram_chunked ([N/M] markers, max_total_chunks overflow pointer), _read_log_body (ANSI-stripped log tail), _is_investigation (files_changed==0, commits==[], duration>60s). Investigation dispatches now ship full log content instead of one_line_summary. Build dispatches get top-5 changed files + first 3 commit lines. config/cost_limits.yaml gains result_reporter: section. 30/30 tests pass in tests/test_result_reporter_chunking.py.
 
 2026-05-07 — Phase 33 shipped: credentials bootstrap helper. tools/credentials_helper.py + core/credentials_registry.py + tools/credentials_registry.py. 27 services registered (8 Tier-1: vercel/supabase/stripe/github/cloudflare/resend/deepseek/anthropic; 8 Tier-2; 7 Tier-3 stubs; 4 Tier-4 stubs). Interactive flow: show instructions → prompt for token → real API validation → save to config/secrets.yaml (chmod 600 + auto-backup). Validation methods: HTTP_GET (bearer+basic), HTTP_POST, CLI_EXEC. save_token bug fixed (previous attempt was redacting values before write). Telegram /creds command shape in place. 138/138 tests pass. SOUL.md + CLAUDE.md + wiki/concepts/credentials-management.md updated.
