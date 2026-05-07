@@ -118,6 +118,31 @@ Full tokens never logged — only `first4...last4` in output.
 
 **See also:** `wiki/concepts/credentials-management.md`
 
+## Phase 32.2 — Result Reporter Chunking
+
+`workers/cc_result_reporter.py` now sends multi-message chunked Telegram output.
+
+**Key functions:**
+- `_chunk_text(body, max_chars)` — splits at newline/table boundaries, closes/reopens ` ``` ` fences at chunk boundaries
+- `_telegram_chunked(text, dispatch_id)` — sends with `[N/M]` markers; if chunks exceed `max_total_chunks`, last chunk becomes a "see cc_logs/<id>.log" pointer
+- `_read_log_body(dispatch_id, tail_lines)` — reads last N lines of `cc_logs/<id>.log`, ANSI-stripped
+- `_is_investigation(result)` — True when `files_changed==0`, `commits_made==[]`, `duration_seconds>60`
+
+**Investigation dispatches** (no git changes, ran >60s): full log body is shipped instead of `one_line_summary`. The deliverable is Claude's reply — it belongs in Telegram.
+
+**Build dispatches**: summary includes top-5 changed files and first 3 commit message lines, chunked if needed.
+
+**Config** (`config/cost_limits.yaml`, `result_reporter:` block):
+```yaml
+result_reporter:
+  max_chunk_chars: 4000       # Telegram hard cap is 4096; 4000 leaves headroom
+  max_total_chunks: 10        # overflow → "see cc_logs/<id>.log" pointer
+  include_log_tail_for_investigations: true
+  log_tail_lines: 200
+```
+
+**Tests:** `tests/test_result_reporter_chunking.py` — 30 tests covering all scenarios.
+
 ---
 
 # Karpathy Coding Principles

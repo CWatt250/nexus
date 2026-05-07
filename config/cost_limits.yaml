@@ -44,6 +44,26 @@ per_day_usd: 15.00
 #   ollama_fallback_model: the local model used whenever DeepSeek is
 #                         skipped — circuit breaker open, daily ceiling
 #                         hit, network failure, or provider='ollama'.
+# Phase 32.2 — result reporter chunking config.
+#
+#   max_chunk_chars:   max characters per Telegram sendMessage call.
+#                      Telegram's hard cap is 4096; 4000 leaves headroom
+#                      for code-fence repair and [N/M] markers.
+#   max_total_chunks:  safety ceiling on chunks per dispatch. If more
+#                      chunks would be needed, the last chunk becomes a
+#                      "see cc_logs/<id>.log" pointer.
+#   include_log_tail_for_investigations:
+#                      when true, investigation-only dispatches (no git
+#                      changes, ran >60s) get the full Claude reply
+#                      shipped to Telegram instead of the one-line summary.
+#   log_tail_lines:    how many trailing lines of cc_logs/<id>.log to
+#                      scan for the final assistant reply.
+result_reporter:
+  max_chunk_chars: 4000
+  max_total_chunks: 10
+  include_log_tail_for_investigations: true
+  log_tail_lines: 200
+
 quick_chat:
   provider: deepseek
   deepseek_model: deepseek-chat
