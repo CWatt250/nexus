@@ -1,11 +1,12 @@
 # BidWatt — NIMO Setup Checklist
 _Recon date: 2026-05-07 — branch HEAD: fac18d7 (2026-05-01)_
+_Corrected 2026-05-07 — initial recon misreported Vercel deployment state due to GitHub-API-only visibility._
 
 ---
 
 ## What BidWatt Is
 
-BidWatt is Colton's full-stack bid management web app built for Irex Argus, a mechanical insulation contractor with 5 branches (Pasco/Seattle/Portland/Phoenix/SLC). It tracks bids through a Kanban pipeline, a spreadsheet (Bid Board), a calendar view, and a reports layer, with role-based access for Estimators, Branch Managers, and Admins. The stack is Next.js 16 App Router + Supabase (PostgreSQL + RLS), styled with shadcn/ui and Tailwind v4, and was being developed on Windows (`C:\Dev\cwatt-bidboard`). It has never been deployed to Vercel — it runs locally only so far.
+BidWatt is Colton's full-stack bid management web app built for Irex Argus, a mechanical insulation contractor with 5 branches (Pasco/Seattle/Portland/Phoenix/SLC). It tracks bids through a Kanban pipeline, a spreadsheet (Bid Board), a calendar view, and a reports layer, with role-based access for Estimators, Branch Managers, and Admins. The stack is Next.js 16 App Router + Supabase (PostgreSQL + RLS), styled with shadcn/ui and Tailwind v4, and was being developed on Windows (`C:\Dev\cwatt-bidboard`). Live in production at https://bidwatt.vercel.app, auto-deploying from main via GitHub integration. Local dev runs at localhost:3000.
 
 ---
 
@@ -24,7 +25,7 @@ BidWatt is Colton's full-stack bid management web app built for Irex Argus, a me
 | Calendar | react-big-calendar ^1.19.4 | |
 | DnD | @hello-pangea/dnd ^18.0.1 | Kanban drag-drop |
 | Forms | react-hook-form + @hookform/resolvers + zod | |
-| Deployment | **Not deployed** | No vercel.json, no Vercel project linked |
+| Deployment | **Vercel (bidwatt.vercel.app)** | Auto-deploys on push to main. No vercel.json needed — Vercel auto-detects Next.js. |
 | Node version required | **Node 22 LTS** (recommended) or 20 LTS minimum | `@types/node ^20`, Next.js 16 + React 19 = Node 22 |
 
 ---
@@ -71,6 +72,16 @@ No `.env.example` exists in the repo. Variables are documented in `CLAUDE.md`.
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → project settings → API → `service_role secret` key — **never expose client-side** |
 
 That's the full set — only 3 vars needed for local dev. No other env vars referenced in CLAUDE.md.
+
+---
+
+## Existing Production Infrastructure
+
+- **Vercel project:** bidwatt (auto-deploy from main branch)
+- **Production URL:** https://bidwatt.vercel.app
+- **Supabase project:** cbntiiixrlxkdxafxivl.supabase.co (cloud-hosted)
+- **GitHub:** github.com/CWatt250/cwatt-bidboard
+- **Workflow:** edit on NIMO → commit → push to main → Vercel auto-deploys → bidwatt.vercel.app updates
 
 ---
 
@@ -123,11 +134,10 @@ npx tsc --noEmit
 
 ## What's Blocking Deploy
 
-1. **Never deployed to Vercel** — no `vercel.json`, no project linked. First deploy will need `vercel link` + `vercel env add` for all 3 vars.
-2. **PR #61 is still open** — "feat: add jurisdiction map sidebar and calculator components" (branch `worktree-agent-af963903`, created 2026-04-17). The corresponding DB tables were created then dropped (migrations 015 → 016), so this PR may have stale code referencing tables that no longer exist. Don't merge without reviewing.
-3. **No .env.example** — whoever sets this up next has no file to copy. Consider adding one.
-4. **Supabase free tier may be paused** — if the project has been idle since the Windows machine was left behind, resume it at supabase.com before running the app.
-5. **CLAUDE.md migration list is stale** — only documents 001–009 of 17. If Supabase prod hasn't had 010–017 run, features like Project Location, MIKE #, and document uploads will be broken.
+1. **PR #61 is still open** — "feat: add jurisdiction map sidebar and calculator components" (branch `worktree-agent-af963903`, created 2026-04-17). The corresponding DB tables were created then dropped (migrations 015 → 016), so this PR may have stale code referencing tables that no longer exist. Don't merge without reviewing.
+2. **No .env.example** — whoever sets this up next has no file to copy. Consider adding one.
+3. **Supabase free tier may be paused** — if the project has been idle since the Windows machine was left behind, resume it at supabase.com before running the app.
+4. **CLAUDE.md migration list is stale** — only documents 001–009 of 17. If Supabase prod hasn't had 010–017 run, features like Project Location, MIKE #, and document uploads will be broken.
 
 ---
 
@@ -136,7 +146,7 @@ npx tsc --noEmit
 1. **Add `.env.example`** — 10-minute task. Just the 3 var names with placeholder values. Prevents this same confusion next time.
 2. **Audit PR #61** — Check if `components/jurisdiction/Sidebar.tsx` and `Calculator.tsx` reference any tables that migration 016 dropped. Either finish it or close it.
 3. **Update CLAUDE.md migrations list** — Extend to document migrations 010–017 so the context file matches reality.
-4. **First Vercel deploy** — Run `npx vercel link`, add env vars via `vercel env add`, then `npx vercel --prod`. This is low-risk since no prod traffic yet.
+4. **Wire local clone to Vercel project** — run `npx vercel link` then `npx vercel env pull .env.local` to grab production env vars directly from Vercel instead of copy-pasting from Supabase. One-time setup.
 
 ---
 
