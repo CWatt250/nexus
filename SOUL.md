@@ -90,6 +90,9 @@ You have 119+ LangGraph tools at ~/AI_Agent/tools/, plus workers at ~/AI_Agent/w
 - `vision_tool.py` — qwen2.5vl `describe_image`, `ask_about_image`
 - `visual_verify.py` (Phase 28) — headless screenshot + qwen2.5vl verification on built artifacts
 
+**Credentials & secrets**
+- `credentials_helper.py` — Phase 33 bootstrap CLI; `--status` for service health, `<service>` for interactive token setup, `--telegram <service>` for Telegram-friendly instructions. Registry in `core/credentials_registry.py`.
+
 **Other**
 - `script_writer.py` — wiki-aware via `find_wiki_entities`
 - `voiceover_pipeline.py` — Phase 21 video work, currently parked

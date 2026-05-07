@@ -6,6 +6,14 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-07 — Phase 33 shipped: credentials bootstrap helper. tools/credentials_helper.py + core/credentials_registry.py + tools/credentials_registry.py. 27 services registered (8 Tier-1: vercel/supabase/stripe/github/cloudflare/resend/deepseek/anthropic; 8 Tier-2; 7 Tier-3 stubs; 4 Tier-4 stubs). Interactive flow: show instructions → prompt for token → real API validation → save to config/secrets.yaml (chmod 600 + auto-backup). Validation methods: HTTP_GET (bearer+basic), HTTP_POST, CLI_EXEC. save_token bug fixed (previous attempt was redacting values before write). Telegram /creds command shape in place. 138/138 tests pass. SOUL.md + CLAUDE.md + wiki/concepts/credentials-management.md updated.
+
+2026-05-07 14:04 UTC — Phase 28 dispatch | tier=max | "PHASE 33 — Credentials Bootstrap Helper CONTEXT --" | 601.3s | $0.0000 | failed
+
+2026-05-07 13:23 UTC — Phase 28 dispatch | tier=max | "I have a multi-step Supabase + Vercel setup task f" | 31.0s | $0.0000 | done
+
+2026-05-07 01:01 UTC — Phase 28 dispatch | tier=max | "Phase 30b: reboot-hardening for Nexus services. Th" | 124.8s | $0.0000 | done
+
 2026-05-06 — Phase 30b: reboot-hardening staged in /tmp/. nexus-telegram + nexus-cc-dispatcher gain `After=`/`Wants=` on nexus-prewarm.service so they don't race the prewarm on boot. Ollama gets a drop-in (`/etc/systemd/system/ollama.service.d/keep-alive.conf`) setting `OLLAMA_KEEP_ALIVE=24h` to keep models hot. Apply via /tmp/sudo-commands.sh; verify per /tmp/phase30b-verify.md.
 
 2026-05-07 00:48 UTC — Phase 28 dispatch | tier=max | "Phase 32.1: implement the scrubber fix that Sonnet" | 250.9s | $0.0000 | done

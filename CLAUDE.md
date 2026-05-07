@@ -83,6 +83,41 @@ Cumulative router stats are auto-rewritten to
 `wiki/entities/coding-router.md` after every dispatch — query with
 `wiki coding router` from Telegram.
 
+## Phase 33 — Credentials Bootstrap Helper
+
+Before any SaaS workflow can run autonomously (Vercel deploys, Supabase seeding,
+Stripe charges, Resend emails), Nexus needs pre-provisioned tokens. Phase 33 ships
+the one-time bootstrap CLI that walks through getting each token and validates it works.
+
+**CLI — run these yourself, Nexus does not collect tokens on your behalf:**
+
+```bash
+# Check which services are configured
+python tools/credentials_helper.py --status
+python tools/credentials_helper.py            # same, no args = status
+
+# Bootstrap a service interactively (shows instructions, prompts for token, validates)
+python tools/credentials_helper.py vercel
+python tools/credentials_helper.py supabase
+python tools/credentials_helper.py stripe
+
+# Get Telegram-formatted instructions (for on-the-go setup)
+python tools/credentials_helper.py --telegram vercel
+```
+
+**Tier 1 services to bootstrap first:** vercel, supabase, stripe, github, cloudflare, resend
+
+**Registry:** `core/credentials_registry.py` — add new services here; helper picks them up automatically.
+
+**Safety:** `config/secrets.yaml` is always `chmod 600`. Backup created before every write.
+Full tokens never logged — only `first4...last4` in output.
+
+**Telegram `/creds` command:**
+- `/creds` → status table
+- `/creds vercel` → posts instructions with security warning (token will be in chat history)
+
+**See also:** `wiki/concepts/credentials-management.md`
+
 ---
 
 # Karpathy Coding Principles
