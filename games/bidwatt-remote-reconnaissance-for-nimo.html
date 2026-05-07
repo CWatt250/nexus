@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BidWatt — NIMO Setup Checklist</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #21253a;
+    --border: #2d3150;
+    --accent: #0ea5e9;
+    --accent2: #6366f1;
+    --green: #22c55e;
+    --yellow: #facc15;
+    --red: #ef4444;
+    --orange: #f97316;
+    --text: #e2e8f0;
+    --muted: #7c8599;
+    --code-bg: #0d1117;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .header {
+    background: linear-gradient(135deg, #0f1117 0%, #1a1d27 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 28px 40px 24px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo-mark {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--text); }
+  .header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .badge {
+    margin-left: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .badge span { color: var(--green); font-weight: 600; }
+
+  .layout {
+    display: flex;
+    max-width: 1300px;
+    margin: 0 auto;
+    gap: 0;
+  }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 89px;
+    height: calc(100vh - 89px);
+    overflow-y: auto;
+    padding: 24px 0;
+    border-right: 1px solid var(--border);
+  }
+  .sidebar nav { padding: 0 16px; }
+  .sidebar nav a {
+    display: block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 12px;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+  }
+  .sidebar nav a:hover { background: var(--surface2); color: var(--text); }
+  .sidebar nav a.active { background: var(--surface2); color: var(--accent); }
+  .sidebar .section-label {
+    padding: 12px 10px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .main { flex: 1; min-width: 0; padding: 32px 40px; }
+
+  section { margin-bottom: 48px; }
+  section:last-child { margin-bottom: 80px; }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h2 .icon { font-size: 20px; }
+  h3 { font-size: 14px; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+  p { color: var(--text); margin-bottom: 12px; }
+
+  .callout {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .callout.warn { border-left-color: var(--yellow); }
+  .callout.danger { border-left-color: var(--red); }
+  .callout.success { border-left-color: var(--green); }
+  .callout strong { color: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  td {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+  .tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tag.green { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .tag.yellow { background: rgba(250,204,21,0.15); color: var(--yellow); border: 1px solid rgba(250,204,21,0.3); }
+  .tag.red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .tag.blue { background: rgba(14,165,233,0.15); color: var(--accent); border: 1px solid rgba(14,165,233,0.3); }
+  .tag.muted { background: rgba(124,133,153,0.15); color: var(--muted); border: 1px solid rgba(124,133,153,0.3); }
+
+  code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+    font-size: 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #79c0ff;
+  }
+
+  .code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .code-block pre {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #c9d1d9;
+    white-space: pre;
+  }
+  .code-block .comment { color: #6e7681; }
+  .code-block .cmd { color: #79c0ff; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .var { color: #ffa657; }
+  .copy-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--muted);
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { background: var(--border); color: var(--text); }
+
+  .step-list { list-style: none; }
+  .step-list li {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+  .step-num {
+    width: 26px; height: 26px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+    color: #fff;
+    margin-top: 1px;
+  }
+  .step-num.done { background: var(--green); }
+  .step-num.warn { background: var(--yellow); color: #000; }
+  .step-num.manual { background: var(--orange); }
+  .step-body { flex: 1; }
+  .step-body strong { color: var(--text); display: block; margin-bottom: 4px; }
+  .step-body .note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .check-list { list-style: none; }
+  .check-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(45,49,80,0.5);
+    font-size: 13px;
+  }
+  .check-list li:last-child { border-bottom: none; }
+  input[type="checkbox"] {
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .check-label { flex: 1; }
+  .check-label.done { text-decoration: line-through; color: var(--muted); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .card h4 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .card .val { font-size: 22px; font-weight: 700; color: var(--text); }
+  .card .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .commit-list { list-style: none; }
+  .commit-list li {
+    display: flex;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(45,49,80,0.4);
+    font-size: 12px;
+    align-items: baseline;
+  }
+  .commit-list li:last-child { border-bottom: none; }
+  .commit-sha { font-family: monospace; color: var(--accent); flex-shrink: 0; width: 50px; }
+  .commit-date { color: var(--muted); flex-shrink: 0; width: 75px; }
+  .commit-msg { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .pr-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .pr-card .pr-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .pr-card .pr-title { font-weight: 600; color: var(--text); font-size: 14px; }
+  .pr-card .pr-meta { font-size: 11px; color: var(--muted); }
+  .pr-card .pr-body { font-size: 12px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+  .banner {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .banner .bolt { font-size: 32px; }
+  .banner .banner-text strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+  .banner .banner-text span { font-size: 13px; color: var(--muted); }
+
+  .migration-risk { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 6px; padding: 3px 8px; font-size: 11px; color: var(--red); display: inline-block; }
+  .migration-ok { color: var(--green); font-size: 11px; }
+  .migration-new { color: var(--yellow); font-size: 11px; font-weight: 600; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { padding: 20px; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .header { padding: 16px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-mark">⚡</div>
+  <div>
+    <div class="header h1" style="font-size:20px;font-weight:700;color:#e2e8f0">BidWatt — NIMO Setup Checklist</div>
+    <div class="sub">Remote recon from Nexus — CWatt250/cwatt-bidboard — branch HEAD: <code>fac18d7</code> (2026-05-01)</div>
+  </div>
+  <div class="badge">Recon: <span>2026-05-07</span></div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <nav>
+      <div class="section-label">Sections</div>
+      <a href="#what">What BidWatt Is</a>
+      <a href="#stack">Stack Confirmed</a>
+      <a href="#migrations">Migrations State</a>
+      <a href="#env">Required Env Vars</a>
+      <a href="#setup">Tonight Setup Commands</a>
+      <a href="#blocking">What's Blocking Deploy</a>
+      <a href="#first-session">First Edit Session</a>
+      <a href="#commits">Recent Commits</a>
+      <a href="#prs">PR Status</a>
+    </nav>
+  </div>
+
+  <div class="main">
+
+    <div class="banner">
+      <div class="bolt">⚡</div>
+      <div class="banner-text">
+        <strong>Ready to clone tonight on NIMO — you need 2 keys from Supabase before you start.</strong>
+        <span>Anon Key + Service Role Key from supabase.com → project settings → API. That's it.</span>
+      </div>
+    </div>
+
+    <!-- WHAT BIDWATT IS -->
+    <section id="what">
+      <h2><span class="icon">🏗️</span> What BidWatt Is</h2>
+      <p>
+        BidWatt is your full-stack bid management web app built for Irex Argus, a mechanical insulation
+        contractor operating across 5 branches (Pasco WA, Seattle WA, Portland OR, Phoenix AZ, Salt Lake City UT).
+        It tracks bids through a Kanban pipeline, a spreadsheet-style Bid Board, a calendar view, and a
+        role-based reporting layer for Estimators, Branch Managers, and Admins. The stack is
+        <strong>Next.js 16 App Router + Supabase (PostgreSQL + RLS)</strong>, styled with shadcn/ui
+        and Tailwind v4. It was developed on Windows at <code>C:\Dev\cwatt-bidboard</code> and has
+        <strong>never been deployed to Vercel</strong> — it runs locally only so far.
+      </p>
+    </section>
+
+    <!-- STACK -->
+    <section id="stack">
+      <h2><span class="icon">🔧</span> Stack Confirmed</h2>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Framework</h4>
+          <div class="val">Next.js 16.2.1</div>
+          <div class="sub">App Router + Turbopack · React 19.2.4</div>
+        </div>
+        <div class="card">
+          <h4>Node Version Required</h4>
+          <div class="val">Node 22 LTS</div>
+          <div class="sub">Node 20 is minimum · 22 is recommended for React 19</div>
+        </div>
+        <div class="card">
+          <h4>Database</h4>
+          <div class="val">Supabase</div>
+          <div class="sub">PostgreSQL + RLS · supabase-js ^2.100 · @supabase/ssr ^0.9</div>
+        </div>
+        <div class="card">
+          <h4>Deployment</h4>
+          <div class="val" style="color:var(--red)">Not deployed</div>
+          <div class="sub">No vercel.json · No Vercel project linked</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Technology</th><th>Version</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Language</td><td>TypeScript</td><td>^5, strict mode, ES2017 target</td></tr>
+          <tr><td>UI Components</td><td>shadcn/ui (base-nova style)</td><td>see components.json</td></tr>
+          <tr><td>Styling</td><td>Tailwind CSS</td><td>v4 + tw-animate-css</td></tr>
+          <tr><td>Icons</td><td>lucide-react</td><td>^1.7.0</td></tr>
+          <tr><td>Charts</td><td>Recharts</td><td>^3.8.1</td></tr>
+          <tr><td>Tables</td><td>TanStack React Table</td><td>^8.21.3</td></tr>
+          <tr><td>Calendar</td><td>react-big-calendar</td><td>^1.19.4</td></tr>
+          <tr><td>Drag & Drop</td><td>@hello-pangea/dnd</td><td>^18.0.1 (Kanban)</td></tr>
+          <tr><td>Forms</td><td>react-hook-form + zod</td><td>^7.72.0 + ^4.3.6</td></tr>
+          <tr><td>Date utils</td><td>date-fns</td><td>^4.1.0</td></tr>
+          <tr><td>Build</td><td>Next.js (Turbopack)</td><td>next.config.ts is empty — no custom config</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- MIGRATIONS -->
+    <section id="migrations">
+      <h2><span class="icon">🗄️</span> Migrations State</h2>
+
+      <div class="callout warn">
+        <strong>⚠️ CLAUDE.md only documents 9 migrations — there are 17.</strong>
+        Migrations 010–017 were added during April 2026 development and are undocumented.
+        If the Supabase project hasn't had all 17 run, features like Project Location, MIKE #, documents, and permissions will be broken.
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>#</th><th>File</th><th>Status</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>001</td><td><code>001_initial_schema.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Core schema</td></tr>
+          <tr><td>002</td><td><code>002_update_scope_enum.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Scope enum update</td></tr>
+          <tr><td>003</td><td><code>003_bid_line_items.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Awarded/Lost states</td></tr>
+          <tr><td>004</td><td><code>004_branch_names.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Branch names</td></tr>
+          <tr><td>005</td><td><code>005_roles_and_branches.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Roles + branch assignment</td></tr>
+          <tr><td>006</td><td><code>006_rls_role_policies.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Row-level security</td></tr>
+          <tr><td>007</td><td><code>007_activity_log.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Activity log table</td></tr>
+          <tr><td>008</td><td><code>008_bid_notes.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Bid notes</td></tr>
+          <tr><td>009</td><td><code>009_bid_clients.sql</code></td><td><span class="migration-ok">✓ Documented</span></td><td>Multi-client junction table</td></tr>
+          <tr><td>010</td><td><code>010_permissions.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Permissions table (new in April)</td></tr>
+          <tr><td>011</td><td><code>011_clients.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Full clients table</td></tr>
+          <tr><td>012</td><td><code>012_bid_documents.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Document upload support</td></tr>
+          <tr><td>013</td><td><code>013_document_categories.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Document categories</td></tr>
+          <tr><td>014</td><td><code>014_seed_clients.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Seeds client data</td></tr>
+          <tr><td>015</td><td><code>015_jurisdiction_map.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Jurisdiction map tables</td></tr>
+          <tr><td>016</td><td><code>016_drop_jurisdiction_tables.sql</code></td><td><span class="tag red">DROPS 015</span></td><td>⚠️ Rolls back jurisdiction feature — PR #61 may have stale refs</td></tr>
+          <tr><td>017</td><td><code>017_add_location_mike.sql</code></td><td><span class="migration-new">⚡ NEW — undocumented</span></td><td>Project Location + MIKE # fields (added Apr 29)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout danger">
+        <strong>Action required:</strong> Confirm all 17 migrations have been run in your Supabase project.
+        Go to Supabase SQL editor and run them in numeric order if any are missing. The Supabase URL is
+        <code>cbntiiixrlxkdxafxivl.supabase.co</code>.
+      </div>
+    </section>
+
+    <!-- ENV VARS -->
+    <section id="env">
+      <h2><span class="icon">🔑</span> Required Env Vars</h2>
+
+      <div class="callout warn">
+        <strong>No .env.example in the repo.</strong> The env vars are documented in CLAUDE.md only.
+        You need to create <code>.env.local</code> manually.
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Value / Where to Get It</th><th>Exposure</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>NEXT_PUBLIC_SUPABASE_URL</code></td>
+            <td>
+              <strong>Already known:</strong> <code>https://cbntiiixrlxkdxafxivl.supabase.co</code>
+              <br><span style="font-size:11px;color:var(--muted)">Supabase dashboard → project settings → API → Project URL</span>
+            </td>
+            <td><span class="tag blue">Public</span></td>
+          </tr>
+          <tr>
+            <td><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code></td>
+            <td>
+              Supabase dashboard → project settings → API → <strong>anon public</strong> key
+              <br><span style="font-size:11px;color:var(--muted)">Safe to use client-side</span>
+            </td>
+            <td><span class="tag blue">Public</span></td>
+          </tr>
+          <tr>
+            <td><code>SUPABASE_SERVICE_ROLE_KEY</code></td>
+            <td>
+              Supabase dashboard → project settings → API → <strong>service_role secret</strong> key
+              <br><span style="font-size:11px;color:var(--red)">⚠️ Never expose to the browser — server-side only</span>
+            </td>
+            <td><span class="tag red">Secret</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="color:var(--muted);font-size:13px;">That's the complete set — only 3 variables needed for local dev. No other env vars are referenced anywhere in the codebase.</p>
+    </section>
+
+    <!-- SETUP COMMANDS -->
+    <section id="setup">
+      <h2><span class="icon">🚀</span> Tonight Setup Commands</h2>
+
+      <div class="callout success">
+        <strong>Before you run anything:</strong> open supabase.com, log in as wattattack@yahoo.com,
+        check if project <code>cbntiiixrlxkdxafxivl</code> is paused (free tier pauses after 7 days idle).
+        If paused, click Resume. Wait for it to wake up before running <code>npm run dev</code>.
+      </div>
+
+      <ol class="step-list">
+        <li>
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Install / verify nvm + Node 22</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="comment"># If nvm not already installed on NIMO:</span>
+<span class="cmd">curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash</span>
+<span class="cmd">source ~/.bashrc</span>
+
+<span class="cmd">nvm install 22</span>
+<span class="cmd">nvm use 22</span>
+<span class="cmd">node -v</span>    <span class="comment"># should print v22.x.x</span>
+<span class="cmd">npm -v</span></pre>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>Clone the repo</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="cmd">mkdir -p ~/Dev && cd ~/Dev</span>
+<span class="cmd">git clone https://github.com/CWatt250/cwatt-bidboard.git</span>
+<span class="cmd">cd cwatt-bidboard</span></pre>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <strong>Install dependencies</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="cmd">npm install</span>
+<span class="comment"># Takes 2-3 min on first run (heavy: React 19, shadcn, recharts, react-big-calendar)</span></pre>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num manual">4</div>
+          <div class="step-body">
+            <strong>Create .env.local (no .env.example exists — manual)</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="cmd">cat > .env.local &lt;&lt; 'EOF'</span>
+<span class="var">NEXT_PUBLIC_SUPABASE_URL</span>=https://cbntiiixrlxkdxafxivl.supabase.co
+<span class="var">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>=PASTE_ANON_KEY_HERE
+<span class="var">SUPABASE_SERVICE_ROLE_KEY</span>=PASTE_SERVICE_ROLE_KEY_HERE
+<span class="cmd">EOF</span></pre>
+            </div>
+            <div class="note">⚠️ Replace PASTE_ANON_KEY_HERE and PASTE_SERVICE_ROLE_KEY_HERE with the actual keys from supabase.com → project settings → API.</div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num manual">5</div>
+          <div class="step-body">
+            <strong>Verify Supabase migrations (if not done recently)</strong>
+            <div class="note">
+              Go to Supabase SQL editor → run any missing migrations from <code>supabase/migrations/</code> in numeric order (001→017).
+              If you've been actively developing, all 17 are probably already applied.
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">6</div>
+          <div class="step-body">
+            <strong>Start dev server and verify</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="cmd">npm run dev</span>
+<span class="comment"># Opens on http://localhost:3000
+# Login: wattattack@yahoo.com
+# Should see the BidWatt dashboard</span></pre>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">7</div>
+          <div class="step-body">
+            <strong>Optional: TypeScript check</strong>
+            <div class="code-block">
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              <pre><span class="cmd">npx tsc --noEmit</span>
+<span class="comment"># Fix any errors before starting new work</span></pre>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- BLOCKING -->
+    <section id="blocking">
+      <h2><span class="icon">🚧</span> What's Blocking Deploy</h2>
+
+      <div class="callout danger">
+        <strong>PR #61 is still open</strong> — "feat: add jurisdiction map sidebar and calculator components"
+        (branch <code>worktree-agent-af963903</code>, open since 2026-04-17). The DB tables it creates
+        were immediately dropped in migration 016. This PR likely has stale code referencing tables that no
+        longer exist. Don't merge it without reviewing.
+      </div>
+
+      <ol class="step-list">
+        <li>
+          <div class="step-num warn">!</div>
+          <div class="step-body">
+            <strong>Never deployed to Vercel</strong>
+            <div class="note">No vercel.json, no Vercel project linked. First deploy needs <code>npx vercel link</code> + <code>vercel env add</code> for all 3 vars + <code>npx vercel --prod</code>.</div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num warn">!</div>
+          <div class="step-body">
+            <strong>PR #61 open with stale migration refs</strong>
+            <div class="note">Jurisdiction map feature was started, then migrations were rolled back (015 → 016). PR #61 code may reference non-existent tables. Audit or close before merging.</div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num warn">!</div>
+          <div class="step-body">
+            <strong>No .env.example</strong>
+            <div class="note">Future contributors (or future you) have no file to copy. Easy 5-minute fix.</div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num warn">!</div>
+          <div class="step-body">
+            <strong>Supabase free tier may be paused</strong>
+            <div class="note">If the Windows machine has been offline for 7+ days and no one hit the project, it's paused. Resume at supabase.com before running <code>npm run dev</code>.</div>
+          </div>
+        </li>
+        <li>
+          <div class="step-num warn">!</div>
+          <div class="step-body">
+            <strong>CLAUDE.md migration list is stale (001–009 documented, 017 exist)</strong>
+            <div class="note">The context file doesn't know about migrations 010–017. Update it so Claude Code has accurate schema context for future sessions.</div>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- FIRST SESSION -->
+    <section id="first-session">
+      <h2><span class="icon">✏️</span> Recommended First Edit Session</h2>
+
+      <ul class="check-list">
+        <li>
+          <input type="checkbox" id="c1">
+          <label for="c1" class="check-label">
+            <strong>Add <code>.env.example</code></strong> — 3 var names with placeholder values.
+            Prevents this same manual-creation pain next time. 10 minutes.
+          </label>
+        </li>
+        <li>
+          <input type="checkbox" id="c2">
+          <label for="c2" class="check-label">
+            <strong>Audit or close PR #61</strong> — Check if
+            <code>components/jurisdiction/Sidebar.tsx</code> and <code>Calculator.tsx</code>
+            reference tables that migration 016 dropped. If the jurisdiction map feature isn't
+            happening, close the PR. If it is, rebuild it against the current schema.
+          </label>
+        </li>
+        <li>
+          <input type="checkbox" id="c3">
+          <label for="c3" class="check-label">
+            <strong>Update CLAUDE.md migration list</strong> — Extend to document migrations 010–017
+            so the context file matches reality. This makes all future Claude Code sessions more accurate.
+          </label>
+        </li>
+        <li>
+          <input type="checkbox" id="c4">
+          <label for="c4" class="check-label">
+            <strong>First Vercel deploy</strong> — Run <code>npx vercel link</code> in the project dir,
+            then <code>vercel env add</code> for all 3 vars, then <code>npx vercel --prod</code>.
+            Low-risk since no prod traffic yet. Gets you a live URL.
+          </label>
+        </li>
+        <li>
+          <input type="checkbox" id="c5">
+          <label for="c5" class="check-label">
+            <strong>Admin Panel tabs</strong> — CLAUDE.md notes Branches/Permissions/System tabs are
+            pending under the Admin Panel. If that's the next feature, pick it up here.
+          </label>
+        </li>
+      </ul>
+    </section>
+
+    <!-- COMMITS -->
+    <section id="commits">
+      <h2><span class="icon">📜</span> Recent Commits (last 10 on main)</h2>
+      <ul class="commit-list">
+        <li><span class="commit-sha">fac18d7</span><span class="commit-date">2026-05-01</span><span class="commit-msg">fix: ghost row now writes Project Location and MIKE # + diagnostic logging (#80)</span></li>
+        <li><span class="commit-sha">4b050fa</span><span class="commit-date">2026-05-01</span><span class="commit-msg">fix: bid board columns visible by default, scrollbar always shows, ghost row scope (#79)</span></li>
+        <li><span class="commit-sha">5dcf385</span><span class="commit-date">2026-05-01</span><span class="commit-msg">feat: bid board scroll, kanban card layout cleanup, MIKE # display fix (#78)</span></li>
+        <li><span class="commit-sha">f4a846c</span><span class="commit-date">2026-05-01</span><span class="commit-msg">fix: realtime bid refetch was stripping location and MIKE # fields (#77)</span></li>
+        <li><span class="commit-sha">6477522</span><span class="commit-date">2026-04-29</span><span class="commit-msg">feat: add project location and MIKE estimate number fields (#76)</span></li>
+        <li><span class="commit-sha">88d2bc1</span><span class="commit-date">2026-04-29</span><span class="commit-msg">fix: due this week KPI counts all current week bids (#75)</span></li>
+        <li><span class="commit-sha">680eb9b</span><span class="commit-date">2026-04-29</span><span class="commit-msg">fix: show actual due date on bid cards (#74)</span></li>
+        <li><span class="commit-sha">4251cf6</span><span class="commit-date">2026-04-29</span><span class="commit-msg">feat: projects library folder view as flat list, filters do the narrowing (#73)</span></li>
+        <li><span class="commit-sha">a4bfa78</span><span class="commit-date">2026-04-29</span><span class="commit-msg">feat: projects library page — folder/list view, filters, historical database (#72)</span></li>
+        <li><span class="commit-sha">c7315cc</span><span class="commit-date">2026-04-29</span><span class="commit-msg">feat: scope pricing table layout on bid detail page (#71)</span></li>
+      </ul>
+    </section>
+
+    <!-- PRS -->
+    <section id="prs">
+      <h2><span class="icon">🔀</span> PR Status</h2>
+
+      <div class="pr-card">
+        <div class="pr-header">
+          <span class="tag yellow">OPEN</span>
+          <span class="pr-title">PR #61 — feat: add jurisdiction map sidebar and calculator components</span>
+        </div>
+        <div class="pr-meta">
+          Branch: <code>worktree-agent-af963903</code> → <code>main</code> · Created: 2026-04-17 · Last updated: 2026-04-17
+        </div>
+        <div class="pr-body">
+          ⚠️ <strong>Stale risk:</strong> This PR adds jurisdiction map sidebar + calculator.
+          However, migration 015 created jurisdiction tables and migration 016 immediately dropped them.
+          Code in this PR likely references tables that no longer exist in the schema.
+          Audit before merging — or close it if the feature was intentionally rolled back.
+        </div>
+      </div>
+
+      <div class="pr-card">
+        <div class="pr-header">
+          <span class="tag muted">CLOSED</span>
+          <span class="pr-title">PR #67 — fix: scope editor verification, logo fix</span>
+        </div>
+        <div class="pr-meta">
+          Branch: <code>fix/scope-editor-logo</code> → <code>main</code> · Created: 2026-04-18 · Closed/Merged
+        </div>
+        <div class="pr-body">
+          Verified ScopeEditor imports across 4 locations. Added BidWatt logo SVG (public/bidwatt-logo.svg).
+          Updated sidebar, login page, manifest.json to reference the SVG. Merged — no action needed.
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER CALLOUT -->
+    <div class="callout success" style="font-size:14px;font-weight:500;padding:18px 20px;">
+      <strong>TL;DR — What Colton needs to gather tonight from cloud dashboards before running setup commands:</strong><br>
+      <span style="font-weight:400;">Open Supabase (supabase.com) → project <code>cbntiiixrlxkdxafxivl</code> → Settings → API →
+      copy the <strong>Anon Key</strong> and <strong>Service Role Key</strong>. Also confirm the project isn't paused.
+      Those are the only two secrets not already known. Everything else is in the repo or documented here.</span>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+function copyCode(btn) {
+  const pre = btn.parentElement.querySelector('pre');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.style.color = '#22c55e';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+// Highlight active nav on scroll
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.sidebar nav a');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(a => a.classList.remove('active'));
+      const link = document.querySelector(`.sidebar nav a[href="#${entry.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { threshold: 0.3, rootMargin: '-80px 0px 0px 0px' });
+sections.forEach(s => observer.observe(s));
+
+// Checkbox persistence via localStorage
+document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+  const key = 'bidwatt_' + cb.id;
+  if (localStorage.getItem(key) === 'true') {
+    cb.checked = true;
+    const label = cb.nextElementSibling;
+    if (label) label.classList.add('done');
+  }
+  cb.addEventListener('change', () => {
+    localStorage.setItem(key, cb.checked);
+    const label = cb.nextElementSibling;
+    if (label) label.classList.toggle('done', cb.checked);
+  });
+});
+</script>
+</body>
+</html>
