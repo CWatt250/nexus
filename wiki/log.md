@@ -6,6 +6,18 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-06 — Phase 30b: reboot-hardening staged in /tmp/. nexus-telegram + nexus-cc-dispatcher gain `After=`/`Wants=` on nexus-prewarm.service so they don't race the prewarm on boot. Ollama gets a drop-in (`/etc/systemd/system/ollama.service.d/keep-alive.conf`) setting `OLLAMA_KEEP_ALIVE=24h` to keep models hot. Apply via /tmp/sudo-commands.sh; verify per /tmp/phase30b-verify.md.
+
+2026-05-07 00:48 UTC — Phase 28 dispatch | tier=max | "Phase 32.1: implement the scrubber fix that Sonnet" | 250.9s | $0.0000 | done
+
+2026-05-06 17:50 UTC — Phase 28 dispatch | tier=max | "List every file in ~/AI_Agent/cc_archive/ and ~/AI" | 18.6s | $0.0000 | done
+
+2026-05-06 17:49 UTC — Phase 28 dispatch | tier=max | "read ~/AI_Agent/cc_archive/cc_2e01e270.md and post" | 20.6s | $0.0000 | done
+
+2026-05-06 17:46 UTC — Phase 28 dispatch | tier=max | "Audit the chain-of-thought scrubber in workers/con" | 172.9s | $0.0000 | done
+
+
+2026-05-06 — entities/colton.md: Location updated to Kennewick, WA (works in Pasco)
 2026-05-06 03:29 UTC — Phase 28 dispatch | tier=flash | "echo "evening live test" and exit" | 11.1s | $0.0003 | done
 
 2026-05-05 11:36 UTC — Phase 28 dispatch | tier=flash | "echo "phase 31 live verification" and exit" | 17.1s | $0.0004 | done
