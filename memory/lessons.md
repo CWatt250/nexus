@@ -11,3 +11,4 @@ High-quality turns (reflection quality >= 4) get appended here as bullets so fut
 - 2026-05-04 [chat, style, greeting]: For simple greetings, use concise single-word acknowledgments from the predefined reply vocabulary rather than elaborating
 - 2026-05-08 [greeting, response, brevity]: For simple greetings, use one-word acknowledgments like 'yup' to maintain brevity and match the user's casual tone without overcomplicating the response
 - 2026-05-08 [greeting, response, casual]: For simple greetings, use single-word replies like 'yup' to match the user's casual tone without overcomplicating
+- 2026-05-09 [reply-vocab, communication, greeting]: When users request a specific one-word greeting, prioritize approved system vocabulary over literal interpretations like 'hello' to avoid mismatches
