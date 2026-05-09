@@ -10,3 +10,4 @@ High-quality turns (reflection quality >= 4) get appended here as bullets so fut
 - 2026-04-19 [geography, factual, concise]: For straightforward factual questions, directly state the answer without elaboration to match user expectations for conciseness
 - 2026-05-04 [chat, style, greeting]: For simple greetings, use concise single-word acknowledgments from the predefined reply vocabulary rather than elaborating
 - 2026-05-08 [greeting, response, brevity]: For simple greetings, use one-word acknowledgments like 'yup' to maintain brevity and match the user's casual tone without overcomplicating the response
+- 2026-05-08 [greeting, response, casual]: For simple greetings, use single-word replies like 'yup' to match the user's casual tone without overcomplicating
