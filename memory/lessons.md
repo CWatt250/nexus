@@ -14,3 +14,4 @@ High-quality turns (reflection quality >= 4) get appended here as bullets so fut
 - 2026-05-09 [reply-vocab, communication, greeting]: When users request a specific one-word greeting, prioritize approved system vocabulary over literal interpretations like 'hello' to avoid mismatches
 - 2026-05-09 [conversational, response, greeting]: When users send repetitive greetings, respond with the same concise reply to maintain consistency without adding context
 - 2026-05-09 [greeting, response, style]: When users send repeated greetings like 'hi', respond with the shortest consistent reply from the predefined vocabulary (e.g., 'yup') without adding context
+- 2026-05-10 [greeting, response, repetition]: When users send repetitive greetings like 'hi' multiple times, respond with a single consistent word (e.g., 'yup') without adding context or tool calls
