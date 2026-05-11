@@ -851,6 +851,15 @@ def main() -> None:
         print("Add TELEGRAM_BOT_TOKEN=your_token to ~/AI_Agent/.env")
         sys.exit(1)
 
+    # Phase 38: eager-init the conversation buffer so memory/telegram_chats.db
+    # exists immediately on startup (idempotent). Without this the file is
+    # lazy-created on first message, which makes ops verification harder.
+    try:
+        from core import telegram_chats as _tcs
+        _tcs.init()
+    except Exception as e:
+        logger.warning("telegram_chats init failed: %s", e)
+
     # Create the Application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 

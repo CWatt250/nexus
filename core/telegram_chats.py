@@ -93,6 +93,16 @@ def _ensure_initialised(path: Path) -> None:
         _INITIALISED_PATHS.add(key)
 
 
+def init(db_path: Optional[Path | str] = None) -> Path:
+    """Eager-init the store. Idempotent — safe to call at every startup.
+    Returns the resolved DB path. Callers that want the file to exist on
+    boot (rather than lazy-create on first write) call this; everything
+    else can rely on the implicit init inside _connect."""
+    path = _resolve_db_path(db_path)
+    _ensure_initialised(path)
+    return path
+
+
 def write_turn(chat_id: int, role: str, content: str,
                *, db_path: Optional[Path | str] = None,
                ts: Optional[int] = None) -> None:
