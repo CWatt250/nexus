@@ -2,9 +2,12 @@
 name: Colton Watt
 description: Owner of WattBott / Nexus. Project Estimator at Irex Argus. Builds BidWatt and SubWatt on the side.
 type: entity
-last_updated: 2026-05-01
+last_updated: 2026-05-06
 sources: []
-tags: [user, owner, irex-argus]
+tags:
+  - user
+  - owner
+  - irex-argus
 ---
 
 # Colton Watt

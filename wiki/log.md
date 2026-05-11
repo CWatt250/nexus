@@ -6,6 +6,10 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-05-07 18:08 UTC — Phase 28 dispatch | tier=max | "BidWatt remote reconnaissance for NIMO migration. " | 306.9s | $0.0000 | done
+
+2026-05-07 16:57 UTC — Phase 28 dispatch | tier=max | "take a screenshot of the desktop and send it to me" | 32.8s | $0.0000 | done
+
 2026-05-07 — phase 35: nexus-xvfb.service unit created; chronicle + parallel_tools gain :99 fallback; 8 tests green; sudo-commands.sh written — display :99 active after `sudo /tmp/sudo-commands.sh`
 2026-05-07 15:30 UTC — Phase 28 dispatch | tier=max | "audit all 27 services in the credentials registry " | 125.0s | $0.0000 | done
 
@@ -82,3 +86,14 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 2026-05-02 — Phase 21 Part 1 shipped: tools/script_writer.py + visual_generator.py + content_create.py + Telegram commands. Script backend Anthropic Sonnet 4.5 → local qwen3.6 fallback; visuals image_gen_tool/ERNIE → PIL solid-gradient fallback; TTS Kokoro; assembly ffmpeg libx264+AAC 1080x1920@30fps. Smoke test produced content/final/bidwatt-bid-management-for-mechanical-contractors.mp4 (30.5s, 9/9 scenes, 24.9s wall, $0, free local backends). ADR: decisions/2026-05-02_phase-21-content-stack.md. Concept: concepts/content-pipeline.md.
 
 2026-05-02 — Phase 21 Part 2 polish shipped: scripts/generate_music.py procedurally generates 5x60s tone-keyed mp3s (sine+saw additive, royalty-free by construction); tools/music_picker.py routes tones → buckets. content_create.py now does ffmpeg xfade+acrossfade transitions, zoompan Ken Burns alternating direction, drawtext per-sentence captions at h*0.78 with 4px outline, amix music ducking at 0.15 with 1.0s/1.5s fades, multi-aspect output via scale+pad. visual_generator.py gained tone-keyed palettes, keyword extraction (drops stopwords + ranks by length/position/caps), film-grain noise overlay. Smoke test BidWatt v2: 9/9 scenes, 68s actual (script overran 30s target — script_writer followup), $0 cost, 84s wall, 13MB each for 9x16 and 16x9. ADRs: decisions/2026-05-02_phase-21-part2-polish.md + decisions/2026-05-02_image-gen-status.md.
+
+2026-05-07 — BUG: tools/cu_agent_safety.py (or wherever the denial logic lives) evaluated stale conversation reasoning instead of current file content for VNC service install. Phase 31 v2 / safety-context-grounding candidate. Denial was correct architecturally but referenced wrong file state — flagged my earlier Tailscale-IP binding plan even after I had rewritten /tmp/nexus-vnc.service to bind 127.0.0.1 via -localhost. User had to override explicitly. Followup: ground denial reasoning in current artifact contents (file diff at decision time), not session transcript. Phase 36 nexus-vnc.service ultimately installed clean (active, ss shows 127.0.0.1:5900 + [::1]:5900 only).
+
+2026-05-07 — BUG (Phase 36 install): Computer Use safety policy denied a 
+sudo install command based on stale conversation reasoning, not current 
+file content. The on-disk service file was localhost-only (-localhost flag), 
+but denial cited an earlier turn's contemplated Tailscale-IP binding. Phase 
+31 v2 / safety-context-grounding candidate. Workaround: explicit 
+human override after verifying file content. Real fix: safety check should 
+re-read file from disk at decision time, not use cached session context.
+
