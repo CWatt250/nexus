@@ -122,3 +122,10 @@ games/
 
 # Node lockfile (unclear provenance, regenerable)
 package-lock.json
+
+# Memory runtime artifacts — broad globs for jsonl/db/WAL state
+memory/*.db
+memory/*.db-shm
+memory/*.db-wal
+memory/*.jsonl
+memory/quick_chat_circuit.json
