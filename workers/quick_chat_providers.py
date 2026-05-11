@@ -278,7 +278,8 @@ def deepseek_chat(message: str, system_prompt: str, *,
                   model: str | None = None,
                   max_tokens: int = 512,
                   temperature: float = 0.7,
-                  timeout: float = 15.0) -> tuple[str, dict]:
+                  timeout: float = 15.0,
+                  history: list[dict] | None = None) -> tuple[str, dict]:
     """Call DeepSeek's /v1/chat/completions and return (reply, usage).
 
     Raises ProviderError on any failure mode the caller should fall back
@@ -289,6 +290,10 @@ def deepseek_chat(message: str, system_prompt: str, *,
     `usage` is the parsed `usage` dict from DeepSeek's response, useful
     for cost telemetry. Cost logging happens here so every successful
     DeepSeek call is recorded — caller doesn't need to remember.
+
+    `history` (Phase 38) is an optional list of prior {role, content}
+    turns inserted between the system prompt and the current user
+    message. When None or empty, behavior is identical to pre-Phase-38.
     """
     if is_circuit_open():
         raise ProviderError("circuit breaker open")
@@ -301,12 +306,13 @@ def deepseek_chat(message: str, system_prompt: str, *,
 
     api_key = _get_api_key()
     chosen_model = model or get_deepseek_model()
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": message})
     payload = {
         "model": chosen_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ],
+        "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": False,

@@ -70,6 +70,29 @@ quick_chat:
   daily_cost_max_usd: 5.00
   ollama_fallback_model: qwen3:4b
 
+# Phase 38 — quick_chat conversation buffer.
+#
+#   max_turns:             cap on prior turns fetched per call. 20 covers
+#                          a typical back-and-forth without ballooning the
+#                          input token count.
+#   max_age_hours:         turns older than this are ignored. 2h keeps the
+#                          context fresh — older convo is usually stale or
+#                          a different topic.
+#   max_context_pct:       drop oldest turns until system + history +
+#                          current message fits under this % of
+#                          context_window_tokens. Token count is the rough
+#                          len(text)//4 heuristic — fine for budget guard.
+#   context_window_tokens: deepseek-chat's input context window. Used only
+#                          for the budget trim; raise if DeepSeek bumps it.
+#   db_path:               SQLite store, resolved relative to ~/AI_Agent if
+#                          not absolute.
+quick_chat_memory:
+  max_turns: 20
+  max_age_hours: 2
+  max_context_pct: 80
+  context_window_tokens: 64000
+  db_path: memory/telegram_chats.db
+
 # Phase 36 — Computer Use agent (Anthropic native API).
 #
 #   per_task_usd:    hard ceiling per /computer invocation. Loop aborts

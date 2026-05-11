@@ -423,20 +423,30 @@ QUICK_CHAT_NUM_PREDICT = 120
 QUICK_CHAT_TEMPERATURE = 0.3
 
 
-def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
+def _ollama_quick_chat(model: str, message: str, system_prompt: str,
+                       history: list[dict] | None = None) -> str:
     """One-shot quick_chat call against any model. Forces JSON-mode
     output ({"reply": "..."}) and tight num_predict to suppress
     qwen3:4b's CoT. Falls back to plain-text mode if the JSON parse
     fails so any model that doesn't honour the format flag still gets
     a chance to answer.
+
+    Phase 38: optional `history` (list of {role, content}) is inserted
+    between system and the current user message. num_ctx=4096 means
+    long histories may be silently truncated by Ollama; that's fine —
+    Ollama is the fallback path, DeepSeek's 64K window owns the primary.
     """
+    history = history or []
+    json_messages = [{"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT}]
+    json_messages.extend(history)
+    json_messages.append({"role": "user", "content": message})
+    plain_messages = [{"role": "system", "content": system_prompt}]
+    plain_messages.extend(history)
+    plain_messages.append({"role": "user", "content": message})
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT},
-                {"role": "user", "content": message},
-            ],
+            messages=json_messages,
             options={
                 "temperature": QUICK_CHAT_TEMPERATURE,
                 "num_ctx": 4096,
@@ -461,10 +471,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str) -> str:
     # Same tight num_predict so a stuck model still can't ramble forever.
     resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
         model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ],
+        messages=plain_messages,
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
             "num_ctx": 4096,
@@ -764,7 +771,96 @@ def _clean_quick_chat(text: str) -> str:
     return text.strip()
 
 
-def quick_chat(message: str) -> str:
+# ── Phase 38 — quick_chat conversation buffer ────────────────────────
+# Telegram convos are stored per chat_id in core/telegram_chats.py. On
+# every quick_chat call with a chat_id, we fetch the last N turns within
+# the freshness window and prepend them as alternating user/assistant
+# messages between the system prompt and the current user message. The
+# trim step drops oldest turns until system+history+message fits inside
+# max_context_pct of the model's context window. chat_id=None preserves
+# stateless behavior for non-Telegram callers (wiki grounding, dashboard).
+
+_MEMORY_DEFAULTS = {
+    "max_turns": 20,
+    "max_age_hours": 2.0,
+    "max_context_pct": 80,
+    "context_window_tokens": 64000,
+    "db_path": "memory/telegram_chats.db",
+}
+
+
+def _load_quick_chat_memory_config() -> dict:
+    """Read quick_chat_memory from cost_limits.yaml. Returns defaults
+    on any load failure — buffer stays functional even with a broken
+    yaml."""
+    try:
+        import yaml  # noqa: PLC0415
+        path = ROOT / "config" / "cost_limits.yaml"
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        cfg = (data.get("quick_chat_memory") or {}) if isinstance(data, dict) else {}
+        return {**_MEMORY_DEFAULTS, **cfg}
+    except Exception as exc:
+        log.debug("quick_chat_memory config load failed: %s", exc)
+        return dict(_MEMORY_DEFAULTS)
+
+
+def _approx_tokens(text: str) -> int:
+    """Rough English token estimate (len // 4). Off by ~20% either way —
+    fine for budget gating where the 80% cap already leaves headroom."""
+    return max(1, len(text) // 4)
+
+
+def _trim_history_to_budget(system_prompt: str, history: list[dict],
+                            message: str, *, context_window_tokens: int,
+                            max_context_pct: int) -> list[dict]:
+    """Drop oldest history turns until system + history + message fits
+    under max_context_pct of context_window_tokens. Always keeps the
+    current user message and system prompt — returns empty history if
+    even those alone exceed the budget."""
+    budget = int(context_window_tokens * (max_context_pct / 100.0))
+    fixed = _approx_tokens(system_prompt) + _approx_tokens(message)
+    if fixed >= budget:
+        log.warning("quick_chat: system+message %d tokens exceeds budget %d — "
+                    "sending empty history", fixed, budget)
+        return []
+    remaining = budget - fixed
+    trimmed = list(history)
+    while trimmed:
+        used = sum(_approx_tokens(t.get("content", "")) for t in trimmed)
+        if used <= remaining:
+            break
+        trimmed.pop(0)  # drop oldest first
+    return trimmed
+
+
+def _build_quick_chat_history(chat_id: int, system_prompt: str,
+                              message: str) -> list[dict]:
+    """Fetch history from the SQLite store, trim to budget, return ready
+    to insert into the messages array. Returns [] on any failure so
+    quick_chat falls back to stateless behavior cleanly."""
+    try:
+        from core import telegram_chats as _tcs  # noqa: PLC0415
+        cfg = _load_quick_chat_memory_config()
+        raw = _tcs.fetch_recent_turns(
+            chat_id,
+            max_turns=int(cfg["max_turns"]),
+            max_age_hours=float(cfg["max_age_hours"]),
+            db_path=cfg.get("db_path"),
+        )
+        if not raw:
+            return []
+        return _trim_history_to_budget(
+            system_prompt, raw, message,
+            context_window_tokens=int(cfg["context_window_tokens"]),
+            max_context_pct=int(cfg["max_context_pct"]),
+        )
+    except Exception as exc:
+        log.warning("history fetch failed for chat_id=%s: %s", chat_id, exc)
+        return []
+
+
+def quick_chat(message: str, chat_id: int | None = None) -> str:
     """Inline conversational reply for CHAT and QUERY_INLINE intents.
 
     Phase 32 provider ladder:
@@ -779,6 +875,12 @@ def quick_chat(message: str) -> str:
          ONCE on qwen3.6. Five total leak-or-denial events in 24h fires
          a Telegram alert so a regression is visible.
 
+    Phase 38: when `chat_id` is provided, the last N turns within the
+    freshness window are fetched from memory/telegram_chats.db and
+    prepended to the messages array sent to the model. chat_id=None
+    keeps the call stateless — preserves behavior for wiki-grounding,
+    uncertainty-overlay, and dashboard callers that synthesize prompts.
+
     Real datetime is injected into the system prompt every call so the
     model can answer "what time is it" correctly instead of
     hallucinating from training data.
@@ -792,6 +894,10 @@ def quick_chat(message: str) -> str:
     system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
     t0 = _time.monotonic()
 
+    history: list[dict] = []
+    if chat_id is not None:
+        history = _build_quick_chat_history(chat_id, system_prompt, message)
+
     # ── Tier 1: DeepSeek ─────────────────────────────────────────
     # Honor the runtime config override too — flipping cost_limits.yaml
     # `quick_chat.provider: ollama` forces local without a code change.
@@ -801,8 +907,11 @@ def quick_chat(message: str) -> str:
     )
     if use_deepseek:
         try:
-            reply, _usage = _qcp.deepseek_chat(message, system_prompt,
-                                               max_tokens=512, timeout=15.0)
+            reply, _usage = _qcp.deepseek_chat(
+                message, system_prompt,
+                max_tokens=512, timeout=15.0,
+                history=history or None,
+            )
             elapsed = _time.monotonic() - t0
             _record_cleanliness(_qcp.get_deepseek_model(), elapsed,
                                 clean=True, fallback_used=False)
@@ -813,7 +922,8 @@ def quick_chat(message: str) -> str:
 
     # ── Tier 2: Ollama qwen3:4b ──────────────────────────────────
     try:
-        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, message, system_prompt)
+        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, message,
+                                     system_prompt, history=history or None)
     except Exception as exc:
         elapsed = _time.monotonic() - t0
         _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
@@ -841,6 +951,7 @@ def quick_chat(message: str) -> str:
     try:
         fallback = _ollama_quick_chat(
             QUICK_CHAT_DENIAL_FALLBACK_MODEL, message, system_prompt,
+            history=history or None,
         )
     except Exception as exc:
         elapsed = _time.monotonic() - t0
@@ -2081,7 +2192,7 @@ def _record_intent_latency(intent: str, elapsed_s: float, *, fast_format: str | 
         log.warning("intent latency log append failed: %s", exc)
 
 
-def _route_message_inner(message: str) -> dict:
+def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
     """Top-level Telegram/API router (Phase-15 conversation UX rewrite).
 
     Returns {kind, reply, meta}:
@@ -2322,7 +2433,9 @@ def _route_message_inner(message: str) -> dict:
         return {"kind": "status", "reply": _route_status(msg), "meta": meta}
 
     # CHAT or QUERY: inline reply on qwen3.6
-    reply = quick_chat(msg)
+    # Phase 38: pass chat_id so quick_chat can prepend rolling history.
+    # None (non-Telegram callers like the dashboard /chat) → stateless.
+    reply = quick_chat(msg, chat_id=chat_id)
 
     # Capability self-check: qwen3.6 sometimes denies tool access despite
     # the capability rules in the system prompt. If the reply reads like a
@@ -2357,11 +2470,16 @@ def _route_message_inner(message: str) -> dict:
     return {"kind": intent.kind.lower(), "reply": reply, "meta": meta}
 
 
-def route_message(message: str) -> dict:
+def route_message(message: str, chat_id: int | None = None) -> dict:
     """Public router — wraps `_route_message_inner` with latency
     telemetry. Every call appends one line to
     `memory/intent_latencies.jsonl` so the dashboard's Performance tab
     can render the rolling-24h average per intent.
+
+    Phase 38: `chat_id` (when supplied by the Telegram listener) flows
+    down to quick_chat so the inline CHAT path can include rolling
+    conversation history. Non-Telegram callers (dashboard, CLI) omit
+    it and get the pre-Phase-38 stateless behavior.
 
     BUG 9 — every reply gets passed through `_strip_think_final` here,
     not just inside quick_chat, so reply paths that bypass the
@@ -2371,7 +2489,7 @@ def route_message(message: str) -> dict:
     """
     import time as _time
     t0 = _time.monotonic()
-    result = _route_message_inner(message)
+    result = _route_message_inner(message, chat_id=chat_id)
     elapsed = _time.monotonic() - t0
     if isinstance(result, dict) and isinstance(result.get("reply"), str):
         result["reply"] = _strip_think_final(result["reply"])

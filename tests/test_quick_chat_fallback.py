@@ -16,7 +16,7 @@ def _patch_ollama(monkeypatch, replies_by_model):
     (model, message, sys) → str for sequence-aware tests."""
     from workers import conversation_handler as ch
 
-    def fake(model, message, system_prompt):
+    def fake(model, message, system_prompt, history=None):
         if callable(replies_by_model):
             return replies_by_model(model, message, system_prompt)
         return replies_by_model[model]

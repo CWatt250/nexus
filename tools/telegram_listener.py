@@ -793,14 +793,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     chat_id = update.effective_chat.id
+    # Phase 38: log every inbound user turn before routing. write_turn
+    # is best-effort and never raises — a DB hiccup can't block routing.
+    try:
+        from core import telegram_chats as _tcs
+        _tcs.write_turn(chat_id, "user", user_message)
+    except Exception as e:
+        logger.warning("telegram_chats user-write failed: %s", e)
+
     try:
         from workers import conversation_handler
         # New 4-way LLM router: CHAT/QUERY -> qwen3.6 inline reply,
         # TASK -> enqueue, STATUS -> task lookup. "queue: <text>" remains
         # a power-user prefix that bypasses classification. Run the
         # blocking router off the event loop so the bot stays responsive.
+        # Phase 38: pass chat_id so quick_chat can prepend rolling history.
         result = await asyncio.wait_for(
-            asyncio.to_thread(conversation_handler.route_message, user_message),
+            asyncio.to_thread(conversation_handler.route_message,
+                              user_message, chat_id),
             timeout=25,
         )
         reply = result.get("reply", "")
@@ -820,6 +830,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply = "(handler returned no text — try again)"
     if len(reply) > 4000:
         reply = reply[:4000] + "\n... [truncated]"
+
+    # Phase 38: log the assistant reply (post-truncation, matches what
+    # the user actually sees) before sending. Every kind logs — TASK
+    # acks, STATUS replies, dispatch confirmations — so future quick_chat
+    # callbacks have full context, not just chat turns.
+    try:
+        from core import telegram_chats as _tcs
+        _tcs.write_turn(chat_id, "assistant", reply)
+    except Exception as e:
+        logger.warning("telegram_chats assistant-write failed: %s", e)
+
     await update.message.reply_text(reply)
 
 
