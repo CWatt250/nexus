@@ -17,3 +17,4 @@ High-quality turns (reflection quality >= 4) get appended here as bullets so fut
 - 2026-05-10 [greeting, response, repetition]: When users send repetitive greetings like 'hi' multiple times, respond with a single consistent word (e.g., 'yup') without adding context or tool calls
 - 2026-05-10 [greeting, consistency, response]: When users send repetitive greetings like 'hi' multiple times, respond with the same concise reply ('yup') without adding context or follow-up
 - 2026-05-11 [greeting, brevity, vocabulary]: For simple greetings, use one-word acknowledgments like 'yup' to maintain brevity and match the user's casual tone without overcomplicating the response
+- 2026-05-11 [greeting, consistency, response]: When users send repetitive greetings, maintain consistent short replies without adding context or follow-ups
