@@ -39,14 +39,17 @@ Do not include any text before or after the JSON. No reasoning, no commentary.""
 
 
 def load_models() -> dict:
+    # Phase 39 — brain transplant: gpt-oss:120b owns heavy/code/design
+    # and the route classifier; qwen3:4b stays as the fast tier.
     if not MODELS_FILE.exists():
         return {
-            "router": "qwen3:4b",
+            "brain": "gpt-oss:120b",
+            "router": "gpt-oss:120b",
             "fast": "qwen3:4b",
             "mid": "qwen3:8b",
-            "heavy": "qwen3.6",
-            "code": "qwen3.6",
-            "design": "qwen3.6",
+            "heavy": "gpt-oss:120b",
+            "code": "gpt-oss:120b",
+            "design": "gpt-oss:120b",
         }
     try:
         return json.loads(MODELS_FILE.read_text())
@@ -55,13 +58,13 @@ def load_models() -> dict:
 
 
 def model_for(route: str) -> str:
-    """Resolve a route name to an Ollama model id. Falls back to qwen3.6."""
+    """Resolve a route name to an Ollama model id. Falls back to the brain."""
     models = load_models()
-    return models.get(route) or models.get("heavy") or "qwen3.6"
+    return models.get(route) or models.get("heavy") or "gpt-oss:120b"
 
 
 def _router_model() -> str:
-    return load_models().get("router", "qwen3:4b")
+    return load_models().get("router", "gpt-oss:120b")
 
 
 def _log_routing(message: str, route: str, model: str, extra: dict | None = None) -> None:
@@ -120,6 +123,11 @@ def classify(message: str, *, log: bool = True) -> str:
 
     router_model = _router_model()
     try:
+        from core import brain as _brain  # noqa: PLC0415
+        think = _brain.think_param(router_model)
+    except Exception:
+        think = False
+    try:
         resp = ollama.Client(host=OLLAMA_URL).chat(
             model=router_model,
             messages=[
@@ -127,7 +135,7 @@ def classify(message: str, *, log: bool = True) -> str:
                 {"role": "user", "content": message.strip()[:2000]},
             ],
             stream=False,
-            think=False,
+            think=think,
             format="json",
             options={"temperature": 0.0, "num_predict": 64, "num_ctx": 2048},
             keep_alive=-1,

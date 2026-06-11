@@ -232,14 +232,10 @@ async def _build_in_background(update: Update, description: str, target_path: st
             logger.exception("background build visual verify failed")
 
 
-# Phase 27 — build-intent regexes mirror conversation_handler so both
-# entry points (Telegram listener + direct route_message) agree on
-# what counts as a build command.
+# Phase 27 build-arg helpers — still used by the /local slash handler.
+# (Phase 39 removed the listener's build-intent regex interception;
+# no-slash "build me X" messages now flow to route_message → LLM router.)
 import re as _re_p27  # noqa: E402  — local alias to avoid clashing with module-level re imports
-_TG_BUILD_INTENT_RE = _re_p27.compile(
-    r"^\s*(?:build\s+(?:me\s+)?|create\s+(?:me\s+)?|make\s+(?:me\s+)?|code\s+(?:me\s+)?)(.+)$",
-    _re_p27.IGNORECASE | _re_p27.DOTALL,
-)
 _TG_BUILD_AT_PATH_RE = _re_p27.compile(
     r"^(.+?)\s+at\s+(\S+)\s*$", _re_p27.IGNORECASE | _re_p27.DOTALL,
 )
@@ -519,32 +515,12 @@ async def _handle_content_command(update: Update, text: str) -> bool:
     Shapes:
         script <topic>           — generate script only (fast, ~10-30s)
         create video <topic>     — full pipeline, video sent when done
-        build me X / create X    — local build via qwen3.6 (Phase 27)
-        / make me X / code X       fast ack, file sent when done (~30-60s)
+
+    Phase 39 — the Phase 27 build-intent regex interception is removed.
+    No-slash "build me X / create X" messages flow to route_message,
+    where the LLM router dispatches them with the prompt verbatim.
     """
     low = text.strip().lower()
-
-    # Phase 27 — build intent goes BEFORE route_message so the 25s
-    # asyncio.wait_for cap on the fallthrough path can't kill a 30-60s
-    # qwen3.6 build. Skip when "dispatch:" matches; that wins.
-    if not low.startswith("dispatch:") and not low.startswith("force dispatch:"):
-        bm = _TG_BUILD_INTENT_RE.match(text.strip())
-        if bm:
-            body = bm.group(1).strip()
-            if not body:
-                await update.message.reply_text("build: needs a description.")
-                return True
-            description, target_path, tech = _extract_build_args(body)
-            short_desc = description if len(description) < 80 else description[:77] + "…"
-            await update.message.reply_text(
-                f"🛠️ Building: {short_desc}\n"
-                f"  tech: {tech} | target: {target_path}\n"
-                f"  qwen3.6 local — typically 30-60s. I'll ping when done."
-            )
-            asyncio.create_task(
-                _build_in_background(update, description, target_path, tech)
-            )
-            return True
 
     if low.startswith("script "):
         topic = text.split(None, 1)[1].strip() if " " in text else ""
@@ -624,10 +600,13 @@ async def _handle_dispatch_command(update: Update, text: str) -> bool:
             )
             return True
         risky = _ccd.is_risky(prompt)
+        from workers import llm_router as _lr  # noqa: PLC0415
         meta = _ccd.DispatchMeta.new(
-            label=prompt.splitlines()[0][:60],
+            # Phase 39 — token-safe label, no mid-token cuts.
+            label=_ccd.safe_label(prompt),
             time_budget_minutes=120,
             risky_match=risky,
+            recon_mode=_lr.is_recon(prompt),
         )
         _ccd.write_prompt(meta, prompt, pending=bool(risky))
         snap = _ccd.queue_summary()

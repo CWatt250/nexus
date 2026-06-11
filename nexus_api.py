@@ -385,89 +385,11 @@ class SimpleChatRequest(BaseModel):
     message: str
 
 
-_BUILD_INTENT_RE_API = None
-
-
-def _is_build_intent(message: str) -> bool:
-    """Phase 27 — recognize 'build me X / create X / make me X / code X'
-    so the dashboard /chat path can spawn a background build instead of
-    timing out on the 25s wait_for cap. Pattern mirrors the one in
-    workers/conversation_handler._BUILD_INTENT_RE so both paths agree."""
-    global _BUILD_INTENT_RE_API
-    if _BUILD_INTENT_RE_API is None:
-        import re as _re  # noqa: PLC0415
-        _BUILD_INTENT_RE_API = _re.compile(
-            r"^\s*(?:build\s+(?:me\s+)?|create\s+(?:me\s+)?|"
-            r"make\s+(?:me\s+)?|code\s+(?:me\s+)?)(.+)$",
-            _re.IGNORECASE | _re.DOTALL,
-        )
-    if not message:
-        return False
-    low = message.strip().lower()
-    # dispatch: prefix wins — that goes to cc_dispatcher, not local builder.
-    if low.startswith("dispatch:") or low.startswith("force dispatch:"):
-        return False
-    return bool(_BUILD_INTENT_RE_API.match(message.strip()))
-
-
-async def _run_build_in_background(message: str) -> None:
-    """Spawn the local build off the request path so a 30-60s qwen3.6
-    run doesn't trip the /chat 25s timeout. Publishes build_started /
-    build_completed / build_failed events so the dashboard activity
-    feed surfaces progress in real time."""
-    import asyncio as _asyncio
-    from core import event_bus  # noqa: PLC0415
-    try:
-        from workers import conversation_handler as _ch  # noqa: PLC0415
-        from tools import local_builder as _lb  # noqa: PLC0415
-    except Exception as exc:
-        event_bus.publish({"event": "build_failed",
-                            "error": f"import: {exc}",
-                            "message": message[:200]})
-        return
-
-    bm = _ch._BUILD_INTENT_RE.match(message.strip())
-    if not bm:
-        return  # shouldn't happen — caller pre-checked
-    body = bm.group(1).strip()
-    at_m = _ch._BUILD_AT_PATH_RE.match(body)
-    if at_m:
-        description = at_m.group(1).strip()
-        target_path = at_m.group(2).strip()
-    else:
-        import re as _re2  # noqa: PLC0415
-        description = body
-        slug_words = _re2.findall(r"[a-zA-Z0-9]+", description.lower())[:5]
-        slug = "-".join(slug_words) or "build"
-        target_path = f"~/AI_Agent/games/{slug}.html"
-    tech_m = _ch._BUILD_TECH_RE.search(description)
-    tech = tech_m.group(1).lower() if tech_m else "html"
-    if tech == "md":
-        tech = "markdown"
-    if tech == "bash":
-        tech = "shell"
-
-    event_bus.publish({"event": "build_started",
-                        "description": description[:200],
-                        "target_path": target_path, "tech_stack": tech})
-    try:
-        result = await _asyncio.to_thread(
-            _lb.build_thing_core, description, target_path, tech,
-        )
-    except Exception as exc:
-        event_bus.publish({"event": "build_failed",
-                            "description": description[:200],
-                            "target_path": target_path,
-                            "error": f"{type(exc).__name__}: {exc}"})
-        return
-    event_bus.publish({"event": "build_completed",
-                        "description": description[:200],
-                        "target_path": result.path,
-                        "tech_stack": result.tech_stack,
-                        "bytes_written": result.bytes_written,
-                        "lines": result.lines,
-                        "wall_seconds": result.wall_seconds,
-                        "notes": result.notes})
+# Phase 39 — the Phase 27 build-intent short-circuit (_is_build_intent +
+# _run_build_in_background) is removed. "build me X" messages flow through
+# conversation_handler.route_message, where the LLM router dispatches them
+# to the cc_dispatcher with the prompt verbatim — the dispatch ack returns
+# well inside the 25s cap, so the background-build workaround is obsolete.
 
 
 @app.post("/chat")
@@ -477,29 +399,10 @@ async def simple_chat(req: SimpleChatRequest):
     `restart …`, `go cc_xxx`, etc.) and intent classification fire
     EXACTLY the same way they do on the Telegram listener path.
 
-    Phase 27 fix: build intents (`build me X`, `create X`, `make me X`,
-    `code X`) bypass the 25s wait_for cap by spawning the local builder
-    in a background task. The endpoint returns an immediate ack with
-    the planned target path; the dashboard activity feed picks up
-    `build_started` and `build_completed` events as the work proceeds.
+    Phase 39 — build intents flow through the LLM router like any other
+    message; dispatch acks return well inside the 25s cap.
     """
     import asyncio as _asyncio
-
-    # Phase 27 — short-circuit build intents BEFORE the 25s timeout.
-    # qwen3.6 builds run 30-60s; routing them through the synchronous
-    # path guarantees a Took >25s reply even though the build itself
-    # succeeds on disk. Background spawn fixes that.
-    if _is_build_intent(req.message):
-        _asyncio.create_task(_run_build_in_background(req.message))
-        return {
-            "response": (
-                "🛠️ Building locally on qwen3.6 — typically 30-60s. "
-                "Watch the activity feed for completion (build_started "
-                "→ build_completed)."
-            ),
-            "kind": "build",
-            "meta": {"backgrounded": True},
-        }
 
     try:
         from workers import conversation_handler  # noqa: PLC0415

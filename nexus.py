@@ -519,24 +519,29 @@ _EXTRACT_FINAL_PROMPT = (
 )
 
 
-def extract_clean_answer(text: str, *, model: str = "qwen3.6") -> str:
+def extract_clean_answer(text: str, *, model: str | None = None) -> str:
     """One-shot Ollama call that asks the model to pull the final answer
     out of a reasoning-leaked response. Used as a fallback when
     `looks_like_raw_reasoning` flags the original output as suspect.
     Returns the original text on any failure so we never make things worse.
+
+    Phase 39 — qwen3.6 retired as resident; defaults to the brain model
+    (core/brain.py) with per-family think suppression.
     """
     if not text:
         return text
     try:
         import ollama  # noqa: PLC0415
+        from core import brain as _brain  # noqa: PLC0415
+        model = model or _brain.get_brain_model()
         resp = ollama.Client(host=OLLAMA_URL).chat(
             model=model,
             messages=[
                 {"role": "system", "content": _EXTRACT_FINAL_PROMPT},
                 {"role": "user", "content": text[:6000]},
             ],
-            stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.1, "num_predict": 250, "num_ctx": 8192},
+            stream=False, think=_brain.think_param(model), keep_alive=-1,
+            options={"temperature": 0.1, "num_predict": 400, "num_ctx": 8192},
         )
     except Exception:
         return text

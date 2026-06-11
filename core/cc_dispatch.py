@@ -64,6 +64,29 @@ RISKY_PATTERNS = [
 _RISKY_RE = re.compile("|".join(RISKY_PATTERNS), re.IGNORECASE)
 
 
+LABEL_MAX_CHARS = 80
+
+
+def safe_label(text: str, max_len: int = LABEL_MAX_CHARS) -> str:
+    """First line of `text`, truncated WITHOUT cutting mid-token.
+
+    Phase 39 — "gemma4:26b" was echoing back as "gemma4:26" because
+    three call sites hard-sliced labels at [:60]/[:80], chopping
+    whatever token straddled the cut. Truncate at the last whitespace
+    inside the budget instead; a single token longer than the budget
+    is kept whole rather than mangled.
+    """
+    first = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    if len(first) <= max_len:
+        return first
+    cut = first.rfind(" ", 0, max_len + 1)
+    if cut <= 0:
+        # One giant token — keep it intact up to its own end rather
+        # than emit a corrupted prefix.
+        return first.split(" ", 1)[0]
+    return first[:cut].rstrip()
+
+
 @dataclass
 class DispatchMeta:
     dispatch_id: str
@@ -78,11 +101,14 @@ class DispatchMeta:
     # Phase 22 callers that don't set tier), local = qwen3-coder:30b
     # via Ollama (no subprocess, no API call).
     tier: str = "real"
+    # Phase 39 — read-only investigation dispatch: the dispatcher must
+    # not auto-fire visual_verify or any screenshot generation.
+    recon_mode: bool = False
 
     @classmethod
     def new(cls, label: str, time_budget_minutes: int, *,
             requesting_user: str = "colton", risky_match: str = "",
-            tier: str = "api") -> "DispatchMeta":
+            tier: str = "api", recon_mode: bool = False) -> "DispatchMeta":
         # Phase 29 — coerce legacy "real" → "api" so on-disk metas
         # always carry the canonical tier name. Unknown tiers fall
         # back to "api" (API key, paid Sonnet) as the safest default.
@@ -97,6 +123,7 @@ class DispatchMeta:
             requesting_user=requesting_user,
             risky_match=risky_match,
             tier=canonical,
+            recon_mode=bool(recon_mode),
         )
 
     def to_header(self) -> str:

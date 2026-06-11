@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import nexus  # noqa: E402  — loads tools, prompt, etc.
+from core import brain  # noqa: E402
 from core import task_queue  # noqa: E402
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from langchain_core.tools import tool  # noqa: E402
@@ -43,21 +44,20 @@ log = logging.getLogger("nexus.conversation_handler")
 
 HANDLER_MODEL = "qwen3:4b"
 
-# Phase 32 — provider abstraction. DeepSeek's deepseek-chat is the
-# primary for both quick_chat and the intent classifier; Ollama is
-# kept as the offline fallback. The Ollama branch preserves the
-# qwen3:4b → qwen3.6 denial-retry behavior unchanged. On any DeepSeek
-# error (timeout, 5xx, network, breaker open, daily ceiling) the call
-# falls through to Ollama so a network outage or DeepSeek incident
-# can't take quick_chat down.
-QUICK_CHAT_PROVIDER = "deepseek"
+# Phase 39 — local brain transplant. The brain model (core/brain.py,
+# gpt-oss:120b) is primary for quick_chat, routing, and lite_agent.
+# DeepSeek (the Phase 32 primary) is demoted to disabled-by-default —
+# the code path stays wired so flipping QUICK_CHAT_PROVIDER back to
+# "deepseek" restores it without surgery. qwen3:4b is the explicit
+# offline/degraded fallback only (big model evicted, Ollama restart).
+QUICK_CHAT_PROVIDER = "ollama"
 QUICK_CHAT_FALLBACK_PROVIDER = "ollama"
-QUICK_CHAT_OLLAMA_MODEL = "qwen3:4b"
-QUICK_CHAT_DENIAL_FALLBACK_MODEL = "qwen3.6"
+QUICK_CHAT_OLLAMA_MODEL = brain.get_brain_model()
+QUICK_CHAT_DENIAL_FALLBACK_MODEL = brain.DEGRADED_MODEL
 
-CLASSIFIER_PROVIDER = "deepseek"
-CLASSIFIER_FALLBACK = "ollama:qwen3.6"
-CLASSIFIER_OLLAMA_MODEL = "qwen3.6"
+CLASSIFIER_PROVIDER = "ollama"
+CLASSIFIER_FALLBACK = f"ollama:{brain.get_brain_model()}"
+CLASSIFIER_OLLAMA_MODEL = brain.get_brain_model()
 
 # Backwards-compat aliases — older comments, tests, and other modules
 # still import these names. They now name the *Ollama-fallback* model
@@ -414,6 +414,13 @@ _QUICK_CHAT_JSON_HINT = (
 #  - `think=False` does NOT actually disable chain-of-thought; it just
 #    hides the opening <think> tag. The model still emits raw reasoning
 #    prose followed (sometimes) by a closing </think> + the real answer.
+#    RE-VERIFIED on Ollama 0.21.0 (Phase 39, 2026-06-11): still true —
+#    and worse, think=True diverts the CoT to the separate `thinking`
+#    field but burns the whole num_predict budget on it (empty content
+#    at num_predict=512) and 500s when combined with format=json. So
+#    the qwen3:4b degraded path keeps think=False + JSON mode + the
+#    Phase 30 scrubber pipeline; the brain model (gpt-oss) gets native
+#    suppression via core/brain.think_param.
 #  - With num_predict=200, half the responses got cut off mid-reasoning
 #    before reaching any answer at all.
 #  - With strict-prefix system prompt + format=json + num_predict=120 +
@@ -421,6 +428,15 @@ _QUICK_CHAT_JSON_HINT = (
 #    in 0.3-0.5 s. That's the sweet spot.
 QUICK_CHAT_NUM_PREDICT = 120
 QUICK_CHAT_TEMPERATURE = 0.3
+
+
+def _quick_chat_num_predict(model: str) -> int:
+    """Per-model content budget. gpt-oss spends part of num_predict on
+    the (discarded) thinking channel, so it gets more headroom; the
+    tight 120 stays for qwen3:4b where it's the proven CoT clamp."""
+    if (model or "").startswith("gpt-oss"):
+        return 400
+    return QUICK_CHAT_NUM_PREDICT
 
 
 def _ollama_quick_chat(model: str, message: str, system_prompt: str,
@@ -443,6 +459,10 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
     plain_messages = [{"role": "system", "content": system_prompt}]
     plain_messages.extend(history)
     plain_messages.append({"role": "user", "content": message})
+    # Phase 39 — per-model think suppression: gpt-oss → think="low"
+    # (CoT lands in the discarded `thinking` field), qwen → think=False
+    # (scrubber backstop catches the leaks). core/brain.py owns the rule.
+    num_predict = _quick_chat_num_predict(model)
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
             model=model,
@@ -450,10 +470,10 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
             options={
                 "temperature": QUICK_CHAT_TEMPERATURE,
                 "num_ctx": 4096,
-                "num_predict": QUICK_CHAT_NUM_PREDICT,
+                "num_predict": num_predict,
             },
             keep_alive=-1,
-            think=False,
+            think=brain.think_param(model),
             format="json",
         )
         body = (resp.get("message", {}) or {}).get("content", "").strip()
@@ -475,10 +495,10 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
             "num_ctx": 4096,
-            "num_predict": QUICK_CHAT_NUM_PREDICT * 2,  # bigger budget for plain mode
+            "num_predict": num_predict * 2,  # bigger budget for plain mode
         },
         keep_alive=-1,
-        think=False,
+        think=brain.think_param(model),
     )
     body = (resp.get("message", {}) or {}).get("content", "").strip()
     return _clean_quick_chat(body)
@@ -629,6 +649,27 @@ _LEAK_SENTINELS = (
     "as nexus,",
     "okay, let's break",
     "let's break this down",
+    # Phase 39 — sentinels for the leak shapes thinking models emit
+    # when native suppression fails. The backstop scrubber WARNs every
+    # time one of these actually catches something (see
+    # `_strip_think_final`) — a catch means think suppression broke.
+    "okay, the user wants",
+    "let me think about",
+    "first, i need to",
+    "i'll have to ask for",
+)
+
+# Phase 39 — sentinels that are CoT markers only at the START of a
+# line. As bare substrings they'd false-positive legit replies
+# ("can't wait, it ships tonight", "let's go with: option A" in an
+# actual recommendation). Checked with line-anchored matching in both
+# `looks_like_thinking_leak` and the `_strip_think_final` line-drop.
+_LEAK_SENTINELS_PREFIX_ONLY = (
+    "wait,",
+    "self-correction",
+    "i recall that",
+    "let's go with:",
+    "final decision:",
 )
 
 
@@ -711,11 +752,20 @@ def _strip_think_final(text: str) -> str:
 
     Phase 32.1: handle bare orphan `</think>` (no opener) before the
     paired/open regexes so all four shapes — matched pair, open-only,
-    orphan close, no tags — flow through one path."""
+    orphan close, no tags — flow through one path.
+
+    Phase 39: WARN whenever this backstop actually changes the text —
+    a catch here means native think suppression (think=false /
+    think="low" + discarded thinking field) failed upstream and we
+    want that visible in the logs, not silently mopped up."""
     if not text:
         return text
+    original = text.strip()
     extracted = _extract_best_reply(text)
     if extracted:
+        log.warning("scrubber backstop caught leaked reasoning "
+                    "(best-reply extract) — think suppression failed. "
+                    "preview=%r", original[:160])
         return extracted
     # Orphan-close strip: only run when `</think>` exists with no
     # preceding `<think>` opener, so paired blocks aren't double-handled.
@@ -733,21 +783,36 @@ def _strip_think_final(text: str) -> str:
         if not head:
             lines.pop(0)
             continue
-        if any(head.startswith(s) for s in _LEAK_SENTINELS):
+        if any(head.startswith(s)
+               for s in _LEAK_SENTINELS + _LEAK_SENTINELS_PREFIX_ONLY):
             lines.pop(0)
             continue
         break
-    return "\n".join(lines).strip()
+    result = "\n".join(lines).strip()
+    if result != original:
+        log.warning("scrubber backstop caught leaked reasoning — think "
+                    "suppression failed. before=%r after=%r",
+                    original[:160], result[:120])
+    return result
 
 
 def looks_like_thinking_leak(text: str) -> bool:
     """True if the cleaned reply still contains internal-reasoning
     sentinels we *know* are CoT artifacts. Used as a fallback trigger
-    after the cleaner has already done its best."""
+    after the cleaner has already done its best.
+
+    Phase 39: prefix-only sentinels ("wait,", "let's go with:") match
+    line starts only — as substrings they'd flag legitimate replies."""
     if not text:
         return False
     lower = text.lower()
-    return any(s in lower for s in _LEAK_SENTINELS)
+    if any(s in lower for s in _LEAK_SENTINELS):
+        return True
+    return any(
+        line.lstrip().startswith(s)
+        for line in lower.splitlines()
+        for s in _LEAK_SENTINELS_PREFIX_ONLY
+    )
 
 
 def _clean_quick_chat(text: str) -> str:
@@ -973,13 +1038,14 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
 
 LITE_AGENT_TIMEOUT_S = 15.0
-# Bumped from 5s → 8s after smoke runs showed qwen3.6 picker timing out
+# Bumped from 5s → 8s after smoke runs showed the picker timing out
 # under contention (model serving was busy with the EOD summary job).
 # 8s + 4s + small tool window keeps total under the 15s ceiling.
 LITE_AGENT_PICKER_BUDGET = 8.0
 LITE_AGENT_TOOL_BUDGET = 6.0
 LITE_AGENT_FORMATTER_BUDGET = 4.0
-LITE_AGENT_MODEL = "qwen3.6"
+# Phase 39 — qwen3.6 retired as resident; the brain owns lite_agent.
+LITE_AGENT_MODEL = brain.get_brain_model()
 
 
 _PICKER_SYSTEM = (
@@ -1026,7 +1092,7 @@ def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250
         "model": LITE_AGENT_MODEL,
         "messages": messages,
         "stream": False,
-        "think": False,
+        "think": brain.think_param(LITE_AGENT_MODEL),
         "keep_alive": -1,
         # 8192 num_ctx leaves headroom for SOUL.md (~2700 tokens) plus
         # tool result payloads (up to ~1500 tokens after truncation) plus
@@ -1331,7 +1397,7 @@ def classify_intent_llm(message: str) -> Intent:
             ],
             options={"temperature": 0, "num_ctx": 2048, "num_predict": 50},
             keep_alive=-1,
-            think=False,
+            think=brain.think_param(CLASSIFIER_OLLAMA_MODEL),
         )
     except Exception as exc:
         log.warning("classify_intent_llm failed (%s); defaulting to CHAT", exc)
@@ -1770,32 +1836,20 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
     )
 
 
-# BUG 6 — entity-question patterns that MUST hit the wiki before any
-# reply generation. "What is BidWatt?" was hallucinating an answer
-# about real-time electricity pricing because the classifier picked
-# CHAT. These patterns intercept first.
-_ENTITY_QUESTION_RE = re.compile(
-    r"^\s*(?:what(?:'?s| is| are)|who(?:'?s| is| are)|tell me about|"
-    r"explain|describe|define|wikiq?(?::|\s))\s+(.{2,})$",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-def _entity_lookup(message: str) -> dict | None:
-    """If the message looks like 'what is X / who is X / tell me about X',
-    query the wiki BEFORE any LLM call. Returns a route dict on hit, or
-    a route dict with a clearly-marked uncertainty prefix on miss, or
-    None when the pattern doesn't apply at all so the caller can keep
-    routing normally."""
-    m = _ENTITY_QUESTION_RE.match(message.strip())
-    if not m:
-        return None
+# BUG 6 (reworked in Phase 39) — entity questions hit the wiki before
+# any reply generation so "What is BidWatt?" can't hallucinate. The
+# regex gate is gone: the LLM router decides when a message is a
+# wiki-entity question (route="wiki") and this helper just executes it.
+def _wiki_grounded_reply(message: str) -> dict:
+    """Query the wiki and synthesize a grounded reply. On a wiki miss,
+    answer via quick_chat with the mandatory uncertainty prefix so the
+    model can't invent confident facts."""
     try:
         from tools import wiki_tool  # noqa: PLC0415
         hits = wiki_tool.wiki_query.invoke({"question": message, "k": 3})
     except Exception as exc:
         log.warning("wiki_query failed: %s", exc)
-        return None
+        hits = ""
     if not hits or hits.startswith("(no wiki hits"):
         # No wiki entry — fall through to quick_chat but tag the result
         # so the model (and the user) knows the answer isn't grounded.
@@ -1939,67 +1993,27 @@ COMPLEX_BUILD_RE = re.compile(
 )
 
 
-# Phase 31 — only inject the "write to games/<slug>.html, single browser
-# file" preamble when the prompt actually asks for a UI build. Before
-# this gate, every slash dispatch (incl. plain shell tasks like "create
-# file X" or "ollama pull Y") was forced into HTML-game shape, and
-# Claude obeyed by also producing a stray HTML alongside the real work.
-_UI_BUILD_KEYWORDS_RE = re.compile(
-    r"\b("
-    r"html|webpage|web\s+page|landing\s+page|"
-    r"game|widget|dashboard|component|"
-    r"clock|chart|graph|svg|canvas|animation|"
-    r"ui|interface|form|button"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-def _looks_like_ui_build(prompt: str) -> bool:
-    """True when the prompt mentions a UI/HTML build target. Conservative
-    — must contain at least one explicit UI keyword. Plain shell tasks
-    ("create file X", "run ollama pull Y", "echo Z") fall through and
-    skip the HTML augmentation path."""
-    return bool(_UI_BUILD_KEYWORDS_RE.search(prompt or ""))
-
-
-def _slugify_for_filename(prompt: str, max_tokens: int = 6) -> str:
-    """Lowercase alphanumeric tokens joined with '-'. Model-version style
-    tokens (gemma4:26b, qwen3:4b) are kept as one logical unit so the
-    suffix survives — ':' becomes '-'."""
-    parts = re.findall(r"[a-zA-Z0-9]+(?::[a-zA-Z0-9]+)?", (prompt or "").lower())
-    parts = parts[:max_tokens]
-    if not parts:
-        return "build"
-    return "-".join(p.replace(":", "-") for p in parts)
-
-
 def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
-                             label: str | None = None) -> dict:
+                             label: str | None = None,
+                             recon_mode: bool = False) -> dict:
     """Drop a Phase 28 cloud-tier prompt into the cc_dispatcher inbox.
     Returns a route dict {kind, reply, meta} so callers can hand it
     straight back to the user.
 
-    Phase 31 — augmentation is now gated on UI-build intent. UI prompts
-    get the "write to games/<slug>.html, single browser file" preamble
-    so the after-run check can auto-attach. Non-UI prompts (file ops,
-    shell commands, model pulls) pass through verbatim — Claude is no
-    longer pushed into producing a stray HTML game alongside the real
-    work."""
+    Phase 39 — VERBATIM PASSTHROUGH. The prompt body is dispatched
+    byte-identical, always. The Phase 28/31 HTML augmentation ("write
+    to games/<slug>.html, single browser file") is removed, not gated
+    — it kept inventing scope (the Breakout incident, the cc_459a349f
+    BidWatt recon HTML) because keyword matching can't know intent.
+    If Colton wants a single-file HTML build, he says so in the prompt.
+
+    recon_mode (router decision OR'd with keyword detection here) tells
+    the dispatcher to skip visual_verify / screenshot generation."""
     from core import cc_dispatch as _ccd  # noqa: PLC0415
+    from workers import llm_router as _lr  # noqa: PLC0415
     if not prompt.strip():
         return {"kind": "dispatch", "reply": f"slash {tier}: needs a prompt.", "meta": {}}
-    if _looks_like_ui_build(prompt):
-        slug = _slugify_for_filename(prompt, max_tokens=5)
-        target_path = f"~/AI_Agent/games/{slug}.html"
-        body_to_dispatch = (
-            f"Write the complete, self-contained output to {target_path} "
-            f"(create the directory if needed). It should be a single file "
-            f"that runs by opening in a browser — no build step, no CDN.\n\n"
-            f"Build request:\n{prompt}"
-        )
-    else:
-        body_to_dispatch = prompt
+    recon = bool(recon_mode) or _lr.is_recon(prompt)
     risky = _ccd.is_risky(prompt)
     # Phase 29 — budget tiers: short for cheap/free models, longer for
     # the smarter (and slower) max + api Sonnet runs.
@@ -2010,17 +2024,17 @@ def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
     else:  # api / fallback
         budget = 30
     meta = _ccd.DispatchMeta.new(
-        # Phase 31 — bumped 60 → 80 so model-version suffixes (gemma4:26b,
-        # qwen3-coder:30b) survive the Telegram label without losing
-        # the trailing chars.
-        label=(label or prompt.splitlines()[0])[:80],
+        # Phase 39 — token-safe truncation; never cuts mid-token
+        # (gemma4:26b stays gemma4:26b).
+        label=_ccd.safe_label(label or prompt),
         time_budget_minutes=budget,
         risky_match=risky,
         tier=tier,
+        recon_mode=recon,
     )
-    _ccd.write_prompt(meta, body_to_dispatch, pending=bool(risky))
-    log.info("slash dispatch tier=%s id=%s risky=%s",
-             tier, meta.dispatch_id, bool(risky))
+    _ccd.write_prompt(meta, prompt, pending=bool(risky))
+    log.info("slash dispatch tier=%s id=%s risky=%s recon=%s",
+             tier, meta.dispatch_id, bool(risky), recon)
     if risky:
         reply = (
             f"🚨 Risky prompt held (matched: {risky}). "
@@ -2034,7 +2048,8 @@ def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
     return {
         "kind": "dispatch",
         "reply": reply,
-        "meta": {"dispatch_id": meta.dispatch_id, "tier": tier, "risky": bool(risky)},
+        "meta": {"dispatch_id": meta.dispatch_id, "tier": tier,
+                 "risky": bool(risky), "recon_mode": recon},
     }
 
 
@@ -2193,22 +2208,26 @@ def _record_intent_latency(intent: str, elapsed_s: float, *, fast_format: str | 
 
 
 def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
-    """Top-level Telegram/API router (Phase-15 conversation UX rewrite).
+    """Top-level Telegram/API router (Phase 39 LLM-router rewrite).
 
     Returns {kind, reply, meta}:
-      - kind: 'queue' | 'chat' | 'query' | 'task' | 'status' | 'empty'
+      - kind: 'queue' | 'chat' | 'query_tool' | 'query_inline' | 'task'
+              | 'status' | 'dispatch' | 'build' | 'empty'
       - reply: the text to send back to the user
-      - meta: {'task_id', 'classifier_raw', ...} for logging
+      - meta: {'task_id', 'router', ...} for logging
 
     Flow:
-      1. Empty input -> nudge reply.
-      2. 'queue: <text>' prefix -> enqueue immediately (power-user override).
-      3. LLM intent classifier runs once.
-      4. Route on intent:
-         - CHAT / QUERY_INLINE -> qwen3.6 inline reply via quick_chat()
-         - QUERY_TOOL          -> lite_agent (one tool, ~8s budget)
-         - TASK                -> enqueue, reply "On it. task_id=xxx"
-         - STATUS              -> task_id lookup or queue list
+      1. Empty input → nudge reply.
+      2. Slash commands (explicit, skip the LLM router entirely).
+      3. Explicit prefixes: 'queue:', 'dispatch:', 'full output <id>'.
+      4. llm_router.route_llm — ONE structured-output call to the brain:
+         - quick_chat  → inline reply (also the router-failure fallback)
+         - lite_agent  → one tool, ~8s budget; miss → task
+         - task        → enqueue the message verbatim
+         - dispatch    → cc_dispatcher inbox, prompt byte-identical
+         - status      → task_id lookup or queue list
+         - wiki        → wiki-grounded reply
+       The user's message is NEVER rewritten or augmented on any path.
     """
     msg = (message or "").strip()
     if not msg:
@@ -2222,16 +2241,6 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
                  slash["command"], slash["tool"], slash.get("tier", ""))
         return _route_slash_command(slash)
 
-    # BUG 6 — entity questions ("what is X", "tell me about X", "who is
-    # X", "explain X") MUST hit the wiki before any other classification.
-    # Returns None when the pattern doesn't match so the rest of routing
-    # runs unchanged. Returns a grounded reply (or a clearly-tagged
-    # "no wiki entry" reply) when the pattern fires.
-    eq = _entity_lookup(msg)
-    if eq is not None:
-        log.info("route: entity-question hit wiki=%s", eq.get("meta", {}).get("wiki_hit"))
-        return eq
-
     # Power-user override: "queue: <task>"
     qm = _QUEUE_PREFIX_RE.match(msg)
     if qm:
@@ -2241,26 +2250,6 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
         return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
-
-    # Phase 28 + 29 — tiered build routing. Order:
-    #   1. SIMPLE_BUILD ("make a quick fizzbuzz", "write a tiny ...") →
-    #      local qwen3-coder:30b. Fast, free, no API.
-    #   2. BUILD_INTENT ("build me X", "create X", etc.) → tier=max
-    #      (Claude Code via Max plan, $0 marginal). Phase 29 flipped
-    #      this default from /code (DeepSeek Flash) → /max because
-    #      Colton already pays for the Max subscription, so burning
-    #      DeepSeek tokens for the default routing doesn't save money.
-    #   dispatch:/queue: prefixes still win above this branch.
-    bm = _BUILD_INTENT_RE.match(msg)
-    if bm and not _DISPATCH_PREFIX_RE.match(msg):  # belt-and-suspenders
-        if SIMPLE_BUILD_RE.search(msg):
-            log.info("route: build-intent SIMPLE → /local")
-            return _slash_local_build(bm.group(1).strip())
-        # Phase 29 — default to Max plan, not paid DeepSeek.
-        log.info("route: build-intent → claude_code tier=max")
-        return _enqueue_tiered_dispatch(
-            bm.group(1).strip(), "max", label=bm.group(1).strip()[:60],
-        )
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
     # the prompt to the cc_dispatcher daemon (background Claude Code
@@ -2287,10 +2276,13 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
                 "meta": {"budget_blocked": True},
             }
         risky = _ccd.is_risky(body)
+        from workers import llm_router as _lr  # noqa: PLC0415
         meta = _ccd.DispatchMeta.new(
-            label=body.splitlines()[0][:60],
+            # Phase 39 — token-safe label, no mid-token cuts.
+            label=_ccd.safe_label(body),
             time_budget_minutes=30,
             risky_match=risky,
+            recon_mode=_lr.is_recon(body),
         )
         _ccd.write_prompt(meta, body, pending=bool(risky))
         log.info("route: dispatch-prefix override -> %s (risky=%s)",
@@ -2318,94 +2310,51 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
         tid = fm.group(1).lower()
         return {"kind": "status", "reply": _full_output_reply(tid), "meta": {"task_id": tid}}
 
-    # Phase 23.1 — scaffolding intent goes ahead of every other branch.
-    # "Scaffold a Next.js marketplace called shoppable" → enqueue a
-    # structured TASK so scaffold_project runs in the worker (with its
-    # own heartbeat thread) rather than blocking the conversation
-    # handler. If we can't extract a project name, ask for one.
-    sc = _detect_scaffold_intent(msg)
-    if sc is not None:
-        if sc["missing"]:
-            return {
-                "kind": "scaffold",
-                "reply": (
-                    f"Scaffolding request detected (recipe: {sc['recipe']}). "
-                    "What should I name the project? Reply with a slug "
-                    "(lowercase letters, digits, hyphens), e.g. "
-                    "'my-new-app'."
-                ),
-                "meta": {"scaffold_recipe": sc["recipe"], "needs_name": True},
-            }
-        agent_input = (
-            f"[scaffold:{sc['recipe']}] "
-            f"Use the scaffold_project tool with "
-            f'name="{sc["name"]}", recipe="{sc["recipe"]}", '
-            f"options={{}} — return only the tool's summary."
-        )
-        tid = task_queue.enqueue(agent_input)
-        log.info("scaffold intent → task %s recipe=%s name=%s",
-                 tid, sc["recipe"], sc["name"])
-        return {
-            "kind": "scaffold",
-            "reply": (
-                f"On it. Scaffolding `{sc['name']}` from recipe "
-                f"`{sc['recipe']}`. Heartbeats will land in Telegram every "
-                f"60s during long steps. task_id={tid}"
-            ),
-            "meta": {
-                "scaffold_recipe": sc["recipe"],
-                "scaffold_name": sc["name"],
-                "task_id": tid,
-            },
-        }
+    # ── Phase 39 — LLM router with verbatim passthrough ──────────────
+    # One structured-output call to the brain decides the route. The
+    # regex ladder it replaces (build-intent, scaffold, entity-question,
+    # fast-tool hard-override, STATUS keyword override) is gone from the
+    # request path. Whatever the route, the ORIGINAL message bytes are
+    # what flow downstream — no augmentation, no rewriting, ever.
+    from workers import llm_router as _lr  # noqa: PLC0415
+    decision = _lr.route_llm(msg)
+    route = decision["route"]
+    recon = bool(decision.get("recon_mode"))
+    meta: dict = {"router": {"route": route, "tier": decision.get("tier"),
+                             "recon_mode": recon}}
+    if decision.get("router_error"):
+        meta["router_error"] = decision["router_error"]
+    log.info("route: llm-router %r → %s tier=%s recon=%s%s",
+             msg[:60], route, decision.get("tier"), recon,
+             " [FALLBACK after router error]" if "router_error" in decision else "")
 
-    # Deterministic short-circuit BEFORE the LLM classifier — saves a
-    # round-trip on the high-confidence single-tool shapes the classifier
-    # sometimes mis-routes ("what's my github auth status" used to land
-    # in TASK despite the prompt example).
-    if _looks_like_single_fast_tool(msg):
-        log.info("route: hard-override %r → QUERY_TOOL", msg[:80])
-        intent_obj = type("Intent", (), {"kind": "QUERY_TOOL", "raw": "[hard-override]"})()
-        meta_pre = {"classifier_raw": "hard-override", "fast_tool_override": True}
-        result = lite_agent(msg)
-        if result.get("ok"):
-            return {
-                "kind": "query_tool",
-                "reply": result["reply"],
-                "meta": {
-                    **meta_pre,
-                    "tool": result.get("tool", ""),
-                    "fast_format": result.get("fast_format"),
-                },
-            }
-        log.info("hard-override lite_agent miss; falling to classifier path: %s",
-                 result.get("reason"))
-        # Fall through to the classifier path on miss — gives the LLM
-        # one more chance to pick TASK vs CHAT correctly.
+    if route == "status":
+        if _is_genuine_queue_status(msg):
+            return {"kind": "status", "reply": _route_status(msg), "meta": meta}
+        # "<domain> status" (github/supabase/weather) needs a tool, not
+        # a queue listing — demote to the one-tool path.
+        meta["status_demoted_to_lite_agent"] = True
+        route = "lite_agent"
 
-    # LLM classifier
-    intent = classify_intent_llm(msg)
-    meta = {"classifier_raw": intent.raw}
-    log.info("route: classified %r as %s", msg[:60], intent.kind)
+    if route == "wiki":
+        wiki = _wiki_grounded_reply(msg)
+        return {**wiki, "meta": {**meta, **wiki.get("meta", {})}}
 
-    # Backwards-compat: legacy callers / older classifier outputs return
-    # the bare "QUERY" label. Treat it as QUERY_INLINE (the old behavior).
-    if intent.kind == "QUERY":
-        intent = Intent(kind="QUERY_INLINE", raw=intent.raw + " [legacy:query]")
+    if route == "dispatch":
+        tier = decision.get("tier") or "max"
+        if tier == "quick":
+            route = "quick_chat"  # router quirk — quick isn't a dispatch tier
+        elif tier == "local":
+            local = _slash_local_build(msg)
+            return {**local, "meta": {**meta, **local.get("meta", {})}}
+        else:
+            tier = {"code": "flash", "real": "api"}.get(tier, tier)
+            result = _enqueue_tiered_dispatch(msg, tier, recon_mode=recon)
+            return {**result, "meta": {**meta, **result.get("meta", {})}}
 
-    # Override: classifier loves to keyword-match "status" without context.
-    # If it picked STATUS but the message doesn't reference the queue or
-    # a task_id, it's almost always something like "github auth status"
-    # that needs a tool call — promote to QUERY_TOOL so the lite_agent
-    # picks github_auth_status. (Promote to TASK is too heavy for that.)
-    if intent.kind == "STATUS" and not _is_genuine_queue_status(msg):
-        log.info("STATUS→QUERY_TOOL override: %r doesn't reference queue", msg[:80])
-        meta["status_override"] = True
-        intent = Intent(kind="QUERY_TOOL", raw=intent.raw + " [override:status->query_tool]")
-
-    if intent.kind == "QUERY_TOOL":
-        # Single-tool fast path. Falls through to TASK enqueue if it can't
-        # pick a tool, blows its budget, or the tool errors hard.
+    if route == "lite_agent":
+        # Single-tool fast path. Falls through to TASK enqueue if it
+        # can't pick a tool, blows its budget, or the tool errors hard.
         result = lite_agent(msg)
         if result.get("ok"):
             return {
@@ -2419,55 +2368,39 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
             }
         log.info("lite_agent fell through to TASK: %s", result.get("reason"))
         meta["lite_agent_fallthrough"] = result.get("reason")
-        # fall through to TASK enqueue below
-        intent = Intent(kind="TASK", raw=intent.raw + " [fallthrough:lite_agent]")
+        route = "task"
 
-    if intent.kind == "TASK":
-        # Prepend real datetime so the spawned agent doesn't hallucinate
-        # "today" / "this week" from training data.
-        enqueued_input = f"[{_datetime_context()}]\n\n{msg}"
-        tid = task_queue.enqueue(enqueued_input)
-        return {"kind": "task", "reply": f"On it. task_id={tid}", "meta": {**meta, "task_id": tid}}
+    if route == "task":
+        # Phase 39 — the stored input is the user's message, verbatim.
+        # Wall-clock context is injected transiently by task_worker at
+        # message-build time, not baked into the queue row.
+        tid = task_queue.enqueue(msg)
+        return {"kind": "task", "reply": f"On it. task_id={tid}",
+                "meta": {**meta, "task_id": tid}}
 
-    if intent.kind == "STATUS":
-        return {"kind": "status", "reply": _route_status(msg), "meta": meta}
-
-    # CHAT or QUERY: inline reply on qwen3.6
+    # quick_chat (also the router-failure fallback).
     # Phase 38: pass chat_id so quick_chat can prepend rolling history.
     # None (non-Telegram callers like the dashboard /chat) → stateless.
     reply = quick_chat(msg, chat_id=chat_id)
 
-    # Capability self-check: qwen3.6 sometimes denies tool access despite
-    # the capability rules in the system prompt. If the reply reads like a
-    # denial, treat it as a misclassified TASK — re-route, enqueue, and
-    # discard the bad text so the user gets a real answer instead.
-    #
-    # BUG 10 — when the original classification was CHAT or QUERY_INLINE,
-    # the user wasn't asking for a long task; they got a denial and we
-    # recovered. Reply with the friendly capability-recovery line, NOT
-    # "On it. task_id=…" (that's reserved for genuinely-routed TASK).
-    # task_id still flows back in meta for telemetry.
+    # Capability self-check: if the reply reads like a capability
+    # denial, the brain misjudged — enqueue the ORIGINAL message as a
+    # task so the full agent can actually use tools, and reply with the
+    # friendly recovery line (BUG 10: "On it. task_id=…" is reserved
+    # for genuinely-routed TASK).
     if _looks_like_denial(reply):
         log.warning(
             "quick_chat produced denial — recovering as TASK. "
-            "denial_text=%r intent_was=%s msg=%r",
-            reply[:160], intent.kind, msg[:120],
+            "denial_text=%r msg=%r", reply[:160], msg[:120],
         )
-        enqueued_input = f"[{_datetime_context()}]\n\n{msg}"
-        tid = task_queue.enqueue(enqueued_input)
-        original_was_task = intent.kind == "TASK"
-        recovery_reply = (
-            f"On it. task_id={tid}"
-            if original_was_task
-            else "Let me dig into that properly — one sec."
-        )
+        tid = task_queue.enqueue(msg)
         return {
-            "kind": "task" if original_was_task else "chat",
-            "reply": recovery_reply,
+            "kind": "chat",
+            "reply": "Let me dig into that properly — one sec.",
             "meta": {**meta, "task_id": tid, "recovered_from": "denial"},
         }
 
-    return {"kind": intent.kind.lower(), "reply": reply, "meta": meta}
+    return {"kind": "chat", "reply": reply, "meta": meta}
 
 
 def route_message(message: str, chat_id: int | None = None) -> dict:

@@ -564,14 +564,14 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     review_notes = ""
     # Phase 28 — visual verification step. For HTML artifacts, screenshot
     # via Playwright and ask qwen2.5vl whether anything looks broken.
-    # Phase 31 — only fire when the prompt body carries the UI-build
-    # augmentation marker (the "Write the ... output to <path>.html"
-    # preamble emitted by `_enqueue_tiered_dispatch` for actual UI
-    # builds). HTML files that happen to be present from unrelated work
-    # no longer trigger a Playwright screenshot + vision-model call.
-    expects_html_artifact = bool(_TARGET_PATH_RE.search(body or ""))
+    # Phase 39 — the augmentation marker is gone (prompts dispatch
+    # verbatim), so the gate is now meta.recon_mode: recon/investigation
+    # dispatches NEVER fire visual_verify or produce screenshots; build
+    # dispatches that actually wrote HTML during this run still get
+    # verified.
+    recon_mode = bool(getattr(meta, "recon_mode", False))
     html_artifacts = [p for p in artifacts if p.lower().endswith((".html", ".htm"))]
-    if html_artifacts and status == "done" and expects_html_artifact:
+    if html_artifacts and status == "done" and not recon_mode:
         try:
             from tools import visual_verify  # noqa: PLC0415
             verdict = visual_verify.verify_html_artifact(html_artifacts[0])

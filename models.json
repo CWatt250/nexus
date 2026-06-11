@@ -1,8 +1,9 @@
 {
-  "router": "qwen3:4b",
+  "brain":  "gpt-oss:120b",
+  "router": "gpt-oss:120b",
   "fast":   "qwen3:4b",
   "mid":    "qwen3:8b",
-  "heavy":  "qwen3.6",
-  "code":   "qwen3.6",
-  "design": "qwen3.6"
+  "heavy":  "gpt-oss:120b",
+  "code":   "gpt-oss:120b",
+  "design": "gpt-oss:120b"
 }

@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 import nexus  # noqa: E402  — registers tools, builds prompt, etc.
 import router  # noqa: E402
 from core import event_bus, task_queue  # noqa: E402
-from langchain_core.messages import HumanMessage  # noqa: E402
+from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -161,7 +161,18 @@ async def _run_one(row: dict) -> None:
 
     tracker, tool_state = _make_tool_tracker()
     config = {"configurable": {"thread_id": thread_id}, "callbacks": [tracker]}
-    lc_msgs = nexus.fast_mode_messages(user_text, route=route)
+    # Phase 39 — the queue row stores the user's message VERBATIM (the
+    # enqueue-time "[Current date and time: ...]" prefix is gone).
+    # Wall-clock context is injected here, transiently, so the agent
+    # still can't hallucinate "today" from training data.
+    now = datetime.now().astimezone()
+    dt_msg = SystemMessage(content=(
+        f"Current date and time: {now.isoformat(timespec='seconds')}. "
+        f"Current day of week: {now.strftime('%A')}. "
+        "When asked about the current time, date, or day, use ONLY the "
+        "datetime above. Never guess or use training data."
+    ))
+    lc_msgs = [dt_msg] + nexus.fast_mode_messages(user_text, route=route)
 
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(task_id, started, tool_state)
