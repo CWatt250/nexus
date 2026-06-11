@@ -1,0 +1,64 @@
+# Live router cases — exercise llm_router.route_llm against the real
+# brain model. Skipped gracefully when Ollama is down or the brain
+# model isn't pulled.
+- name: hello-3-words-routes-quick-chat
+  kind: router_live
+  input: "say hello in 3 words"
+  expect:
+    route: quick_chat
+
+- name: casual-whats-up-routes-quick-chat
+  kind: router_live
+  input: "what's up"
+  expect:
+    route: quick_chat
+
+- name: breakout-build-routes-dispatch
+  kind: router_live
+  input: "build me a breakout game in a single html file"
+  expect:
+    route: dispatch
+    recon_mode: false
+
+- name: recon-prompt-sets-recon-mode
+  kind: router_live
+  input: "BidWatt remote recon: read the repo via the GitHub API, do not edit anything, report findings as a markdown checklist"
+  expect:
+    recon_mode: true
+
+- name: queue-status-routes-status
+  kind: router_live
+  input: "queue status"
+  expect:
+    route: status
+
+- name: entity-question-routes-wiki
+  kind: router_live
+  input: "what is BidWatt?"
+  expect:
+    route: wiki
+
+- name: weather-routes-lite-agent
+  kind: router_live
+  input: "what's the weather in Pasco WA"
+  expect:
+    route: lite_agent
+
+- name: github-auth-status-routes-lite-agent
+  kind: router_live
+  input: "what's my github auth status"
+  expect:
+    route: lite_agent
+
+- name: research-sweep-routes-task
+  kind: router_live
+  input: "research the top 5 AI agent frameworks and write me a summary"
+  expect:
+    route: task
+
+- name: simple-build-routes-dispatch-local
+  kind: router_live
+  input: "make a quick tiny fizzbuzz page in html"
+  expect:
+    route: dispatch
+    tier: local

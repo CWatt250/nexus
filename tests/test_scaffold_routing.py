@@ -62,43 +62,27 @@ def test_missing_name_flagged() -> None:
     assert out["missing"] == ["name"]
 
 
-# --- 4. route_message asks for a name when missing ----------------------
-def test_route_message_prompts_for_name(monkeypatch) -> None:
+# --- 4 + 5. Phase 39 — the scaffold regex branch is gone from routing.
+# Scaffold requests flow through the LLM router like any other message
+# and the enqueued task input is the user's message VERBATIM (the agent
+# decides to call scaffold_project itself).
+def test_route_message_scaffold_goes_through_llm_router_verbatim(monkeypatch) -> None:
     from workers import conversation_handler as ch
-
-    # Make sure the classifier never runs.
-    def loud(msg):
-        pytest.fail("classifier should not run when scaffold intent fires")
-    monkeypatch.setattr(ch, "classify_intent_llm", loud)
-
-    res = ch.route_message("Scaffold a Next.js marketplace")
-    assert res["kind"] == "scaffold"
-    assert res["meta"]["needs_name"] is True
-    assert res["meta"]["scaffold_recipe"] == "nextjs-marketplace"
-    assert "name" in res["reply"].lower()
-
-
-# --- 5. route_message enqueues a structured task with name + recipe -----
-def test_route_message_enqueues_scaffold_task(monkeypatch) -> None:
-    from workers import conversation_handler as ch
+    from workers import llm_router
 
     enqueued: list[str] = []
     monkeypatch.setattr(ch.task_queue, "enqueue",
                         lambda input_text, **_: (enqueued.append(input_text) or "scaffold01"))
+    monkeypatch.setattr(
+        llm_router, "route_llm",
+        lambda msg: {"route": "task", "tier": None, "recon_mode": False},
+    )
 
-    def loud(msg):
-        pytest.fail("classifier should not run for matched scaffold intent")
-    monkeypatch.setattr(ch, "classify_intent_llm", loud)
-
-    res = ch.route_message("Scaffold a Next.js marketplace called shoppable")
-    assert res["kind"] == "scaffold"
-    assert res["meta"]["scaffold_name"] == "shoppable"
-    assert res["meta"]["scaffold_recipe"] == "nextjs-marketplace"
+    msg = "Scaffold a Next.js marketplace called shoppable"
+    res = ch.route_message(msg)
+    assert res["kind"] == "task"
     assert res["meta"]["task_id"] == "scaffold01"
     assert "task_id=scaffold01" in res["reply"]
 
     assert len(enqueued) == 1
-    enq_input = enqueued[0]
-    assert "[scaffold:nextjs-marketplace]" in enq_input
-    assert 'name="shoppable"' in enq_input
-    assert "scaffold_project" in enq_input
+    assert enqueued[0] == msg, "task input must be the user's message verbatim"

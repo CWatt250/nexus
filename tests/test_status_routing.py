@@ -89,15 +89,13 @@ def test_route_status_strips_datetime_in_recent_list(monkeypatch) -> None:
     assert "Current d" not in out  # the truncated leak from the bug report
 
 
-# --- 4. route_message: 'github auth status' now caught by hard-override --
+# --- 4. route_message: 'github auth status' → lite_agent (Phase 39 router)
 def test_route_message_routes_github_auth_status_to_query_tool(monkeypatch) -> None:
-    """Fix #3 part 3 added a deterministic hard-override regex that
-    catches '<tool/domain> status' shapes BEFORE the classifier runs.
-    'what's my github auth status' should land on QUERY_TOOL via
-    lite_agent — not get enqueued as a TASK and not even reach the
-    STATUS-override branch."""
+    """'what's my github auth status' should land on QUERY_TOOL via
+    lite_agent — not get enqueued as a TASK. Phase 39: the LLM router
+    makes this call (the hard-override regex is no longer in the path)."""
     from workers import conversation_handler as ch
-    from workers.conversation_handler import Intent
+    from workers import llm_router
 
     enq_calls: List[str] = []
     monkeypatch.setattr(
@@ -108,24 +106,26 @@ def test_route_message_routes_github_auth_status_to_query_tool(monkeypatch) -> N
         "ok": True, "tool": "github_auth_status",
         "reply": "Authenticated as CWatt250.",
     })
-    # If something forces the classifier path, fail loudly.
-    monkeypatch.setattr(ch, "classify_intent_llm",
-                        lambda msg: Intent(kind="STATUS", raw="STATUS (should not fire)"))
+    monkeypatch.setattr(
+        llm_router, "route_llm",
+        lambda msg: {"route": "lite_agent", "tier": None, "recon_mode": False},
+    )
 
     result = ch.route_message("what's my github auth status")
     assert result["kind"] == "query_tool"
-    assert result["meta"].get("fast_tool_override") is True
     assert "CWatt250" in result["reply"]
-    assert not enq_calls, "should not enqueue when hard-override succeeds"
+    assert not enq_calls, "should not enqueue when lite_agent succeeds"
 
 
 # --- 5. route_message: STATUS stays STATUS for "queue status" ------------
 def test_route_message_keeps_queue_status_as_status(monkeypatch) -> None:
     from workers import conversation_handler as ch
-    from workers.conversation_handler import Intent
+    from workers import llm_router
 
-    monkeypatch.setattr(ch, "classify_intent_llm",
-                        lambda msg: Intent(kind="STATUS", raw="STATUS"))
+    monkeypatch.setattr(
+        llm_router, "route_llm",
+        lambda msg: {"route": "status", "tier": None, "recon_mode": False},
+    )
     monkeypatch.setattr(ch.task_queue, "list_tasks", lambda limit=10: [])
 
     result = ch.route_message("any tasks running right now")
@@ -136,10 +136,12 @@ def test_route_message_keeps_queue_status_as_status(monkeypatch) -> None:
 # --- 6. route_message: STATUS with a task_id stays STATUS ----------------
 def test_route_message_keeps_explicit_task_id_as_status(monkeypatch) -> None:
     from workers import conversation_handler as ch
-    from workers.conversation_handler import Intent
+    from workers import llm_router
 
-    monkeypatch.setattr(ch, "classify_intent_llm",
-                        lambda msg: Intent(kind="STATUS", raw="STATUS"))
+    monkeypatch.setattr(
+        llm_router, "route_llm",
+        lambda msg: {"route": "status", "tier": None, "recon_mode": False},
+    )
     monkeypatch.setattr(ch.task_queue, "get_task",
                         lambda tid: {
                             "task_id": tid,

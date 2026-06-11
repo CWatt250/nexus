@@ -1,0 +1,56 @@
+# Slash-command parsing — explicit commands skip the LLM router and the
+# prompt after the command is preserved verbatim.
+- name: slash-code-tier-flash-verbatim
+  kind: slash_parse
+  input: "/code add a docstring to tools/diff_tool.py mentioning gemma4:26b"
+  expect:
+    command: "/code"
+    tier: flash
+    prompt: "add a docstring to tools/diff_tool.py mentioning gemma4:26b"
+
+- name: slash-local-verbatim
+  kind: slash_parse
+  input: "/local make a tiny fizzbuzz html page"
+  expect:
+    command: "/local"
+    tool: local_builder
+    prompt: "make a tiny fizzbuzz html page"
+
+- name: slash-quick-verbatim
+  kind: slash_parse
+  input: "/quick what does TCP stand for"
+  expect:
+    command: "/quick"
+    tool: quick_chat
+    prompt: "what does TCP stand for"
+
+- name: slash-max-tier-max
+  kind: slash_parse
+  input: "/max refactor the result reporter into two modules"
+  expect:
+    command: "/max"
+    tier: max
+    prompt: "refactor the result reporter into two modules"
+
+- name: slash-pro-tier-pro
+  kind: slash_parse
+  input: "/pro tighten the retry logic in cc_dispatcher"
+  expect:
+    command: "/pro"
+    tier: pro
+    prompt: "tighten the retry logic in cc_dispatcher"
+
+- name: slash-real-deprecated-alias-for-api
+  kind: slash_parse
+  input: "/real ship it"
+  expect:
+    command: "/real"
+    tier: api
+    prompt: "ship it"
+
+- name: slash-code-dispatch-body-verbatim
+  kind: dispatch_passthrough
+  input: "fix the off-by-one in the chunker, game plan in the dashboard doc"
+  tier: flash
+  expect:
+    body_byte_identical: true

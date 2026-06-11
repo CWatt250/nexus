@@ -163,6 +163,10 @@ def _patch_deepseek(monkeypatch, *, captured=None):
 
     monkeypatch.setattr(qcp, "deepseek_chat", fake_deepseek)
     monkeypatch.setattr(qcp, "get_configured_provider", lambda: "deepseek")
+    # Phase 39 demoted DeepSeek to disabled-by-default; these tests pin
+    # the (still wired) deepseek path, so force it back on.
+    from workers import conversation_handler as _ch
+    monkeypatch.setattr(_ch, "QUICK_CHAT_PROVIDER", "deepseek")
 
 
 def test_quick_chat_with_chat_id_none_is_stateless(monkeypatch, tmp_path) -> None:

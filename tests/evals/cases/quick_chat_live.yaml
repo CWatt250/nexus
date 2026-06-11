@@ -1,0 +1,40 @@
+# Live quick_chat output-cleanliness cases. Skipped when Ollama or the
+# named model is unavailable.
+- name: hello-3-words-clean-on-brain
+  kind: quick_chat_live
+  model: brain
+  input: "say hello in 3 words"
+  max_sentences: 1
+  must_not_contain:
+    - "Okay, the user"
+    - "the user wants"
+    - "Let me think"
+    - "First, I need"
+    - "Self-Correction"
+    - "Best reply"
+    - "<think>"
+
+- name: hello-3-words-clean-on-degraded-fallback
+  kind: quick_chat_live
+  model: degraded
+  input: "say hello in 3 words"
+  max_sentences: 1
+  must_not_contain:
+    - "Okay, the user"
+    - "the user wants"
+    - "Let me think"
+    - "First, I need"
+    - "Self-Correction"
+    - "Best reply"
+    - "<think>"
+
+- name: multi-turn-memory-second-turn-sees-first
+  kind: multiturn_live
+  setup_turns:
+    - role: user
+      content: "for the record, my favorite color is teal"
+    - role: assistant
+      content: "got it — teal"
+  input: "what's my favorite color?"
+  must_contain:
+    - "teal"

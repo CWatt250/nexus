@@ -1,0 +1,50 @@
+# Offline scrubber cases — feed canned leak shapes through
+# _strip_think_final and assert the monologue dies.
+- name: okay-the-user-wants-stripped
+  kind: scrubber
+  input: "Okay, the user wants a greeting. Keep it short.\nHey — all clear, what do you need?"
+  must_contain:
+    - "all clear"
+  must_not_contain:
+    - "Okay, the user wants"
+
+- name: think-block-stripped
+  kind: scrubber
+  input: "<think>counting words... three is fine</think>Hey there Colton!"
+  must_contain:
+    - "Hey there Colton!"
+  must_not_contain:
+    - "<think>"
+    - "counting words"
+
+- name: best-reply-extracted
+  kind: scrubber
+  input: "Wait, the instructions say match his energy. Best reply: 'yo, all systems green'"
+  must_contain:
+    - "all systems green"
+  must_not_contain:
+    - "Wait, the instructions"
+    - "Best reply"
+
+- name: orphan-close-think-stripped
+  kind: scrubber
+  input: "We are in a situation where a greeting fits. Self-Correction: keep it short.</think>Hey, what do you need?"
+  must_contain:
+    - "Hey, what do you need?"
+  must_not_contain:
+    - "Self-Correction"
+    - "</think>"
+
+- name: clean-reply-untouched
+  kind: scrubber
+  input: "Sunny and 72F in Pasco today. Can't wait, it ships tonight."
+  must_contain:
+    - "Sunny and 72F in Pasco today. Can't wait, it ships tonight."
+
+- name: wait-leading-line-stripped
+  kind: scrubber
+  input: "Wait, the user asked for three words.\nHello there friend"
+  must_contain:
+    - "Hello there friend"
+  must_not_contain:
+    - "Wait,"

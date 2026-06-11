@@ -1,0 +1,43 @@
+# Offline dispatch-passthrough cases — _enqueue_tiered_dispatch with
+# cc_dispatch paths redirected to a temp dir. The contract: the body
+# that lands in the inbox is byte-identical to the input, always.
+- name: breakout-reproducer-byte-identical
+  kind: dispatch_passthrough
+  input: "build a breakout game with a paddle, ball, and bricks"
+  tier: max
+  expect:
+    body_byte_identical: true
+    recon_mode: false
+  must_not_contain_in_body:
+    - "Write the complete, self-contained output to"
+    - "Build request:"
+    - "~/AI_Agent/games/"
+
+- name: ui-keyword-false-positive-not-augmented
+  kind: dispatch_passthrough
+  input: "summarize the migrations state and required env vars from the Supabase dashboard, output a markdown checklist"
+  tier: max
+  expect:
+    body_byte_identical: true
+  must_not_contain_in_body:
+    - "Write the complete, self-contained output to"
+    - ".html"
+
+- name: recon-dispatch-flagged
+  kind: dispatch_passthrough
+  input: "investigate the failing nightly job, do not modify anything, report findings"
+  tier: max
+  expect:
+    body_byte_identical: true
+    recon_mode: true
+
+- name: gemma-label-survives-intact
+  kind: dispatch_passthrough
+  input: "please run the benchmark suite against ollama model gemma4:26b tonight and log results"
+  tier: flash
+  expect:
+    body_byte_identical: true
+  must_contain_in_label:
+    - "gemma4:26b"
+  must_not_contain_in_label:
+    - "gemma4:26 "

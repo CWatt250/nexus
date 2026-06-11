@@ -33,7 +33,7 @@ def test_route_message_records_latency_on_each_call(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(ch, "_INTENT_LATENCIES", log_path)
 
     monkeypatch.setattr(ch, "_route_message_inner",
-                        lambda msg: {"kind": "task", "reply": "On it.", "meta": {"task_id": "abc"}})
+                        lambda msg, **kw: {"kind": "task", "reply": "On it.", "meta": {"task_id": "abc"}})
     out = ch.route_message("research everything please")
     assert out["kind"] == "task"
 
@@ -52,7 +52,7 @@ def test_route_message_records_fast_format(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(
         ch, "_route_message_inner",
-        lambda msg: {
+        lambda msg, **kw: {
             "kind": "query_tool",
             "reply": "...",
             "meta": {"tool": "searxng_search", "fast_format": "search_top_hit"},

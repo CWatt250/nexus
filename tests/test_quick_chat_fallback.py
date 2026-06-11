@@ -1,4 +1,5 @@
-"""Tests for the qwen3:4b → qwen3.6 denial fallback in quick_chat (Fix #4 A).
+"""Tests for the quick_chat denial fallback (Fix #4 A, Phase 39 ladder:
+gpt-oss:120b brain primary → qwen3:4b degraded fallback).
 
 The Ollama HTTP layer is monkey-patched throughout — these run offline.
 """
@@ -24,19 +25,19 @@ def _patch_ollama(monkeypatch, replies_by_model):
     monkeypatch.setattr(ch, "_ollama_quick_chat", fake)
 
 
-# --- 1. Happy path: qwen3:4b answers cleanly, no fallback ----------------
+# --- 1. Happy path: gpt-oss:120b answers cleanly, no fallback ----------------
 def test_quick_chat_returns_primary_when_no_denial(monkeypatch, tmp_path) -> None:
     from workers import conversation_handler as ch
 
     monkeypatch.setattr(ch, "_DENIAL_LOG", tmp_path / "denials.jsonl")
-    _patch_ollama(monkeypatch, {"qwen3:4b": "It's 15."})
+    _patch_ollama(monkeypatch, {"gpt-oss:120b": "It's 15."})
 
     out = ch.quick_chat("what's 7+8")
     assert out == "It's 15."
     assert not (tmp_path / "denials.jsonl").exists()
 
 
-# --- 2. Primary denies → fallback to qwen3.6, log entry written -----------
+# --- 2. Primary denies → fallback to qwen3:4b, log entry written -----------
 def test_quick_chat_falls_back_on_denial(monkeypatch, tmp_path) -> None:
     from workers import conversation_handler as ch
 
@@ -46,15 +47,15 @@ def test_quick_chat_falls_back_on_denial(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     _patch_ollama(monkeypatch, {
-        "qwen3:4b": "I can't browse the web for current weather.",
-        "qwen3.6":  "Sunny, 72F in Pasco, WA today.",
+        "gpt-oss:120b": "I can't browse the web for current weather.",
+        "qwen3:4b":  "Sunny, 72F in Pasco, WA today.",
     })
 
     out = ch.quick_chat("what's the weather in Pasco WA")
     assert "Sunny" in out
     assert log_path.exists()
     entry = json.loads(log_path.read_text().strip().splitlines()[-1])
-    assert entry["model"] == "qwen3:4b"
+    assert entry["model"] == "gpt-oss:120b"
     assert "weather" in entry["msg"]
 
 
@@ -67,8 +68,8 @@ def test_quick_chat_returns_primary_if_both_deny(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     _patch_ollama(monkeypatch, {
-        "qwen3:4b": "I can't help with that.",
-        "qwen3.6":  "I cannot browse the web.",
+        "gpt-oss:120b": "I can't help with that.",
+        "qwen3:4b":  "I cannot browse the web.",
     })
 
     out = ch.quick_chat("anything")
@@ -83,8 +84,8 @@ def test_quick_chat_handles_fallback_exception(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_DENIAL_LAST_ALERT", tmp_path / "last_alert")
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
-    def fake(model, msg, sys):
-        if model == "qwen3:4b":
+    def fake(model, msg, sys, history=None):
+        if model == "gpt-oss:120b":
             return "I can't access the internet."
         raise RuntimeError("ollama down for fallback")
 
@@ -104,11 +105,11 @@ def test_denials_in_last_24h_counts_only_recent(monkeypatch, tmp_path) -> None:
 
     now = datetime.now(timezone.utc)
     rows = [
-        {"ts": (now - timedelta(hours=2)).isoformat(timespec="seconds"),  "msg": "fresh1", "model": "qwen3:4b"},
-        {"ts": (now - timedelta(hours=10)).isoformat(timespec="seconds"), "msg": "fresh2", "model": "qwen3:4b"},
-        {"ts": (now - timedelta(hours=23)).isoformat(timespec="seconds"), "msg": "fresh3", "model": "qwen3:4b"},
-        {"ts": (now - timedelta(hours=30)).isoformat(timespec="seconds"), "msg": "stale1", "model": "qwen3:4b"},
-        {"ts": (now - timedelta(days=7)).isoformat(timespec="seconds"),   "msg": "stale2", "model": "qwen3:4b"},
+        {"ts": (now - timedelta(hours=2)).isoformat(timespec="seconds"),  "msg": "fresh1", "model": "gpt-oss:120b"},
+        {"ts": (now - timedelta(hours=10)).isoformat(timespec="seconds"), "msg": "fresh2", "model": "gpt-oss:120b"},
+        {"ts": (now - timedelta(hours=23)).isoformat(timespec="seconds"), "msg": "fresh3", "model": "gpt-oss:120b"},
+        {"ts": (now - timedelta(hours=30)).isoformat(timespec="seconds"), "msg": "stale1", "model": "gpt-oss:120b"},
+        {"ts": (now - timedelta(days=7)).isoformat(timespec="seconds"),   "msg": "stale2", "model": "gpt-oss:120b"},
     ]
     log_path.write_text("\n".join(json.dumps(r) for r in rows))
 
@@ -168,7 +169,7 @@ def test_telegram_alert_skipped_below_threshold(monkeypatch, tmp_path) -> None:
         "I'll respond with a friendly, quick reply that matches their vibe.",
         True,
     ),
-    # Common qwen3:4b leak shapes
+    # Common gpt-oss:120b leak shapes
     ("Okay, the user asked what's 7+8.", True),
     ("Let me count: 1, 2, 3...", True),
     ("Make sure to mention the timezone.", True),
@@ -210,7 +211,7 @@ def test_split_unbalanced_close_think_passes_through_when_no_close() -> None:
 
 # --- 10. quick_chat falls back on thinking_leak (not just denial) -------
 def test_quick_chat_falls_back_on_thinking_leak(monkeypatch, tmp_path) -> None:
-    """The actual bug: qwen3:4b emits CoT prose without any denial
+    """The actual bug: gpt-oss:120b emits CoT prose without any denial
     keywords. The new fallback trigger is `looks_like_thinking_leak`."""
     from workers import conversation_handler as ch
 
@@ -219,8 +220,8 @@ def test_quick_chat_falls_back_on_thinking_leak(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_CLEANLINESS_LOG", tmp_path / "cleanliness.jsonl")
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
-    def fake(model, msg, sys):
-        if model == "qwen3:4b":
+    def fake(model, msg, sys, history=None):
+        if model == "gpt-oss:120b":
             return ("I need to banter back lightly as per the rules. "
                     "Keep it 2-3 sentences. Since they're greeting me, "
                     "I'll respond with a friendly reply.")
@@ -243,7 +244,7 @@ def test_quick_chat_records_cleanliness_when_clean(monkeypatch, tmp_path) -> Non
 
     monkeypatch.setattr(ch, "_CLEANLINESS_LOG", tmp_path / "clean.jsonl")
     monkeypatch.setattr(ch, "_ollama_quick_chat",
-                        lambda m, msg, s: "It's 15.")
+                        lambda m, msg, s, history=None: "It's 15.")
 
     out = ch.quick_chat("what's 7+8")
     assert out == "It's 15."
@@ -251,4 +252,4 @@ def test_quick_chat_records_cleanliness_when_clean(monkeypatch, tmp_path) -> Non
     rec = json.loads((tmp_path / "clean.jsonl").read_text().strip())
     assert rec["clean"] is True
     assert rec["fallback_used"] is False
-    assert rec["model"] == "qwen3:4b"
+    assert rec["model"] == "gpt-oss:120b"

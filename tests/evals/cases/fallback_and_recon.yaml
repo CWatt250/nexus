@@ -1,0 +1,36 @@
+# Router failure handling + deterministic recon keyword detection.
+- name: router-junk-output-falls-back-to-quick-chat
+  kind: router_junk
+  input: "deploy the thing"
+  junk: "I think this is probably a dispatch?? route=dispatch-ish"
+  expect:
+    route: quick_chat
+    logged_warning: true
+
+- name: router-wrong-schema-falls-back
+  kind: router_junk
+  input: "build me a thing"
+  junk: '{"route": "yolo", "tier": "mega", "recon_mode": "sure"}'
+  expect:
+    route: quick_chat
+    logged_warning: true
+
+- name: router-exception-falls-back
+  kind: router_junk
+  input: "hello?"
+  junk: __raise__
+  expect:
+    route: quick_chat
+    logged_warning: true
+
+- name: recon-keywords-detected
+  kind: recon_keywords
+  positives:
+    - "audit the cron jobs and report findings"
+    - "do not modify anything, just look"
+    - "investigate why the service flapped"
+    - "quick recon of the repo layout"
+    - "read it all but do not push"
+  negatives:
+    - "build me a snake game"
+    - "fix the bug in eod_summary.py"
