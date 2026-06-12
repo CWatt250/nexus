@@ -143,6 +143,33 @@ result_reporter:
 
 **Tests:** `tests/test_result_reporter_chunking.py` — 30 tests covering all scenarios.
 
+## Phase 39 — Brain + Guardrails Overhaul
+
+- **Brain:** `core/brain.py` — gpt-oss:120b (local, $0) is the brain for
+  quick_chat, routing, and lite_agent. qwen3:4b is the explicit
+  offline/degraded fallback only. qwen3.6 is retired as resident.
+  DeepSeek quick_chat/classifier path is wired but disabled by default
+  (`QUICK_CHAT_PROVIDER = "ollama"`).
+- **Routing:** `workers/llm_router.py` — ONE structured-output call
+  (Ollama JSON-schema `format`) returns `{route, tier, recon_mode}`.
+  The user's message flows downstream **byte-identical** on every
+  route. There is no prompt augmentation anywhere in the dispatch path
+  — do not add any back. Slash commands still skip the router entirely.
+  Router failure → quick_chat fallback + WARNING, never a guessed dispatch.
+- **recon_mode:** router flag OR'd with keyword detection ("do not
+  edit/modify/push", "report findings", "investigate", "audit",
+  "recon") — disables visual_verify auto-fire and screenshot generation
+  in `workers/cc_dispatcher.py`.
+- **Think suppression:** gpt-oss → `think:"low"` + the separate
+  `thinking` field is discarded; qwen → `think:false` + Phase 30
+  scrubber backstop. The backstop logs a WARNING whenever it actually
+  catches something — those warnings mean suppression broke upstream.
+- **Labels:** use `core.cc_dispatch.safe_label()` — never hard-slice a
+  label (`[:60]` chopped "gemma4:26b" to "gemma4:26").
+
+**RULE: every future phase must run `tests/evals/run_evals.sh` and have
+it exit 0 before its ship gate counts as passed.**
+
 ---
 
 # Karpathy Coding Principles

@@ -1,13 +1,64 @@
 # Nexus Build State
 
 ## Current Phase
-COMPLETE
+39 — Brain + Guardrails Overhaul (code landed; gpt-oss:120b benchmark pending)
 
 ## Current Task
-NONE
+Phase 39 — benchmark gpt-oss:120b, run live eval gates, restart services
 
 ## Last Completed Task
-Phase 29 — /max default, /api rename, tier-specific cost gates (7/7 gates)
+Phase 38 — Telegram chat memory (quick_chat conversation buffer)
+
+## Phase 40 Candidates
+- **RISKY_PATTERNS over-matching** (`core/cc_dispatch.py`): the
+  approval-gate regex matched the word "production" inside a read-only
+  recon prompt (cc_459a349f, "...applied to production Supabase") and
+  held it for approval. Same keyword-matching disease Phase 39 killed
+  in the augmentation path — the risky gate needs context awareness or
+  the LLM router's judgment instead of bare substrings.
+
+## Phase 39 — Brain + Guardrails Overhaul (2026-06-11, in flight)
+Fixes four chronic failures: dumb chat/routing (4B-model ceiling),
+scope invention (keyword-gated prompt augmentation), CoT leaks
+(sentinel whack-a-mole), and no regression safety (no eval suite).
+
+Code (landed, see CLAUDE.md Phase 39 section for the contract):
+- `core/brain.py` — brain model accessor + per-family think
+  suppression (gpt-oss → think:"low" + discard `thinking` field;
+  qwen → think:false + scrubber backstop). Degraded fallback qwen3:4b.
+- `workers/llm_router.py` — structured-output router
+  {route, tier, recon_mode}; verbatim passthrough; junk/error →
+  quick_chat fallback + WARNING, never a guessed dispatch.
+- `workers/conversation_handler.py` — regex intent ladder removed
+  (build-intent, scaffold, entity-question, fast-tool override,
+  STATUS keyword override, label classifier); HTML augmentation
+  REMOVED (not gated); task inputs stored verbatim (datetime injected
+  transiently by task_worker); Phase 39 leak sentinels + WARN logging
+  when the backstop scrubber catches anything.
+- `workers/cc_dispatcher.py` — visual_verify gated on NOT
+  meta.recon_mode (augmentation marker is gone).
+- `core/cc_dispatch.py` — DispatchMeta.recon_mode + safe_label()
+  (token-safe truncation; fixes gemma4:26b → gemma4:26 echo at all
+  three former [:60] sites incl. telegram_listener).
+- `tools/telegram_listener.py` + `nexus_api.py` — duplicate
+  build-intent regex interceptions removed; messages flow to
+  route_message → LLM router.
+- qwen3.6 retired as resident: lite_agent, classifier fallback,
+  denial fallback, extract_clean_answer, models.json
+  heavy/code/design → brain.
+- `tests/evals/` — 34-case eval harness; run_evals.sh exits nonzero
+  on failure; CLAUDE.md rule: every future phase must pass it.
+
+Verified so far: full pytest suite 413/413; evals 22 pass / 0 fail /
+12 skipped (live-brain cases pending model download).
+Re-verified on Ollama 0.21.0: qwen3:4b think=false still leaks CoT
+into content; think=true diverts to `thinking` but burns the whole
+num_predict budget and 500s with format=json → degraded path keeps
+think=false + scrubber.
+
+PENDING (this session): gpt-oss:120b pull + benchmark (gate: ≥25 t/s
+decode, TTFT <4s router prompts, no OOM with qwen2.5vl co-resident;
+fallback brain = qwen3-coder:30b), live eval gates, service restarts.
 
 ## Phase Status
 - Phase 12: SKIPPED
