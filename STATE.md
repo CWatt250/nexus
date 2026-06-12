@@ -1,13 +1,13 @@
 # Nexus Build State
 
 ## Current Phase
-39 — Brain + Guardrails Overhaul (code landed; gpt-oss:120b benchmark pending)
+COMPLETE
 
 ## Current Task
-Phase 39 — benchmark gpt-oss:120b, run live eval gates, restart services
+NONE
 
 ## Last Completed Task
-Phase 38 — Telegram chat memory (quick_chat conversation buffer)
+Phase 39 — Brain + Guardrails Overhaul (12/12 gates, evals 34/34, pytest 413/413)
 
 ## Phase 40 Candidates
 - **RISKY_PATTERNS over-matching** (`core/cc_dispatch.py`): the
@@ -17,7 +17,7 @@ Phase 38 — Telegram chat memory (quick_chat conversation buffer)
   in the augmentation path — the risky gate needs context awareness or
   the LLM router's judgment instead of bare substrings.
 
-## Phase 39 — Brain + Guardrails Overhaul (2026-06-11, in flight)
+## Phase 39 — Brain + Guardrails Overhaul (2026-06-11, COMPLETE)
 Fixes four chronic failures: dumb chat/routing (4B-model ceiling),
 scope invention (keyword-gated prompt augmentation), CoT leaks
 (sentinel whack-a-mole), and no regression safety (no eval suite).
@@ -56,9 +56,20 @@ into content; think=true diverts to `thinking` but burns the whole
 num_predict budget and 500s with format=json → degraded path keeps
 think=false + scrubber.
 
-PENDING (this session): gpt-oss:120b pull + benchmark (gate: ≥25 t/s
-decode, TTFT <4s router prompts, no OOM with qwen2.5vl co-resident;
-fallback brain = qwen3-coder:30b), live eval gates, service restarts.
+Benchmark (PASS — gpt-oss:120b is the brain, fallback path unused):
+- decode 35.3 t/s (gate ≥25); router TTFT 1.68s (gate <4s)
+- co-residency: brain 100% GPU (59.8GiB/64GiB VRAM carve) +
+  qwen2.5vl:7b 100% CPU via num_gpu=0 in vision_tool — no eviction,
+  no OOM. (ROCm backend can't actually use GTT; both-on-GPU OOM'd
+  and crashed the runner, hence the CPU pin. Unified LPDDR5X means
+  CPU decode for the occasional verify call still runs ~30 t/s.)
+
+Ship gates: evals 34/34 exit 0; pytest 413/413; 3-turn conversation
+coherent with cross-turn recall; "say hello in 3 words" clean on brain
+AND degraded fallback; Breakout reproducer byte-identical; recon
+dispatch flagged + no artifacts; gemma4:26b label intact; slash tiers
+correct; router junk → quick_chat fallback + WARNING; services
+restarted clean; hermes-gateway untouched (same start timestamp).
 
 ## Phase Status
 - Phase 12: SKIPPED

@@ -1,5 +1,75 @@
 # Nexus Build Changelog
 
+## 2026-06-11 — Phase 39 (Brain + Guardrails Overhaul) — PASS
+
+Local-only brain transplant + LLM router with verbatim passthrough +
+native think suppression + permanent eval harness. Zero new API cost
+(DeepSeek quick_chat/classifier demoted to disabled-by-default).
+
+### Brain (gpt-oss:120b, local, $0)
+- Benchmark on WattBott (Strix Halo, Ollama 0.21.0 bundled HIP backend):
+  **35.3 t/s decode** (gate ≥25), **TTFT 1.68s** on router prompts
+  (gate <4s), **qwen2.5vl:7b co-resident with no eviction** — brain
+  100% GPU (59.8GiB of the 64GiB VRAM carve), VL pinned to CPU via
+  `num_gpu=0` in `tools/vision_tool.py` (~30 t/s CPU decode, fine for
+  verify verdicts). GATE PASS → gpt-oss:120b is the brain; the
+  qwen3-coder:30b fallback path was not needed.
+- Hardware reality vs plan: GTT is 31GiB (not ~120) and the ROCm
+  backend allocates only from the 64GiB VRAM carve — brain+VL both on
+  GPU OOM'd and crashed the runner. CPU-pinning the VL model is the
+  fix; on unified LPDDR5X the bandwidth is the same.
+- `core/brain.py` — brain accessor + per-family think suppression +
+  qwen3:4b degraded fallback (offline/eviction only). qwen3.6 retired
+  as resident (lite_agent, classifier fallback, denial fallback,
+  extract_clean_answer, models.json heavy/code/design → brain).
+
+### Router (kills scope invention)
+- `workers/llm_router.py` — single structured-output call (JSON-schema
+  `format`) → {route, tier, recon_mode}. Replaces the regex intent
+  ladder in conversation_handler (build-intent, scaffold,
+  entity-question, fast-tool override, STATUS keyword override, label
+  classifier). Junk/error → quick_chat fallback + WARNING, never a
+  guessed dispatch. Slash commands still skip the router.
+- **Verbatim passthrough everywhere**: the Phase 28/31 HTML
+  augmentation is REMOVED (not gated); task queue rows store the
+  user's bytes (datetime now injected transiently by task_worker);
+  telegram_listener + nexus_api duplicate build-intent interceptions
+  removed.
+- recon_mode (router ∨ keyword: do-not-edit/modify/push, report
+  findings, investigate, audit, recon) → DispatchMeta; cc_dispatcher
+  skips visual_verify/screenshots on recon dispatches.
+- Label truncation fixed at all 3 sites via `cc_dispatch.safe_label()`
+  — token-boundary truncation, "gemma4:26b" survives intact.
+
+### Think suppression (kills CoT leaks at the source)
+- gpt-oss → `think:"low"`, reasoning lands in the discarded `thinking`
+  field. qwen → `think:false` + scrubber backstop.
+- Re-verified on Ollama 0.21.0: qwen3:4b `think:false` still leaks raw
+  CoT into content; `think:true` diverts it but burns the whole
+  num_predict budget (empty content @512) and 500s with format=json →
+  degraded path keeps think:false + JSON mode + scrubber.
+- New sentinels (incl. prefix-only tier so "wait," can't false-flag
+  casual replies). Backstop scrubber now logs a WARNING on every
+  actual catch — a catch means native suppression failed upstream.
+
+### Eval harness (makes "fixed" mean fixed)
+- `tests/evals/` — 34 cases (routing, byte-identical passthrough,
+  recon, labels, slash tiers, scrubber, junk-router fallback, live
+  cleanliness on brain AND degraded fallback, Phase 38 multi-turn).
+  `run_evals.sh` exits nonzero on failure; live cases skip gracefully
+  when Ollama/model is down. **34/34 PASS, exit 0.**
+- CLAUDE.md rule: every future phase must pass run_evals.sh before its
+  ship gate counts.
+
+### Verification
+- Full pytest suite 413/413 (incl. 2 pre-existing Phase 38 test fixes).
+- 3-turn live conversation coherent (turn-2 math $108 recalled turn-3).
+- "say hello in 3 words" clean on brain and on qwen3:4b fallback.
+- Services restarted clean (agent, api, task-worker, telegram,
+  cc-dispatcher, cc-reporter, scheduler, sparky-brain); hermes-gateway
+  start timestamp identical before/after (untouched).
+- Phase 40 candidate logged in STATE.md: RISKY_PATTERNS over-matching.
+
 ## 2026-05-02 — Phase 16.10 (MCP integrations: Filesystem + Excel) — PASS
 
 ### 16.10 — read-only Filesystem + Excel MCP servers wired in

@@ -1858,17 +1858,29 @@ def _wiki_grounded_reply(message: str) -> dict:
             "reply": _entity_no_wiki_reply(message),
             "meta": {"wiki_hit": False},
         }
-    # Got a hit — synthesize a grounded reply via quick_chat using the
-    # wiki content as system context. Keep it tight.
-    grounded_prompt = (
-        "Answer the user's question using ONLY the wiki excerpt below. "
-        "Be concise (2-4 sentences). If the excerpt doesn't fully answer, "
-        "say so explicitly. Do not invent details.\n\n"
-        f"WIKI EXCERPT:\n{hits[:4000]}\n\n"
-        f"USER QUESTION: {message}"
-    )
+    # Got a hit — synthesize a grounded reply with a LEAN direct brain
+    # call. Phase 39: routing this through quick_chat prepended the
+    # full SOUL prompt (~2700 tokens) on top of the excerpt, pushing
+    # the wiki route past the 25s /chat cap on the local brain. A
+    # factual synthesis doesn't need the persona machinery.
     try:
-        reply = quick_chat(grounded_prompt)
+        reply = brain.chat(
+            [
+                {"role": "system", "content": (
+                    "Answer the user's question using ONLY the wiki "
+                    "excerpt provided. Be concise (2-4 sentences). If the "
+                    "excerpt doesn't fully answer, say so explicitly. "
+                    "Do not invent details. No preamble, no reasoning.")},
+                {"role": "user", "content": (
+                    f"WIKI EXCERPT:\n{hits[:4000]}\n\n"
+                    f"USER QUESTION: {message}")},
+            ],
+            options={"temperature": 0.2, "num_ctx": 4096, "num_predict": 220},
+            timeout=20.0,
+        )
+        reply = _strip_think_final(reply)
+        if not reply:
+            raise RuntimeError("empty synthesis")
     except Exception as exc:
         log.warning("grounded reply failed: %s", exc)
         reply = hits[:1500] + "\n\n(raw wiki excerpt — synthesis failed)"
