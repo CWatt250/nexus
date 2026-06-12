@@ -97,12 +97,18 @@ def main() -> int:
     print(f"## router TTFT\n- TTFT {ttft2:.2f}s (decode {tps2:.1f} t/s)\n")
 
     # 3. Co-residency: load qwen2.5vl:7b alongside, then re-check brain.
-    print("## co-residency (qwen2.5vl:7b)")
+    # num_gpu=0 matches production (tools/vision_tool.py): the VL model
+    # runs on CPU so it can't OOM the brain out of the 64GB VRAM carve.
+    print("## co-residency (qwen2.5vl:7b on CPU, matching vision_tool)")
     try:
         body = {"model": "qwen2.5vl:7b",
                 "messages": [{"role": "user", "content": "say ok"}],
                 "stream": False, "keep_alive": -1,
-                "options": {"num_predict": 8}}
+                # num_ctx must be bounded like vision_tool does (4096) —
+                # the model's default ctx makes the CPU memory estimate
+                # balloon to ~47GiB and the load is refused.
+                "options": {"num_predict": 8, "num_gpu": 0,
+                            "num_ctx": 4096}}
         req = urllib.request.Request(f"{OLLAMA}/api/chat",
                                      data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})

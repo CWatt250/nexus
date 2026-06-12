@@ -52,7 +52,15 @@ def _vision_chat(prompt: str, image_b64: str, *,
             model=model,
             messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
             stream=False,
-            options={"temperature": 0.2, "num_ctx": num_ctx, "num_predict": num_predict},
+            # Phase 39 — num_gpu=0 pins the VL model to CPU. The brain
+            # (gpt-oss:120b) owns the 64GB VRAM carve; loading the VL
+            # model's ~13GB resident footprint on GPU OOMs the ROCm
+            # backend and crashes the brain runner. On Strix Halo
+            # unified memory, CPU decode for the occasional verify call
+            # runs ~30 t/s — fine for short verdicts, and nothing gets
+            # evicted.
+            options={"temperature": 0.2, "num_ctx": num_ctx,
+                     "num_predict": num_predict, "num_gpu": 0},
             keep_alive=300,  # keep VL model warm for ~5min between calls
         )
     except Exception as exc:
