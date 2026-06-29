@@ -6,6 +6,8 @@ Format: `YYYY-MM-DD HH:MM TZ — <page>: <what changed>`
 
 ---
 
+2026-06-16 14:54 UTC — Phase 28 dispatch | tier=max | "Code this - " | 31.2s | $0.0000 | done
+
 2026-06-12 03:30 UTC — Phase 39 shipped: Brain + Guardrails Overhaul. gpt-oss:120b is the local brain (35.3 t/s, TTFT 1.68s, $0) for quick_chat + routing + lite_agent; qwen3:4b degraded fallback only; qwen3.6 retired as resident; DeepSeek demoted to disabled-by-default. workers/llm_router.py replaces the regex intent ladder with one structured-output call {route, tier, recon_mode} — prompts flow downstream byte-identical (HTML augmentation REMOVED), recon_mode kills visual_verify auto-fire, safe_label() ends mid-token truncation (gemma4:26b survives). Think suppression: gpt-oss think:'low' + discarded thinking field; scrubber backstop WARNs on every catch. qwen2.5vl pinned to CPU (num_gpu=0) so it co-resides with the 60GB brain inside the 64GB VRAM carve. tests/evals/ harness: 34/34 PASS, exit 0 — now a mandatory ship gate for every future phase (CLAUDE.md rule). pytest 413/413. Services restarted clean; hermes-gateway untouched.
 
 2026-05-28 04:03 UTC — Phase 28 dispatch | tier=api | "connect_to_deepseek_flash" | 2.9s | $0.0042 | failed
