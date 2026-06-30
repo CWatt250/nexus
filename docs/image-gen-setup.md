@@ -35,18 +35,40 @@ LD_LIBRARY_PATH=. ./sd-cli -m models/sd15.safetensors \
 # and /tmp/test.png written in ~10s.
 ```
 
-## Usage
+## Models
 
-- **Tool:** `tools/image_gen_tool.generate_image(prompt, size, ...)` (heavy
-  agent) → saves to `output/images/`.
-- **Telegram:** `/image <prompt>` → generates and sends the photo.
+The tool (`tools/image_gen_tool.py`) supports three local models via `model=`:
 
-## Higher quality (optional)
+| model | quality | size | speed | notes |
+|-------|---------|------|-------|-------|
+| `flux` (**default**) | best — real in-image **text**, strong prompt adherence | 1024 | ~37s | FLUX.1-schnell Q4, 12B |
+| `sdxl` | detailed | 1024 | ~21s | SDXL-Turbo |
+| `sd15` | soft/cute, fastest | 512 | ~10s | SD1.5 |
 
-Swap the model for **SDXL-Turbo** (~6.9 GB, 1024px, 4 steps) and point
-`SD_MODEL` in `tools/image_gen_tool.py` at it:
+### Provision FLUX.1-schnell (the default — Apache-2.0, free)
 
 ```bash
-curl -sL -o models/sdxl-turbo.safetensors \
+cd ~/AI_Agent/models/sdcpp && mkdir -p flux && cd flux
+curl -sL -o flux1-schnell-Q4_K_S.gguf \
+  https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q4_K_S.gguf   # 6.8 GB
+curl -sL -o t5xxl_fp8.safetensors \
+  https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors  # 4.9 GB
+curl -sL -o clip_l.safetensors \
+  https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors   # 246 MB
+curl -sL -o ae.safetensors \
+  https://huggingface.co/second-state/FLUX.1-schnell-GGUF/resolve/main/ae.safetensors        # 335 MB (ungated VAE mirror)
+```
+For higher quality swap the model file for `flux1-schnell-Q8_0.gguf` (~12.7 GB)
+and update the path in `MODELS["flux"]` in `tools/image_gen_tool.py`.
+
+### Provision SDXL-Turbo (optional)
+```bash
+curl -sL -o ~/AI_Agent/models/sdcpp/models/sdxl-turbo.safetensors \
   https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors
 ```
+
+## Usage
+
+- **Tool:** `generate_image(prompt, model="flux"|"sdxl"|"sd15", ...)` (heavy
+  agent) → saves to `output/images/`.
+- **Telegram:** `/image <prompt>` (FLUX) or `/image sd15 <prompt>` (fast).

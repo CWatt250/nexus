@@ -563,16 +563,22 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     ~10s) and send it back as a photo."""
     if not is_authorized(update):
         return
-    prompt = " ".join(context.args).strip() if context.args else ""
+    args = list(context.args or [])
+    model = "flux"  # default — best quality + real text (~37s)
+    if args and args[0].lower() in ("flux", "sdxl", "sd15"):
+        model = args.pop(0).lower()
+    prompt = " ".join(args).strip()
     if not prompt:
         await update.message.reply_text(
-            "/image: needs a prompt. e.g. /image a husky in a santa hat, watercolor")
+            "/image [flux|sdxl|sd15] <prompt>\n"
+            "e.g. /image a husky in a santa hat, watercolor  (flux, default)\n"
+            "     /image sd15 a quick doodle of a fox        (faster)")
         return
     await update.message.chat.send_action("upload_photo")
     try:
         from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
         res = await asyncio.wait_for(
-            asyncio.to_thread(generate_image_core, prompt), timeout=300)
+            asyncio.to_thread(generate_image_core, prompt, model=model), timeout=300)
     except asyncio.TimeoutError:
         await update.message.reply_text("/image timed out (>300s).")
         return
@@ -585,7 +591,9 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         with open(res["path"], "rb") as fh:
             await update.message.reply_photo(
-                fh, caption=f"{prompt[:180]} ({res['seconds']}s, seed={res['seed']})")
+                fh, caption=f"{prompt[:170]} "
+                            f"({res.get('model', model)}, {res['seconds']}s, "
+                            f"seed={res['seed']})")
     except Exception as exc:
         await update.message.reply_text(
             f"/image: saved {res['path']} but the send failed: {exc}")

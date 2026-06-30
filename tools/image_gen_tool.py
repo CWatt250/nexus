@@ -2,13 +2,18 @@
 
 Replaces the old dead ERNIE cloud stub. Generation runs entirely on
 WattBott's Radeon 8060S iGPU (gfx1151) via the prebuilt sd.cpp Vulkan
-binary — $0, offline, ~10s for a 512x512 SD1.5 image.
+binary — $0, offline.
 
-Backend assets (gitignored, not in the repo):
-  models/sdcpp/sd-cli                    prebuilt Vulkan binary + .so libs
-  models/sdcpp/models/sd15.safetensors   the diffusion model
-Swap the model file (e.g. SDXL-Turbo) and point SD_MODEL at it for higher
-quality; nothing else changes.
+Three local models (pick via `model=`):
+  flux  — FLUX.1-schnell Q4 (DEFAULT). Best quality, real in-image TEXT,
+          strong prompt adherence. 1024px, ~37s (12B model).
+  sdxl  — SDXL-Turbo. Detailed, 1024px, ~21s.
+  sd15  — SD1.5. Soft/cute, 512px, ~10s — fastest.
+
+Backend assets are gitignored (large) — see docs/image-gen-setup.md to
+re-provision: models/sdcpp/{sd-cli,*.so}, models/sdcpp/models/*.safetensors,
+models/sdcpp/flux/{flux1-schnell-Q4_K_S.gguf,t5xxl_fp8.safetensors,
+clip_l.safetensors,ae.safetensors}.
 """
 from __future__ import annotations
 
@@ -27,51 +32,98 @@ log = logging.getLogger("nexus.image_gen")
 ROOT = Path.home() / "AI_Agent"
 SDCPP_DIR = ROOT / "models" / "sdcpp"
 SD_BIN = SDCPP_DIR / "sd-cli"
-SD_MODEL = SDCPP_DIR / "models" / "sd15.safetensors"
+MODELS_DIR = SDCPP_DIR / "models"
+FLUX_DIR = SDCPP_DIR / "flux"
 OUTPUT_DIR = ROOT / "output" / "images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-_MAX_DIM = 1024  # SD1.5 is trained at 512; cap larger requests for speed/safety
 _DEFAULT_NEGATIVE = ("lowres, blurry, deformed, disfigured, bad anatomy, "
                      "extra limbs, watermark, text, jpeg artifacts")
 
+# Per-model invocation profiles. `model_args` are the sd.cpp flags that
+# select/feed the checkpoint; the rest are the sampler settings each model
+# wants. `uses_negative` is False for the cfg=1 distilled models (they
+# ignore CFG, so a negative prompt does nothing).
+MODELS: dict[str, dict] = {
+    "flux": {
+        "check": FLUX_DIR / "flux1-schnell-Q4_K_S.gguf",
+        "model_args": [
+            "--diffusion-model", str(FLUX_DIR / "flux1-schnell-Q4_K_S.gguf"),
+            "--vae", str(FLUX_DIR / "ae.safetensors"),
+            "--clip_l", str(FLUX_DIR / "clip_l.safetensors"),
+            "--t5xxl", str(FLUX_DIR / "t5xxl_fp8.safetensors"),
+            "--diffusion-fa",
+        ],
+        "steps": 4, "cfg": 1.0, "sampler": "euler", "dim": 1024,
+        "vae_tiling": True, "uses_negative": False,
+    },
+    "sdxl": {
+        "check": MODELS_DIR / "sdxl-turbo.safetensors",
+        "model_args": ["-m", str(MODELS_DIR / "sdxl-turbo.safetensors")],
+        "steps": 8, "cfg": 1.0, "sampler": "euler", "dim": 1024,
+        "vae_tiling": True, "uses_negative": False,
+    },
+    "sd15": {
+        "check": MODELS_DIR / "sd15.safetensors",
+        "model_args": ["-m", str(MODELS_DIR / "sd15.safetensors")],
+        "steps": 20, "cfg": 7.0, "sampler": None, "dim": 512,
+        "vae_tiling": False, "uses_negative": True,
+    },
+}
+DEFAULT_MODEL = "flux"
 
-def _parse_size(size: str) -> tuple[int, int]:
-    try:
-        w, h = (int(x) for x in str(size).lower().split("x", 1))
-        return min(w, _MAX_DIM), min(h, _MAX_DIM)
-    except Exception:
-        return 512, 512
+
+def _resolve_model(model: str) -> str:
+    m = (model or DEFAULT_MODEL).strip().lower()
+    if m in MODELS and MODELS[m]["check"].exists():
+        return m
+    # Fall back to the best model whose assets are actually present.
+    for cand in ("flux", "sdxl", "sd15"):
+        if MODELS[cand]["check"].exists():
+            return cand
+    return DEFAULT_MODEL
 
 
 def generate_image_core(
-    prompt: str, *, width: int = 512, height: int = 512, steps: int = 20,
-    cfg_scale: float = 7.0, seed: int = -1, negative: str = _DEFAULT_NEGATIVE,
+    prompt: str, *, model: str = DEFAULT_MODEL,
+    width: Optional[int] = None, height: Optional[int] = None,
+    steps: Optional[int] = None, cfg_scale: Optional[float] = None,
+    seed: int = -1, negative: str = _DEFAULT_NEGATIVE,
     filename: Optional[str] = None,
 ) -> dict:
-    """Generate one image locally. Returns {ok, path, seconds, seed, error}."""
+    """Generate one image locally. Returns {ok, path, seconds, seed, model, error}."""
     if not SD_BIN.exists():
-        return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}",
-                "path": None}
-    if not SD_MODEL.exists():
-        return {"ok": False, "error": f"model missing at {SD_MODEL}", "path": None}
+        return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}", "path": None}
     if not (prompt or "").strip():
         return {"ok": False, "error": "empty prompt", "path": None}
 
+    name = _resolve_model(model)
+    cfg = MODELS[name]
+    if not cfg["check"].exists():
+        return {"ok": False, "error": f"no image model installed (see "
+                f"docs/image-gen-setup.md)", "path": None}
+
+    w = width or cfg["dim"]
+    h = height or cfg["dim"]
+    steps = steps or cfg["steps"]
+    cfg_scale = cfg["cfg"] if cfg_scale is None else cfg_scale
     if seed is None or seed < 0:
         seed = random.randint(1, 2_147_483_646)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    base = filename or f"img-{stamp}-{seed}"
+    base = filename or f"img-{time.strftime('%Y%m%d-%H%M%S')}-{name}-{seed}"
     out_path = OUTPUT_DIR / f"{base}.png"
 
     env = dict(os.environ)
     env["LD_LIBRARY_PATH"] = f"{SDCPP_DIR}:{env.get('LD_LIBRARY_PATH', '')}"
-    cmd = [
-        str(SD_BIN), "-m", str(SD_MODEL), "-p", prompt.strip(),
-        "-n", negative, "--steps", str(steps), "--cfg-scale", str(cfg_scale),
-        "-W", str(width), "-H", str(height), "--seed", str(seed),
-        "-o", str(out_path),
-    ]
+    cmd = [str(SD_BIN), *cfg["model_args"], "-p", prompt.strip(),
+           "--steps", str(steps), "--cfg-scale", str(cfg_scale),
+           "-W", str(w), "-H", str(h), "--seed", str(seed), "-o", str(out_path)]
+    if cfg["sampler"]:
+        cmd += ["--sampling-method", cfg["sampler"]]
+    if cfg["vae_tiling"]:
+        cmd += ["--vae-tiling"]
+    if cfg["uses_negative"]:
+        cmd += ["-n", negative]
+
     t0 = time.monotonic()
     try:
         proc = subprocess.run(cmd, cwd=str(SDCPP_DIR), env=env,
@@ -86,40 +138,44 @@ def generate_image_core(
         tail = (proc.stderr or proc.stdout or "")[-400:]
         return {"ok": False, "error": f"no image produced. {tail}", "path": None}
     return {"ok": True, "path": str(out_path), "seconds": secs, "seed": seed,
-            "error": None}
+            "model": name, "error": None}
 
 
 @tool
 def generate_image(
-    prompt: str, size: str = "512x512", style: str = "",
-    negative_prompt: str = "", steps: int = 20,
-    filename: Optional[str] = None,
+    prompt: str, model: str = "flux", size: str = "",
+    style: str = "", steps: int = 0, filename: Optional[str] = None,
 ) -> str:
-    """Generate an image from a text prompt using the LOCAL Stable Diffusion
-    backend (sd.cpp on the Vulkan iGPU — free, offline, ~10s).
+    """Generate an image from a text prompt using a LOCAL Stable Diffusion
+    model (sd.cpp on the Vulkan iGPU — free, offline).
 
     Args:
-        prompt: Description of the image. Be specific; add style words
-            ("photorealistic", "watercolor", "3d render") for control.
-        size: "WxH" — 512x512 (fastest), 768x512, etc. SD1.5 is best at 512.
+        prompt: Description of the image. Be specific; FLUX follows detailed
+            prompts well and can render readable text (logos, signs).
+        model: "flux" (default, best quality + text, ~37s), "sdxl" (detailed,
+            ~21s), or "sd15" (soft/cute, fastest ~10s).
+        size: "WxH" override (else the model's native size — 1024 for
+            flux/sdxl, 512 for sd15).
         style: Optional style hint appended to the prompt.
-        negative_prompt: What to avoid (defaults to a quality-boosting set).
-        steps: Sampling steps (20 is a good default; fewer = faster).
+        steps: Override sampling steps (0 = model default).
         filename: Optional output filename (no extension).
 
     Returns:
         Path to the saved PNG, or an error string.
     """
-    width, height = _parse_size(size)
-    full_prompt = f"{prompt.strip()}, {style.strip()}" if style.strip() else prompt
-    res = generate_image_core(
-        full_prompt, width=width, height=height, steps=steps,
-        negative=negative_prompt.strip() or _DEFAULT_NEGATIVE,
-        filename=filename,
-    )
+    w = h = None
+    if size:
+        try:
+            w, h = (int(x) for x in size.lower().split("x", 1))
+        except Exception:
+            w = h = None
+    full = f"{prompt.strip()}, {style.strip()}" if style.strip() else prompt
+    res = generate_image_core(full, model=model, width=w, height=h,
+                              steps=steps or None, filename=filename)
     if not res["ok"]:
         return f"image generation failed: {res['error']}"
-    return f"Image saved to {res['path']} ({res['seconds']}s, seed={res['seed']})"
+    return (f"Image saved to {res['path']} "
+            f"(model={res['model']}, {res['seconds']}s, seed={res['seed']})")
 
 
 @tool
