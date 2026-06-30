@@ -427,16 +427,26 @@ _QUICK_CHAT_JSON_HINT = (
 #    temperature=0.3, every test case returned a clean direct answer
 #    in 0.3-0.5 s. That's the sweet spot.
 QUICK_CHAT_NUM_PREDICT = 120
+# Phase 41: the resident brain (Ornith etc.) is a real instruct model, not
+# the qwen3:4b chat box the 120 clamp was tuned for. 120 (×2 plain = 240
+# tokens ≈ ~1000 chars) capped substantive answers mid-thought — the MoE
+# cutoff bug. Give the brain room for a full reply; the Part A chunker now
+# splits whatever it writes across Telegram messages.
+QUICK_CHAT_NUM_PREDICT_BRAIN = 1024
 QUICK_CHAT_TEMPERATURE = 0.3
 
 
 def _quick_chat_num_predict(model: str) -> int:
     """Per-model content budget. gpt-oss spends part of num_predict on
     the (discarded) thinking channel, so it gets more headroom; the
-    tight 120 stays for qwen3:4b where it's the proven CoT clamp."""
-    if (model or "").startswith("gpt-oss"):
+    tight 120 stays for qwen3:4b where it's the proven CoT clamp; the
+    resident brain gets full headroom (Phase 41)."""
+    m = model or ""
+    if m.startswith("gpt-oss"):
         return 400
-    return QUICK_CHAT_NUM_PREDICT
+    if m.startswith("qwen3:4b"):
+        return QUICK_CHAT_NUM_PREDICT
+    return QUICK_CHAT_NUM_PREDICT_BRAIN
 
 
 def _ollama_quick_chat(model: str, message: str, system_prompt: str,
@@ -1035,6 +1045,54 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
         clean=not fallback_bad, fallback_used=True, leak_kind=leak_kind,
     )
     return final
+
+
+def quick_chat_stream(message: str, chat_id: int | None = None):
+    """Phase 41 — streaming variant of quick_chat for Telegram live-draft
+    rendering (sendMessageDraft).
+
+    Yields ``{"partial": <cumulative raw text>}`` as Ollama tokens arrive,
+    then a terminal ``{"final": <cleaned reply>}``. Reuses the exact same
+    system prompt, rolling history, brain model, num_ctx, and content
+    budget as quick_chat, plus the same ``_strip_think_final`` /
+    ``_clean_quick_chat`` finalisation — so the persisted message matches
+    what quick_chat would have produced.
+
+    It deliberately SKIPS the denial/leak retry: drafts are ephemeral and
+    the cleaned ``final`` is authoritative. Raises on any Ollama error so
+    the caller can fall back to the non-streaming quick_chat path; the
+    reply is therefore never dropped.
+    """
+    system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
+    history = (
+        _build_quick_chat_history(chat_id, system_prompt, message)
+        if chat_id is not None else []
+    )
+    model = QUICK_CHAT_OLLAMA_MODEL
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *history,
+        {"role": "user", "content": message},
+    ]
+    client = ollama.Client(host=nexus.OLLAMA_URL)
+    acc = ""
+    for part in client.chat(
+        model=model,
+        messages=messages,
+        options={
+            "temperature": QUICK_CHAT_TEMPERATURE,
+            "num_ctx": 8192,
+            "num_predict": _quick_chat_num_predict(model) * 2,
+        },
+        keep_alive=-1,
+        think=brain.think_param(model),
+        stream=True,
+    ):
+        tok = (part.get("message", {}) or {}).get("content", "") or ""
+        if tok:
+            acc += tok
+            yield {"partial": acc}
+    yield {"final": _strip_think_final(_clean_quick_chat(acc))}
 
 
 LITE_AGENT_TIMEOUT_S = 15.0
