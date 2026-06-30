@@ -94,71 +94,13 @@ def _load_reporter_config() -> dict:
 def _chunk_text(body: str, max_chars: int = 3990) -> list[str]:
     """Split body into ≤max_chars pieces at structural boundaries.
 
-    Rules:
-    - Splits only on newline boundaries (never mid-line).
-    - Groups consecutive table rows (|, │, +-) so they stay in one chunk.
-      If a table is itself larger than max_chars, rows are sent individually.
-    - Tracks ``` fences: appends a closing ``` at end-of-chunk and reopens
-      the same fence at the start of the next chunk.
-    - If a single atom (line or table block) exceeds max_chars it gets its
-      own chunk anyway — we never hard-split a line.
-
-    Returns raw chunk strings WITHOUT [N/M] markers (caller adds those).
+    Phase 41: this logic now lives in the shared ``core.telegram_chunk``
+    module so the conversational reply path reuses the exact same
+    newline / table / fence-aware packing. Behaviour is unchanged for the
+    dispatch reporter — this delegates to ``chunk_structured``.
     """
-    if not body:
-        return []
-    if len(body) <= max_chars:
-        return [body]
-
-    FENCE_OVERHEAD = 14  # "```\n" close + "```lang\n" reopen headroom
-
-    # Group consecutive table lines into atomic blocks
-    raw_lines = body.splitlines(keepends=True)
-    atoms: list[str] = []
-    i = 0
-    while i < len(raw_lines):
-        line = raw_lines[i]
-        if _TABLE_LINE_RE.match(line):
-            j = i + 1
-            while j < len(raw_lines) and _TABLE_LINE_RE.match(raw_lines[j]):
-                j += 1
-            atoms.append("".join(raw_lines[i:j]))
-            i = j
-        else:
-            atoms.append(line)
-            i += 1
-
-    chunks: list[str] = []
-    buf = ""
-    in_fence = False
-    fence_header = "```"
-
-    for atom in atoms:
-        budget = max_chars - (FENCE_OVERHEAD if in_fence else 0)
-
-        if buf and len(buf) + len(atom) > budget:
-            emit = buf
-            if in_fence:
-                emit = buf.rstrip("\n") + "\n```\n"
-            chunks.append(emit)
-            buf = (fence_header + "\n") if in_fence else ""
-
-        buf += atom
-
-        # Update fence state after consuming atom
-        for raw_line in atom.splitlines():
-            stripped = raw_line.strip()
-            if stripped.startswith("```"):
-                if not in_fence:
-                    in_fence = True
-                    fence_header = stripped
-                else:
-                    in_fence = False
-
-    if buf:
-        chunks.append(buf)
-
-    return [c for c in chunks if c.strip()]
+    from core.telegram_chunk import chunk_structured  # noqa: PLC0415
+    return chunk_structured(body, max_chars)
 
 
 # ---------------------------------------------------------------------------
