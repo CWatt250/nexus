@@ -235,6 +235,24 @@ def load_lessons() -> str:
     return "# LESSONS LEARNED (from past sessions)\n" + "\n".join(bullets)
 
 
+def load_memory_facts() -> str:
+    """G2 — durable learned facts about Colton/projects/machine (MEMORY.md,
+    written by reflection.py). Injected into chat + heavy prompts so the agent
+    remembers across sessions. Capped to the most recent entries."""
+    path = MEMORY_DIR / "MEMORY.md"
+    if not path.exists():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    bullets = [ln for ln in text.splitlines() if ln.lstrip().startswith("- ")]
+    if not bullets:
+        return ""
+    bullets = bullets[-40:]
+    return "## Learned facts about Colton (durable memory):\n" + "\n".join(bullets)
+
+
 _TOOL_HINT = (
     "# TOOLS\n"
     "You have a full tool belt. Use it proactively — don't ask permission "
@@ -337,6 +355,9 @@ def load_dynamic_suffix() -> str:
     lessons = load_lessons()
     if lessons:
         parts.append(lessons)
+    facts = load_memory_facts()
+    if facts:
+        parts.append(facts)
     ctx = load_project_context()
     if ctx:
         parts.append(ctx)

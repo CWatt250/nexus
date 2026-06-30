@@ -355,6 +355,13 @@ def _build_chat_system_prompt(message: str) -> str:
     + recalled personal facts (when relevant) + wall-clock. Self-facts and
     recall are volatile, so they go here per-call, not in any cached base."""
     parts = [get_quick_chat_system_prompt(), self_facts.self_facts_block()]
+    # G2 — durable learned facts (MEMORY.md, written by reflection.py).
+    try:
+        learned = nexus.load_memory_facts()
+        if learned:
+            parts.append(learned)
+    except Exception:
+        pass
     facts = _recall_personal_facts(message)
     if facts:
         parts.append(facts)
