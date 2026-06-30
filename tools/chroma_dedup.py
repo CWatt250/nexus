@@ -48,7 +48,9 @@ def find_duplicates(threshold: float = 0.95, limit: int = 500) -> list[tuple[str
     embeddings = result.get("embeddings", [])
     docs = result.get("documents", [])
 
-    if not embeddings or len(embeddings) < 2:
+    # `not embeddings` raises on a numpy array ("truth value ambiguous") —
+    # newer Chroma returns embeddings as ndarrays. Check length instead.
+    if embeddings is None or len(embeddings) < 2:
         return []
 
     duplicates = []

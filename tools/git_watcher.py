@@ -145,6 +145,12 @@ def _log_commit(repo: Path, rec: dict) -> None:
 
 
 def _rag_store(repo: Path, rec: dict) -> None:
+    # DISABLED (2026-06 audit): dumping every commit into the nexus-memory
+    # RAG flooded it with 1,334 low-value docs that poisoned memory_search
+    # (all matched at distance ~1.0). Commits are already recorded in
+    # git-activity.log; RAG storage was redundant noise. Early-return to stop
+    # re-accumulation; delete this function + its call site to fully remove.
+    return
     subject = rec.get("subject", "")
     body = rec.get("body", "")
     files = rec.get("files_changed", [])

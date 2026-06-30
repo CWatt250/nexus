@@ -46,6 +46,27 @@ def _ensure_display_env() -> Optional[str]:
     return None
 
 
+def _grab_pil():
+    """Capture the screen to a PIL Image via scrot. pyautogui/pyscreeze
+    can't capture on the Xvfb :99 backend (PyScreezeException) even with
+    scrot installed; calling scrot directly works (chronicle does the same).
+    _ensure_display_env() points DISPLAY at the reachable Xvfb first."""
+    import tempfile  # noqa: PLC0415
+    from PIL import Image  # noqa: PLC0415
+    _ensure_display_env()
+    fd, p = tempfile.mkstemp(suffix=".png", prefix="nexus-shot-")
+    os.close(fd)
+    try:
+        subprocess.run(["scrot", "-o", p], env=dict(os.environ),
+                       capture_output=True, timeout=15, check=True)
+        return Image.open(p).copy()
+    finally:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
 def _get_pyautogui():
     """Lazy load pyautogui with proper error handling. Falls back to the
     Xvfb virtual display at :99 when no real DISPLAY is set."""
@@ -207,7 +228,7 @@ def screenshot(save_to_file: bool = True) -> str:
         File path or base64 encoded image
     """
     try:
-        img = _get_pyautogui().screenshot()
+        img = _grab_pil()
 
         if save_to_file:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -240,7 +261,11 @@ def find_on_screen(image_path: str) -> str:
         return f"Error: Image file not found: {image_path}"
 
     try:
-        location = _get_pyautogui().locateCenterOnScreen(str(path), confidence=0.8)
+        _hay = _grab_pil()
+        try:
+            location = _get_pyautogui().locateCenter(str(path), _hay, confidence=0.8)
+        except Exception:
+            location = _get_pyautogui().locateCenter(str(path), _hay)
         if location:
             return f"Found at coordinates: ({location.x}, {location.y})"
         else:
@@ -270,8 +295,7 @@ def find_on_screen_vision(description: str, vision_model: str = "qwen2.5vl:7b") 
     except Exception as exc:
         return f"vision unavailable: {type(exc).__name__}: {exc}"
 
-    pyautogui = _get_pyautogui()
-    img = pyautogui.screenshot()
+    img = _grab_pil()
     width, height = img.size
     buf = io.BytesIO()
     img.save(buf, format="PNG")

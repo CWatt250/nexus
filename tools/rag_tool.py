@@ -284,9 +284,17 @@ def memory_delete(doc_id: str) -> str:
     Returns confirmation or error message."""
     col = _get_collection()
 
+    # Exact-id fast path — direct delete (the old prefix scan only checked
+    # the first 100 of ~1400 docs, so a real id often "wasn't found").
     try:
-        result = col.get(limit=100, include=["documents"])
-        all_ids = result.get("ids", [])
+        if col.get(ids=[doc_id]).get("ids"):
+            col.delete(ids=[doc_id])
+            return f"Deleted document {doc_id}"
+    except Exception:
+        pass
+
+    try:
+        all_ids = col.get().get("ids", [])  # ALL ids, not just 100
     except Exception as e:
         return f"Error accessing memory: {e}"
 

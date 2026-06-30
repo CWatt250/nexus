@@ -34,12 +34,26 @@ _client_anonymous = False  # True when no token was configured at boot
 _warned_anonymous = False
 
 
+def _gh_cli_token() -> str | None:
+    """Token from the system `gh` CLI, which is interactively authed and
+    auto-refreshes. Preferred because the stored PAT was found expired in the
+    2026-06 audit (all calls 401'd). Falls back to secrets if gh isn't authed."""
+    try:
+        import subprocess  # noqa: PLC0415
+        out = subprocess.run(["gh", "auth", "token"], capture_output=True,
+                             text=True, timeout=5)
+        tok = (out.stdout or "").strip()
+        return tok or None
+    except Exception:
+        return None
+
+
 def _token() -> str | None:
-    """Resolve the GitHub token by priority. secrets.yaml's GITHUB_PAT
-    wins over .env's GITHUB_TOKEN so the new fine-grained PAT takes
-    over without editing the legacy slot."""
+    """Resolve the GitHub token. Prefer the live `gh` CLI token (auto-
+    refreshing), then secrets.yaml's GITHUB_PAT / GITHUB_TOKEN."""
     return (
-        secrets.get("GITHUB_PAT")
+        _gh_cli_token()
+        or secrets.get("GITHUB_PAT")
         or secrets.get("GITHUB_TOKEN")
         or secrets.get("GITHUB_PERSONAL_ACCESS_TOKEN")
     )

@@ -64,14 +64,11 @@ def mem0_add(text: str) -> str:
     sessions. For raw passages, use memory_add (plain Chroma) instead."""
     try:
         mem = _get_memory()
-        result = mem.add(text, user_id=DEFAULT_USER)
+        # infer=False stores the fact raw (~instant). The infer=True LLM
+        # extractor (qwen3:4b) took ~45s AND often extracted nothing — not
+        # worth it for an interactive "remember this".
+        result = mem.add(text, user_id=DEFAULT_USER, infer=False)
         results = result.get("results") if isinstance(result, dict) else result
-        # The local qwen3:4b extractor (infer=True) sometimes extracts
-        # nothing. Don't lose the fact — store it raw so it's still
-        # recallable. (mem0 2.0 keeps user_id top-level on add().)
-        if not results:
-            result = mem.add(text, user_id=DEFAULT_USER, infer=False)
-            results = result.get("results") if isinstance(result, dict) else result
     except Exception as exc:
         return f"ERROR: {type(exc).__name__}: {exc}"
     if not results:
