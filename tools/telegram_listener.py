@@ -558,6 +558,39 @@ async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await _reply_smart(update, reply)
 
 
+async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/image <prompt> — generate an image locally (sd.cpp on the Vulkan iGPU,
+    ~10s) and send it back as a photo."""
+    if not is_authorized(update):
+        return
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text(
+            "/image: needs a prompt. e.g. /image a husky in a santa hat, watercolor")
+        return
+    await update.message.chat.send_action("upload_photo")
+    try:
+        from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
+        res = await asyncio.wait_for(
+            asyncio.to_thread(generate_image_core, prompt), timeout=300)
+    except asyncio.TimeoutError:
+        await update.message.reply_text("/image timed out (>300s).")
+        return
+    except Exception as exc:
+        await update.message.reply_text(f"/image error: {type(exc).__name__}: {exc}")
+        return
+    if not res.get("ok"):
+        await update.message.reply_text(f"/image failed: {res.get('error')}")
+        return
+    try:
+        with open(res["path"], "rb") as fh:
+            await update.message.reply_photo(
+                fh, caption=f"{prompt[:180]} ({res['seconds']}s, seed={res['seed']})")
+    except Exception as exc:
+        await update.message.reply_text(
+            f"/image: saved {res['path']} but the send failed: {exc}")
+
+
 async def computer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/computer <task> — Phase 36 Computer Use agent. Drives the browser
     on Xvfb :99 to do dashboard tasks (Supabase, Vercel, Stripe, ...).
@@ -1124,6 +1157,7 @@ def main() -> None:
     application.add_handler(CommandHandler("quick", quick_command))
     # Phase 36 — Computer Use agent (Anthropic native, drives :99 browser).
     application.add_handler(CommandHandler("computer", computer_command))
+    application.add_handler(CommandHandler("image", image_command))  # local SD gen
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     # Phase E — vision intake: photos + image documents → local VLM describe.
     application.add_handler(

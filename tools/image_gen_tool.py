@@ -1,114 +1,125 @@
-"""Image Generation Tool for Nexus agent — using ERNIE API or fallback."""
+"""Image generation for Nexus — LOCAL stable-diffusion.cpp on Vulkan.
+
+Replaces the old dead ERNIE cloud stub. Generation runs entirely on
+WattBott's Radeon 8060S iGPU (gfx1151) via the prebuilt sd.cpp Vulkan
+binary — $0, offline, ~10s for a 512x512 SD1.5 image.
+
+Backend assets (gitignored, not in the repo):
+  models/sdcpp/sd-cli                    prebuilt Vulkan binary + .so libs
+  models/sdcpp/models/sd15.safetensors   the diffusion model
+Swap the model file (e.g. SDXL-Turbo) and point SD_MODEL at it for higher
+quality; nothing else changes.
+"""
 from __future__ import annotations
 
+import logging
 import os
+import random
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
-import httpx
-from dotenv import load_dotenv
 from langchain_core.tools import tool
 
-# Load environment
-load_dotenv(Path.home() / "AI_Agent" / ".env")
+log = logging.getLogger("nexus.image_gen")
 
-ERNIE_API_KEY = os.getenv("ERNIE_API_KEY", "")
-OUTPUT_DIR = Path.home() / "AI_Agent" / "output" / "images"
+ROOT = Path.home() / "AI_Agent"
+SDCPP_DIR = ROOT / "models" / "sdcpp"
+SD_BIN = SDCPP_DIR / "sd-cli"
+SD_MODEL = SDCPP_DIR / "models" / "sd15.safetensors"
+OUTPUT_DIR = ROOT / "output" / "images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ERNIE API endpoint (placeholder - update with actual endpoint)
-ERNIE_API_URL = "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/text2image"
+_MAX_DIM = 1024  # SD1.5 is trained at 512; cap larger requests for speed/safety
+_DEFAULT_NEGATIVE = ("lowres, blurry, deformed, disfigured, bad anatomy, "
+                     "extra limbs, watermark, text, jpeg artifacts")
+
+
+def _parse_size(size: str) -> tuple[int, int]:
+    try:
+        w, h = (int(x) for x in str(size).lower().split("x", 1))
+        return min(w, _MAX_DIM), min(h, _MAX_DIM)
+    except Exception:
+        return 512, 512
+
+
+def generate_image_core(
+    prompt: str, *, width: int = 512, height: int = 512, steps: int = 20,
+    cfg_scale: float = 7.0, seed: int = -1, negative: str = _DEFAULT_NEGATIVE,
+    filename: Optional[str] = None,
+) -> dict:
+    """Generate one image locally. Returns {ok, path, seconds, seed, error}."""
+    if not SD_BIN.exists():
+        return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}",
+                "path": None}
+    if not SD_MODEL.exists():
+        return {"ok": False, "error": f"model missing at {SD_MODEL}", "path": None}
+    if not (prompt or "").strip():
+        return {"ok": False, "error": "empty prompt", "path": None}
+
+    if seed is None or seed < 0:
+        seed = random.randint(1, 2_147_483_646)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    base = filename or f"img-{stamp}-{seed}"
+    out_path = OUTPUT_DIR / f"{base}.png"
+
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = f"{SDCPP_DIR}:{env.get('LD_LIBRARY_PATH', '')}"
+    cmd = [
+        str(SD_BIN), "-m", str(SD_MODEL), "-p", prompt.strip(),
+        "-n", negative, "--steps", str(steps), "--cfg-scale", str(cfg_scale),
+        "-W", str(width), "-H", str(height), "--seed", str(seed),
+        "-o", str(out_path),
+    ]
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(cmd, cwd=str(SDCPP_DIR), env=env,
+                              capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "generation timed out (>300s)", "path": None}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "path": None}
+    secs = round(time.monotonic() - t0, 1)
+
+    if not out_path.exists():
+        tail = (proc.stderr or proc.stdout or "")[-400:]
+        return {"ok": False, "error": f"no image produced. {tail}", "path": None}
+    return {"ok": True, "path": str(out_path), "seconds": secs, "seed": seed,
+            "error": None}
 
 
 @tool
 def generate_image(
-    prompt: str,
-    size: str = "1024x1024",
-    style: str = "realistic",
+    prompt: str, size: str = "512x512", style: str = "",
+    negative_prompt: str = "", steps: int = 20,
     filename: Optional[str] = None,
 ) -> str:
-    """Generate an image from a text prompt.
+    """Generate an image from a text prompt using the LOCAL Stable Diffusion
+    backend (sd.cpp on the Vulkan iGPU — free, offline, ~10s).
 
     Args:
-        prompt: Text description of the image to generate
-        size: Image size - "512x512", "1024x1024", or "1792x1024"
-        style: Image style - "realistic", "artistic", "cartoon", "anime"
-        filename: Optional filename (without extension). Auto-generated if not provided.
+        prompt: Description of the image. Be specific; add style words
+            ("photorealistic", "watercolor", "3d render") for control.
+        size: "WxH" — 512x512 (fastest), 768x512, etc. SD1.5 is best at 512.
+        style: Optional style hint appended to the prompt.
+        negative_prompt: What to avoid (defaults to a quality-boosting set).
+        steps: Sampling steps (20 is a good default; fewer = faster).
+        filename: Optional output filename (no extension).
 
     Returns:
-        Path to saved image or error message
+        Path to the saved PNG, or an error string.
     """
-    if not ERNIE_API_KEY:
-        return (
-            "Error: ERNIE_API_KEY not configured.\n"
-            "Add ERNIE_API_KEY=your_key to ~/AI_Agent/.env\n\n"
-            "Alternative: Use local Stable Diffusion via Ollama when available:\n"
-            "  ollama run stable-diffusion\n"
-            "Or use the Replicate API with a free tier."
-        )
-
-    # Validate size
-    valid_sizes = {"512x512", "1024x1024", "1792x1024"}
-    if size not in valid_sizes:
-        return f"Error: Invalid size '{size}'. Valid sizes: {', '.join(valid_sizes)}"
-
-    # Parse size
-    width, height = map(int, size.split("x"))
-
-    try:
-        # Make API request to ERNIE
-        with httpx.Client(timeout=120) as client:
-            response = client.post(
-                f"{ERNIE_API_URL}?access_token={ERNIE_API_KEY}",
-                json={
-                    "prompt": prompt,
-                    "style": style,
-                    "width": width,
-                    "height": height,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        # Check for errors in response
-        if "error_code" in data:
-            return f"ERNIE API error: {data.get('error_msg', 'Unknown error')}"
-
-        # Get image URL or base64 from response
-        image_url = data.get("data", {}).get("image_url")
-        image_b64 = data.get("data", {}).get("image")
-
-        if not image_url and not image_b64:
-            return "Error: No image returned from ERNIE API"
-
-        # Generate filename if not provided
-        if not filename:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            safe_prompt = "".join(c if c.isalnum() else "_" for c in prompt[:30])
-            filename = f"{timestamp}_{safe_prompt}"
-
-        filepath = OUTPUT_DIR / f"{filename}.png"
-
-        # Download or decode the image
-        if image_url:
-            with httpx.Client(timeout=60) as client:
-                img_response = client.get(image_url)
-                img_response.raise_for_status()
-                filepath.write_bytes(img_response.content)
-        elif image_b64:
-            import base64
-            img_data = base64.b64decode(image_b64)
-            filepath.write_bytes(img_data)
-
-        return f"Image saved: {filepath}"
-
-    except httpx.TimeoutException:
-        return "Error: Image generation timed out"
-    except httpx.HTTPError as e:
-        return f"Error calling ERNIE API: {e}"
-    except Exception as e:
-        return f"Error generating image: {type(e).__name__}: {e}"
+    width, height = _parse_size(size)
+    full_prompt = f"{prompt.strip()}, {style.strip()}" if style.strip() else prompt
+    res = generate_image_core(
+        full_prompt, width=width, height=height, steps=steps,
+        negative=negative_prompt.strip() or _DEFAULT_NEGATIVE,
+        filename=filename,
+    )
+    if not res["ok"]:
+        return f"image generation failed: {res['error']}"
+    return f"Image saved to {res['path']} ({res['seconds']}s, seed={res['seed']})"
 
 
 @tool
@@ -122,20 +133,17 @@ def list_generated_images(limit: int = 10) -> str:
         List of image paths with timestamps
     """
     try:
-        images = sorted(OUTPUT_DIR.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+        images = sorted(OUTPUT_DIR.glob("*.png"),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
         if not images:
             return "No generated images found."
-
         result = f"Recent images (showing {min(len(images), limit)} of {len(images)}):\n"
         for img in images[:limit]:
             mtime = time.strftime("%Y-%m-%d %H:%M", time.localtime(img.stat().st_mtime))
             result += f"  {mtime} - {img.name}\n"
-
         return result
-
     except Exception as e:
         return f"Error listing images: {type(e).__name__}: {e}"
 
 
-# Export tools
 IMAGE_GEN_TOOLS = [generate_image, list_generated_images]
