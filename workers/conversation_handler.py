@@ -642,19 +642,25 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
 # model talking to itself, not to the user".
 _QUICK_CHAT_PREAMBLE_RE = re.compile(
     r"^\s*("
-    r"okay[,.]?\s+(?:the\s+user|let|so|i|this|that|since|first)\b.*?(?:\.|\?|!)\s*"
+    r"okay[,.]?\s+(?:the\s+user|user|let|so|i|this|that|since|first)\b.*?(?:\.|\?|!)\s*"
     r"|hmm[,.]?\s+.*?(?:\.|\?|!)\s*"
     r"|wait[,.]?\s+.*?(?:\.|\?|!)\s*"
     r"|alright[,.]?\s+.*?(?:\.|\?|!)\s*"
     r"|let'?s?\s+(?:see|think|check|verify|calculate|figure)\b.*?(?:\.|\?|!)\s*"
     r"|let\s+me\s+(?:see|think|check|verify|calculate|figure|recall).*?(?:\.|\?|!)\s*"
-    r"|the\s+user\s+(?:is\s+)?(?:asking|asked|wants|needs).*?(?:\.|\?|!)\s*"
+    r"|(?:the\s+)?user\s+(?:is\s+|just\s+)?(?:asking|asked|wants|needs|said|says)\b.*?(?:\.|\?|!)\s*"
     r"|since\s+(?:this|the\s+user|i\b).*?(?:\.|\?|!)\s*"
     r"|first[,.]?\s+let\s+me.*?(?:\.|\?|!)\s*"
     r"|i\s+(?:should|need\s+to|will|can)\s+(?:reply|answer|respond|provide).*?(?:\.|\?|!)\s*"
     r"|that'?s?\s+(?:a\s+)?(?:simple|quick|easy|straightforward).*?(?:\.|\?|!)\s*"
     r"|so\s+(?:the|i|let)\b.*?(?:\.|\?|!)\s*"
     r"|we\s+are\s+given.*?(?:\.|\?|!)\s*"
+    # Self-referential reasoning ABOUT the reply (qwen3:4b leak shape:
+    # "I can't use user slang as the whole reply. The reply should be...").
+    r"|the\s+(?:reply|response|answer|greeting|message)\s+(?:should|must|needs?\s+to|has\s+to|is\s+going|will\s+be|gotta|could\s+be|has\s+to\s+be).*?(?:\.|\?|!)\s*"
+    r"|i\s+can'?t\s+use\b.*?(?:\.|\?|!)\s*"
+    r"|i'?ll\s+(?:go\s+with|keep\s+it|use|reply\s+with|say|respond\s+with).*?(?:\.|\?|!)\s*"
+    r"|(?:i\s+)?(?:should|need\s+to|gotta|have\s+to)\s+keep\s+(?:it|the\s+reply|this)\b.*?(?:\.|\?|!)\s*"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -675,7 +681,21 @@ def _strip_reasoning_preamble(text: str) -> str:
         # so the previous sentence's trailing dots can lead the next
         # iteration. Strip them so subsequent regex matches stay anchored.
         text = text.lstrip(" .,;:")
-    return text.strip()
+    # Sentinel sweep — drop leading sentences containing a known CoT
+    # sentinel so the stripper covers EVERYTHING looks_like_thinking_leak
+    # detects. The preamble regex and the sentinel list used to drift, which
+    # let detected-but-unstripped leaks through on the degraded path. Stops
+    # at the first clean sentence (the real answer).
+    kept: list[str] = []
+    for s in re.split(r"(?<=[.!?])\s+", text):
+        low = s.strip().lower()
+        if not low:
+            continue
+        if (any(sn in low for sn in _LEAK_SENTINELS)
+                or any(low.startswith(sn) for sn in _LEAK_SENTINELS_PREFIX_ONLY)):
+            continue  # drop ANY sentence containing a CoT sentinel, not just leading
+        kept.append(s.strip())
+    return " ".join(kept).strip()
 
 
 def _split_unbalanced_close_think(text: str) -> str:
@@ -786,6 +806,14 @@ _LEAK_SENTINELS = (
     "let me think about",
     "first, i need to",
     "i'll have to ask for",
+    # self-referential reply-reasoning (qwen3:4b degraded-path leaks)
+    "i can't use",
+    "i cannot use",
+    "the reply should",
+    "the response should",
+    "the answer should",
+    "as the whole reply",
+    "as the entire reply",
 )
 
 # Phase 39 — sentinels that are CoT markers only at the START of a
