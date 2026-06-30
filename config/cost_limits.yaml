@@ -82,15 +82,18 @@ quick_chat:
 #                          current message fits under this % of
 #                          context_window_tokens. Token count is the rough
 #                          len(text)//4 heuristic — fine for budget guard.
-#   context_window_tokens: deepseek-chat's input context window. Used only
-#                          for the budget trim; raise if DeepSeek bumps it.
+#   context_window_tokens: the live quick_chat brain's input context window.
+#                          Used only for the history-trim budget; must match
+#                          the Ollama num_ctx in conversation_handler.py
+#                          (8192) so accumulated history can't overflow it.
+#                          Raise both together if the brain's window grows.
 #   db_path:               SQLite store, resolved relative to ~/AI_Agent if
 #                          not absolute.
 quick_chat_memory:
   max_turns: 20
   max_age_hours: 2
   max_context_pct: 80
-  context_window_tokens: 64000
+  context_window_tokens: 8192
   db_path: memory/telegram_chats.db
 
 # Phase 36 — Computer Use agent (Anthropic native API).

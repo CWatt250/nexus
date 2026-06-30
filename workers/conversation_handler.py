@@ -448,7 +448,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
     a chance to answer.
 
     Phase 38: optional `history` (list of {role, content}) is inserted
-    between system and the current user message. num_ctx=4096 means
+    between system and the current user message. num_ctx=8192 means
     long histories may be silently truncated by Ollama; that's fine —
     Ollama is the fallback path, DeepSeek's 64K window owns the primary.
     """
@@ -469,7 +469,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
             messages=json_messages,
             options={
                 "temperature": QUICK_CHAT_TEMPERATURE,
-                "num_ctx": 4096,
+                "num_ctx": 8192,
                 "num_predict": num_predict,
             },
             keep_alive=-1,
@@ -494,7 +494,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
         messages=plain_messages,
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
-            "num_ctx": 4096,
+            "num_ctx": 8192,
             "num_predict": num_predict * 2,  # bigger budget for plain mode
         },
         keep_alive=-1,
@@ -849,7 +849,7 @@ _MEMORY_DEFAULTS = {
     "max_turns": 20,
     "max_age_hours": 2.0,
     "max_context_pct": 80,
-    "context_window_tokens": 64000,
+    "context_window_tokens": 8192,
     "db_path": "memory/telegram_chats.db",
 }
 
