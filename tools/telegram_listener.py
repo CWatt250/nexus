@@ -38,6 +38,95 @@ def is_authorized(update: Update) -> bool:
     return update.effective_chat.id in AUTHORIZED_CHATS
 
 
+# ── Phase 41 — chunked send + live-draft streaming ──────────────────────
+import threading  # noqa: E402
+
+CHUNK_SEND_DELAY_S = 0.4   # spacing between sequential message chunks
+DRAFT_THROTTLE_S = 1.0     # min seconds between sendMessageDraft pushes
+DRAFT_MAX_CHARS = 4000     # cap on draft preview text
+
+
+async def _reply_chunked(update: Update, text: str) -> None:
+    """Send `text` via update.message.reply_text, split into ≤4096-char
+    messages (the Telegram hard limit) using the shared chunker. Long
+    replies arrive complete across multiple messages instead of being
+    truncated. A small delay between sends stays clear of rate limits."""
+    from core.telegram_chunk import chunk_text  # noqa: PLC0415
+    chunks = chunk_text(text) or ["(empty reply)"]
+    for i, chunk in enumerate(chunks):
+        await update.message.reply_text(chunk)
+        if i < len(chunks) - 1:
+            await asyncio.sleep(CHUNK_SEND_DELAY_S)
+
+
+async def _stream_quick_chat_reply(update: Update, message: str,
+                                   chat_id: int) -> str:
+    """Live-draft a quick_chat reply (Bot API 9.5 sendMessageDraft).
+
+    As Ollama tokens arrive, push the growing partial text to an ephemeral
+    "drafting" bubble (throttled). On completion, finalize with a real,
+    chunked sendMessage — the draft is NOT persisted and vanishes after
+    ~30s, so finalisation is mandatory. Returns the finalized reply text.
+
+    Raises on a generation error so the caller falls back to the blocking
+    path (reply never dropped). sendMessageDraft itself is best-effort:
+    any draft error (library/account API-version gap) degrades silently to
+    typing-indicator + final message."""
+    from workers import conversation_handler as _ch  # noqa: PLC0415
+    bot = update.get_bot()
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue()
+
+    def _producer() -> None:
+        try:
+            for ev in _ch.quick_chat_stream(message, chat_id):
+                loop.call_soon_threadsafe(q.put_nowait, ev)
+            loop.call_soon_threadsafe(q.put_nowait, {"_done": True})
+        except Exception as exc:  # noqa: BLE001 — surfaced to caller below
+            loop.call_soon_threadsafe(q.put_nowait, {"_error": exc})
+
+    threading.Thread(target=_producer, daemon=True).start()
+
+    draft_id = update.message.message_id  # stable id for this draft
+    final_text: str | None = None
+    err: Exception | None = None
+    last_push = 0.0
+    draft_ok = True
+
+    while True:
+        ev = await q.get()
+        if "_error" in ev:
+            err = ev["_error"]
+            break
+        if "_done" in ev:
+            break
+        if "final" in ev:
+            final_text = ev["final"]
+            continue
+        partial = ev.get("partial", "")
+        if draft_ok and partial.strip():
+            now = loop.time()
+            if now - last_push >= DRAFT_THROTTLE_S:
+                last_push = now
+                try:
+                    await bot.send_message_draft(
+                        chat_id=chat_id, draft_id=draft_id,
+                        text=partial[:DRAFT_MAX_CHARS],
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    draft_ok = False  # stop drafting, keep accumulating
+                    logger.info("sendMessageDraft unsupported/failed (%s) — "
+                                "degrading to final message only", exc)
+
+    if err is not None:
+        raise err
+    if not final_text:
+        final_text = "(handler returned no text — try again)"
+    # Draft is ephemeral — the real message is what persists.
+    await _reply_chunked(update, final_text)
+    return final_text
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command."""
     if not is_authorized(update):
@@ -296,7 +385,7 @@ async def _handle_slash_dispatch(update: Update, tier: str, prompt: str) -> None
     except Exception as exc:
         await update.message.reply_text(f"⚠️ slash dispatch error: {type(exc).__name__}: {exc}")
         return
-    await update.message.reply_text(result.get("reply", "(no reply)"))
+    await _reply_chunked(update, result.get("reply", "(no reply)"))
 
 
 async def max_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -373,9 +462,7 @@ async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if not reply:
         reply = "(no reply)"
-    if len(reply) > 4000:
-        reply = reply[:4000] + "\n... [truncated]"
-    await update.message.reply_text(reply)
+    await _reply_chunked(update, reply)
 
 
 async def computer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -780,9 +867,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.warning("telegram_chats user-write failed: %s", e)
 
+    from workers import conversation_handler
+
+    # Phase 41: live-draft streaming for pure chat turns. classify_intent
+    # is the cheap deterministic gate (queue:/status/cancel/list bypass
+    # it); the LLM router then confirms the turn is quick_chat (not a
+    # build/task) before we stream tokens to a drafting bubble. Any failure
+    # falls through to the blocking router path so the reply is never
+    # dropped or delayed.
+    streamed_reply: str | None = None
     try:
-        from workers import conversation_handler
-        # New 4-way LLM router: CHAT/QUERY -> qwen3.6 inline reply,
+        intent = conversation_handler.classify_intent(user_message)
+        if intent.get("kind") == "chat":
+            from workers import llm_router
+            route = await asyncio.to_thread(llm_router.route_llm, user_message)
+            if route.get("route") == "quick_chat":
+                streamed_reply = await _stream_quick_chat_reply(
+                    update, user_message, chat_id)
+    except Exception as e:
+        logger.warning("stream path failed (%s) — falling back to router", e)
+        streamed_reply = None
+
+    if streamed_reply is not None:
+        logger.info("route kind=chat chat_id=%s (streamed)", chat_id)
+        try:
+            from core import telegram_chats as _tcs
+            _tcs.write_turn(chat_id, "assistant", streamed_reply)
+        except Exception as e:
+            logger.warning("telegram_chats assistant-write failed: %s", e)
+        return
+
+    try:
+        # New 4-way LLM router: CHAT/QUERY -> brain inline reply,
         # TASK -> enqueue, STATUS -> task lookup. "queue: <text>" remains
         # a power-user prefix that bypasses classification. Run the
         # blocking router off the event loop so the bot stays responsive.
@@ -807,20 +923,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if not reply:
         reply = "(handler returned no text — try again)"
-    if len(reply) > 4000:
-        reply = reply[:4000] + "\n... [truncated]"
 
-    # Phase 38: log the assistant reply (post-truncation, matches what
-    # the user actually sees) before sending. Every kind logs — TASK
-    # acks, STATUS replies, dispatch confirmations — so future quick_chat
-    # callbacks have full context, not just chat turns.
+    # Phase 38: log the assistant reply before sending. Phase 41: the full
+    # reply is logged and sent — chunked across messages by _reply_chunked
+    # instead of truncated at 4000 chars.
     try:
         from core import telegram_chats as _tcs
         _tcs.write_turn(chat_id, "assistant", reply)
     except Exception as e:
         logger.warning("telegram_chats assistant-write failed: %s", e)
 
-    await update.message.reply_text(reply)
+    await _reply_chunked(update, reply)
 
 
 def main() -> None:
