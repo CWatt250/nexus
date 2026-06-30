@@ -7,7 +7,19 @@ COMPLETE
 NONE
 
 ## Last Completed Task
-Phase 39 — Brain + Guardrails Overhaul (12/12 gates, evals 34/34, pytest 413/413)
+Phase 41 — Telegram Smart Reply: Chunking + Native Draft Streaming
+(evals 34/34 exit 0; chunker 10 + stream 4 + dispatch 30 tests green).
+Fixed the cut-off quick_chat reply (real cause: 120-token qwen-tuned
+budget capped the Ornith brain — raised to 1024) + shared 4096-aware
+chunker + Bot API 9.5 sendMessageDraft live streaming with graceful
+fallback. Send/stream layer only. See CHANGELOG 2026-06-29.
+
+Open (tracked separately, brain-swap fallout — NOT Phase 41): 6
+`test_quick_chat_fallback.py` cases assert hardcoded `gpt-oss:120b`;
+need re-pointing at `brain.get_brain_model()` as part of the
+brain-config/loaded-model reconciliation.
+
+Prior: Phase 39 — Brain + Guardrails Overhaul (12/12 gates, evals 34/34).
 
 ## Phase 40 Candidates
 - **RISKY_PATTERNS over-matching** (`core/cc_dispatch.py`): the

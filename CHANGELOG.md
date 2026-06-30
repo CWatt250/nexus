@@ -1,5 +1,57 @@
 # Nexus Build Changelog
 
+## 2026-06-29 — Phase 41 (Telegram Smart Reply: Chunking + Native Draft Streaming) — PASS
+
+Fixed the cut-off quick_chat reply and added Bot API 9.5 live-draft
+streaming. Touches only the Telegram send/stream layer plus the brain's
+content budget (scope expanded with approval — see root cause below).
+
+### Root cause (the actual bug was NOT the 4096 char limit)
+The MoE/dense reply came out at ~980 chars and stopped mid-thought
+because `_quick_chat_num_predict` returned **120** (×2 plain = 240
+tokens) — a clamp tuned for qwen3:4b's CoT, mis-applied to the new
+Ornith brain. The reply never reached the 4096 limit; generation was
+capped first. There was *also* a latent send-layer truncation at 4000
+chars (`telegram_listener.py` + `/quick`) that would have bitten longer
+replies.
+
+### Part A — full replies, chunked
+- `core/telegram_chunk.py` — ONE shared chunker. `chunk_structured()` is
+  the Phase 32.2 newline/table/fence logic verbatim (`cc_result_reporter`
+  delegates; 30 dispatch tests unchanged). `chunk_text()` adds a
+  paragraph→sentence→word fallback so long newline-free prose splits
+  below 4096. Codepoint-based; never mid-word.
+- Brain content budget raised: `QUICK_CHAT_NUM_PREDICT_BRAIN = 1024`
+  (qwen3:4b stays 120, gpt-oss stays 400). MoE reply now 4381 chars,
+  complete, across 2 messages.
+- `handle_message`, `/quick`, slash dispatch now send via
+  `_reply_chunked` (sequential ≤4096 messages, ~400ms apart) instead of
+  truncating at 4000.
+
+### Part B — native draft streaming (live typing)
+- `conversation_handler.quick_chat_stream()` — generator streaming Ollama
+  tokens (`{partial}` … `{final}`), reusing quick_chat's prompt/history/
+  clean path.
+- `_stream_quick_chat_reply()` — pushes growing text to a
+  `sendMessageDraft` bubble (PTB 22.7 native, no raw HTTP; throttled ~1s),
+  then finalizes with a real chunked message (drafts are ephemeral ~30s).
+  Only fires for pure chat turns (classify_intent=chat AND
+  router=quick_chat). Graceful degradation: draft failure → typing+final;
+  generation error → fall back to blocking route_message. Reply never
+  dropped.
+- Dispatch reporter (`cc_result_reporter.py`) untouched beyond reusing the
+  chunker.
+
+### Gates
+- evals 34/34, exit 0 (one transient qwen3:4b CoT-leak flake on re-run,
+  unrelated to this phase).
+- New tests: `test_telegram_chunk.py` (10), `test_telegram_stream.py` (4);
+  dispatch chunking 30/30 still green.
+- Known: `test_quick_chat_fallback.py` (6) fail on a hardcoded
+  `gpt-oss:120b` assertion — brain-swap fallout, tracked separately per
+  the "resolve brain mismatch separately" instruction; NOT caused by this
+  phase.
+
 ## 2026-06-11 — Phase 39 (Brain + Guardrails Overhaul) — PASS
 
 Local-only brain transplant + LLM router with verbatim passthrough +
