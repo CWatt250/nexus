@@ -188,3 +188,73 @@ if __name__ == "__main__":
     for c in ("echo hello", "rm -rf /tmp/test"):
         r = run_guarded(c)
         print(c, "→", {k: v for k, v in r.items() if k in ("blocked", "reason", "returncode", "stdout", "stderr")})
+
+
+# ── G4: bubblewrap filesystem isolation ─────────────────────────────────
+# Real isolation for untrusted/agent-generated code: read-only root, writable
+# only /tmp + a given workspace. Network is left intact (--unshare-net needs
+# privileges this box lacks). Gated behind Ubuntu 24.04's AppArmor userns
+# restriction — sandbox_available() probes and we degrade gracefully.
+
+import shutil as _shutil  # noqa: E402
+
+_BWRAP = _shutil.which("bwrap")
+_SANDBOX_OK: Optional[bool] = None
+SANDBOX_ENABLE_HINT = (
+    "bwrap sandbox unavailable — Ubuntu 24.04 AppArmor blocks unprivileged "
+    "user namespaces. Run the one-time enablement in ~/AI_Agent/SUDO_SANDBOX.sh "
+    "(installs an AppArmor profile for bwrap)."
+)
+
+
+def sandbox_available() -> bool:
+    """True if bubblewrap can actually create a namespace here (cached)."""
+    global _SANDBOX_OK
+    if _SANDBOX_OK is not None:
+        return _SANDBOX_OK
+    if not _BWRAP:
+        _SANDBOX_OK = False
+        return False
+    try:
+        r = subprocess.run(
+            [_BWRAP, "--ro-bind", "/", "/", "--tmpfs", "/tmp", "--dev", "/dev",
+             "--die-with-parent", "true"],
+            capture_output=True, timeout=10,
+        )
+        _SANDBOX_OK = r.returncode == 0
+    except Exception:
+        _SANDBOX_OK = False
+    return _SANDBOX_OK
+
+
+def run_sandboxed(command: str, *, workspace: Optional[str] = None,
+                  timeout: int = 120) -> dict:
+    """Run `command` in a bubblewrap filesystem sandbox: read-only root,
+    writable only /tmp + `workspace` (defaults to the Nexus repo). Returns the
+    run_guarded result shape. If the sandbox isn't available, returns
+    blocked=True with the enablement hint — never silently runs unsandboxed."""
+    ts = datetime.now(timezone.utc).isoformat()
+    base = {"ts": ts, "tool": "sandbox", "command": command, "timed_out": False}
+    if not sandbox_available():
+        return {**base, "returncode": None, "stdout": "", "stderr": SANDBOX_ENABLE_HINT,
+                "blocked": True, "reason": "sandbox unavailable"}
+    ws = workspace or str(Path.home() / "AI_Agent")
+    Path(ws).mkdir(parents=True, exist_ok=True)
+    args = [
+        _BWRAP, "--ro-bind", "/", "/", "--tmpfs", "/tmp", "--dev", "/dev",
+        "--proc", "/proc", "--bind", ws, ws,
+        "--unshare-pid", "--die-with-parent", "--new-session",
+        "bash", "-lc", command,
+    ]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return {**base, "returncode": r.returncode, "stdout": r.stdout,
+                "stderr": r.stderr, "blocked": False, "reason": None,
+                "sandboxed": True, "workspace": ws}
+    except subprocess.TimeoutExpired:
+        return {**base, "returncode": None, "stdout": "", "stderr": "",
+                "timed_out": True, "blocked": False, "reason": f"timeout >{timeout}s"}
+    except Exception as exc:
+        return {**base, "returncode": None, "stdout": "",
+                "stderr": f"{type(exc).__name__}: {exc}", "blocked": True,
+                "reason": "sandbox error"}
