@@ -1,0 +1,25 @@
+# Nexus lifecycle hooks (G5). Run scripts on agent events.
+# Events: session_start, session_end, on_error, pre_tool, post_tool.
+# Each hook: {name, command, timeout?(s, default 30), enabled?(default true),
+#             feed_context?(if true, the hook's stdout is injected back)}.
+# Context is available as NEXUS_HOOK_<KEY> env vars and as JSON on stdin
+# (e.g. NEXUS_HOOK_TASK_ID, NEXUS_HOOK_ERROR, NEXUS_HOOK_RESULT).
+#
+# Everything below is commented out — uncomment to enable. Best-effort: a
+# failing or slow hook is logged and skipped, never breaks the agent.
+
+session_start: []
+  # - name: warm-brain
+  #   command: "curl -s localhost:11434/api/ps >/dev/null"
+
+session_end: []
+  # - name: auto-commit
+  #   command: "cd ~/AI_Agent && git add -A && git commit -m 'hook auto-commit' || true"
+  #   timeout: 60
+
+on_error: []
+  # - name: log-error
+  #   command: "echo \"$(date -Is) task $NEXUS_HOOK_TASK_ID: $NEXUS_HOOK_ERROR\" >> ~/AI_Agent/memory/errors.log"
+
+pre_tool: []
+post_tool: []

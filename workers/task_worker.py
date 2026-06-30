@@ -161,6 +161,12 @@ async def _run_one(row: dict) -> None:
         return
 
     route, model = router.classify_and_model(user_text)
+    try:  # G5 — session_start hooks (best-effort, never block the task)
+        from core import hooks  # noqa: PLC0415
+        await asyncio.to_thread(hooks.run_hooks, "session_start",
+                                task_id=task_id, route=route, input=user_text[:500])
+    except Exception:
+        pass
     agent = await nexus.build_agent_async(model)
 
     _publish({
@@ -220,6 +226,12 @@ async def _run_one(row: dict) -> None:
     except Exception as exc:
         ok = False
         err = f"{type(exc).__name__}: {exc}"
+        try:  # G5 — on_error hooks
+            from core import hooks  # noqa: PLC0415
+            hooks.run_hooks("on_error", task_id=task_id, error=err,
+                            input=user_text[:300])
+        except Exception:
+            pass
     finally:
         heartbeat_task.cancel()
         try:
@@ -247,6 +259,12 @@ async def _run_one(row: dict) -> None:
         error=err,
     )
     agent_retros.generate_retro_async(task_id)
+    try:  # G5 — session_end hooks
+        from core import hooks  # noqa: PLC0415
+        await asyncio.to_thread(hooks.run_hooks, "session_end",
+                                task_id=task_id, success=ok, result=reply[:500])
+    except Exception:
+        pass
 
     if ok:
         task_queue.update_status(task_id, "done", output=reply)
