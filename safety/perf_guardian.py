@@ -25,8 +25,19 @@ LOG_PATH = ROOT / "memory" / "perf-guardian.jsonl"
 ALERT_STATE_PATH = ROOT / "memory" / "perf-guardian.state.json"
 
 # Models we will NEVER ask Ollama to unload — protects router warmth and the
-# heavy task model. Match `models.json` defaults.
-PINNED_MODELS = ("qwen3:4b", "qwen3.6")
+# heavy task model. Derived from the live config (core/brain.py reads
+# models.json) so this never drifts: the resident brain + the degraded
+# fallback. Hardcoding "qwen3.6" here let an evicted brain go unnoticed.
+def _pinned_models() -> tuple[str, ...]:
+    try:
+        from core import brain  # noqa: PLC0415
+        return tuple(dict.fromkeys((brain.get_brain_model(),
+                                    brain.DEGRADED_MODEL)))
+    except Exception:
+        return ("qwen3:4b",)
+
+
+PINNED_MODELS = _pinned_models()
 
 # Thresholds. Conservative — tuned by Colton over time.
 THRESHOLDS = {

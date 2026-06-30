@@ -21,12 +21,12 @@ Use `~/AI_Agent/new-project.sh <name>` — don't scaffold by hand.
 After completing a task in any project, append one JSON line to that project's `run-log.jsonl`. Minimum fields: `ts` (ISO-8601), `task`, `result`, `notes`. Append only — never rewrite.
 
 ## Host environment
-- Machine: WattBott
+- Machine: WattBott (hardware is a "NIMO" mini PC — AMD Ryzen AI Max+ 395 / Strix Halo, gfx1151)
 - OS: Ubuntu 24.04
-- GPU stack: ROCm
-- Local inference: Ollama
+- GPU stack: Vulkan / Mesa RADV (verified 2026-06-30 — the ollama unit sets `HIP_VISIBLE_DEVICES=""`, disabling ROCm/HIP; models load to VRAM via Vulkan). ROCm is installed but is NOT the inference path. SOUL.md was correct; the old "ROCm" line here was stale.
+- Local inference: Ollama (brain = Ornith-1.0-35B Q4, ~21 GB VRAM — NOT gpt-oss:120b; models.json is authoritative)
 
-Prefer local tools (Ollama, ROCm-aware libs) over cloud services when a local option exists.
+Prefer local tools (Ollama) over cloud services when a local option exists.
 
 ## Git workflow
 This workspace is a git repo. Nexus auto-commits after every turn (see `git_sync.py`), staging only content paths: `projects/`, `memory/lessons.md`, `memory/improvements.md`, `memory/patterns.md`. Runtime state (`memory/checkpoints.db`, `memory/current_thread.txt`, `memory/sessions.json`, `designs/`, `venv/`, `chroma/`, `__pycache__/`) is `.gitignore`'d.

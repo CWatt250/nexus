@@ -327,8 +327,16 @@ def load_static_prefix() -> str:
 
 
 def load_dynamic_suffix() -> str:
-    """Return the volatile tail: lessons + current-project context. Empty if none."""
+    """Return the volatile tail: live self-facts + lessons + current-project
+    context. Empty if none. Self-facts live here (not the cached static
+    prefix) so the model always knows its real model/host/stack without
+    busting Ollama's prompt-cache hash on the identity block."""
     parts: list[str] = []
+    try:
+        from core import self_facts  # noqa: PLC0415
+        parts.append(self_facts.self_facts_block())
+    except Exception as exc:  # never let a probe break prompt assembly
+        print(f"[prompt] self_facts skipped: {exc}", file=sys.stderr)
     lessons = load_lessons()
     if lessons:
         parts.append(lessons)

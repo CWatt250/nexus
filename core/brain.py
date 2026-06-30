@@ -28,13 +28,21 @@ ROOT = Path.home() / "AI_Agent"
 MODELS_FILE = ROOT / "models.json"
 OLLAMA_URL = "http://localhost:11434"
 
-# Set after the Phase 39 acceptance benchmark (>=25 t/s decode, TTFT <4s
-# on router prompts, no OOM with qwen2.5vl co-resident). models.json
-# "brain" key overrides so the value can change without a code deploy.
-DEFAULT_BRAIN_MODEL = "gpt-oss:120b"
+# Live brain (commit 0c8debe): Ornith-1.0-35B Q4 (~21 GB VRAM, fully on
+# GPU — leaves ample headroom, so the Phase-39 "60 GB in a 64 GB carve"
+# squeeze is obsolete). models.json "brain" key is authoritative and
+# overrides this; the constant is only the fallback when models.json is
+# unreadable. Keep it pointed at the real resident model so the fallback
+# never lies about identity. NOTE: gpt-oss think-suppression rules below
+# still apply if a gpt-oss model is ever configured again.
+DEFAULT_BRAIN_MODEL = "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M"
 # Explicit offline/degraded fallback ONLY (big model evicted, Ollama
 # mid-restart). Not a quality tier — a liveness tier.
 DEGRADED_MODEL = "qwen3:4b"
+# Router model: classification is a constrained JSON task — the small
+# resident model is enough and ~5× faster than routing on the 35B brain.
+# models.json "router" key overrides. (Phase B speed hardening.)
+DEFAULT_ROUTER_MODEL = "qwen3:4b"
 
 
 def get_brain_model() -> str:
@@ -46,6 +54,19 @@ def get_brain_model() -> str:
     except (OSError, json.JSONDecodeError):
         pass
     return DEFAULT_BRAIN_MODEL
+
+
+def get_router_model() -> str:
+    """Router model id — models.json `router` key, else the small default.
+    Routing on the small resident model keeps every message from paying a
+    full brain inference just to be classified."""
+    try:
+        data = json.loads(MODELS_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("router"):
+            return str(data["router"])
+    except (OSError, json.JSONDecodeError):
+        pass
+    return DEFAULT_ROUTER_MODEL
 
 
 def think_param(model: str):

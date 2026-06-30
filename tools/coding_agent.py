@@ -41,7 +41,23 @@ from tools.test_runner_tool import run_tests_raw  # noqa: E402
 log = logging.getLogger("nexus.coding_agent")
 
 OLLAMA_URL = "http://localhost:11434"
-CODE_MODEL = "qwen3.6:latest"
+
+
+def _code_model() -> str:
+    """Live code model — models.json `code` key, else the resident brain.
+    The old hardcoded `qwen3.6:latest` had drifted off the config and ran
+    edits on a model nobody else used."""
+    try:
+        data = json.loads((ROOT / "models.json").read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("code"):
+            return str(data["code"])
+    except Exception:
+        pass
+    from core import brain  # noqa: PLC0415
+    return brain.get_brain_model()
+
+
+CODE_MODEL = _code_model()
 PLAN_PATH = Path("/tmp/nexus-plan.md")
 SESSIONS_DIR = Path.home() / "AI_Agent" / "memory" / "coding-sessions"
 

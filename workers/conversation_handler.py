@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 import nexus  # noqa: E402  — loads tools, prompt, etc.
 from core import brain  # noqa: E402
+from core import self_facts  # noqa: E402
 from core import task_queue  # noqa: E402
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
 from langchain_core.tools import tool  # noqa: E402
@@ -966,7 +967,11 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     # SOUL.md is the single source of truth — `get_quick_chat_system_prompt`
     # composes full SOUL + quick_chat-specific output / capability rules.
     # _datetime_context appends real wall-clock so "what time is it" works.
-    system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
+    system_prompt = (
+        f"{get_quick_chat_system_prompt()}\n\n"
+        f"{self_facts.self_facts_block()}\n\n"
+        f"{_datetime_context()}"
+    )
     t0 = _time.monotonic()
 
     history: list[dict] = []
@@ -1063,7 +1068,11 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
     the caller can fall back to the non-streaming quick_chat path; the
     reply is therefore never dropped.
     """
-    system_prompt = f"{get_quick_chat_system_prompt()}\n\n{_datetime_context()}"
+    system_prompt = (
+        f"{get_quick_chat_system_prompt()}\n\n"
+        f"{self_facts.self_facts_block()}\n\n"
+        f"{_datetime_context()}"
+    )
     history = (
         _build_quick_chat_history(chat_id, system_prompt, message)
         if chat_id is not None else []
