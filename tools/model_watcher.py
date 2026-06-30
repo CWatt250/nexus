@@ -24,11 +24,16 @@ from langchain_core.tools import tool
 
 ROOT = Path.home() / "AI_Agent"
 LOG_PATH = ROOT / "memory" / "model-watcher.jsonl"
+# Snapshot of every library model seen on the previous run. The diff against
+# THIS is what's actually new — not the diff against locally-pulled models
+# (that set is near-static and was why the watcher repeated the same list).
+SEEN_PATH = ROOT / "memory" / "model-watcher-seen.json"
 LIBRARY_URL = "https://ollama.com/library"
 TIMEOUT = 15
 
-# Model families we actively care about.
-INTERESTING = ("qwen3", "qwen2.5", "qwen3.6", "glm", "llama3", "deepseek", "mistral")
+# Model families worth flagging. Prefix/segment matched (not substring) so
+# "everythinglm" no longer falsely matches "glm". qwen3.6 dropped (retired).
+INTERESTING = ("qwen", "glm", "llama", "deepseek", "mistral", "gemma", "phi", "gpt-oss")
 
 log = logging.getLogger("nexus.model_watcher")
 
@@ -69,15 +74,30 @@ def _library_listing() -> list[str]:
     return sorted(names)
 
 
-def _candidates(local: list[str], library: list[str]) -> list[str]:
-    local_bases = {n.split(":")[0].lower() for n in local}
-    out: list[str] = []
-    for name in library:
-        if name in local_bases:
-            continue
-        if any(family in name for family in INTERESTING):
-            out.append(name)
-    return out
+def _matches_family(name: str) -> bool:
+    """Prefix/segment match against INTERESTING (not substring)."""
+    n = name.lower()
+    segs = re.split(r"[-:._]", n)
+    return any(n.startswith(f) or f in segs for f in INTERESTING)
+
+
+def _load_seen() -> set[str]:
+    """Set of library model names seen on the previous run (empty on first run)."""
+    try:
+        data = json.loads(SEEN_PATH.read_text(encoding="utf-8"))
+        return set(data.get("library", []))
+    except (OSError, json.JSONDecodeError):
+        return set()
+
+
+def _save_seen(library: list[str]) -> None:
+    SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        SEEN_PATH.write_text(
+            json.dumps({"ts": _now(), "library": sorted(library)}, ensure_ascii=False),
+            encoding="utf-8")
+    except OSError as exc:
+        log.warning("model-watcher seen-state write failed: %s", exc)
 
 
 def _append(record: dict) -> None:
@@ -91,24 +111,35 @@ def _append(record: dict) -> None:
 
 @tool
 def model_watcher_run() -> str:
-    """Compare local Ollama models to the public library and report new
-    candidates. Records the diff to memory/model-watcher.jsonl. Best-effort
-    Telegram notification with the candidate list."""
-    local = _local_models()
+    """Report Ollama library models NEWLY released since the last run (diff
+    against the saved snapshot, NOT against locally-pulled models). First run
+    seeds a baseline silently. Records to memory/model-watcher.jsonl; best-effort
+    Telegram on genuinely-new interesting models."""
     library = _library_listing()
-    candidates = _candidates(local, library)
-    record = {
-        "ts": _now(),
-        "local": local,
-        "library_size": len(library),
-        "candidates": candidates,
-    }
-    _append(record)
-    if not candidates:
-        return "no new model candidates"
-    msg = "📦 New Ollama models (interesting families):\n" + "\n".join(
-        f"- {n}" for n in candidates[:15]
-    ) + ("\n…" if len(candidates) > 15 else "")
+    if not library:
+        return "library fetch failed — nothing to report (will retry next run)"
+
+    seen = _load_seen()
+    if not seen:
+        # First run — establish the baseline; don't dump the whole catalog.
+        _save_seen(library)
+        _append({"ts": _now(), "event": "baseline", "library_size": len(library)})
+        return (f"baseline established — tracking {len(library)} library models. "
+                f"I'll report only NEW releases from here on.")
+
+    new_all = sorted(set(library) - seen)
+    new_interesting = [n for n in new_all if _matches_family(n)]
+    _save_seen(library)  # advance the snapshot
+    _append({"ts": _now(), "library_size": len(library),
+             "new_count": len(new_all), "new_interesting": new_interesting})
+
+    if not new_interesting:
+        extra = f" ({len(new_all)} new overall, none in tracked families)" if new_all else ""
+        return f"no new interesting models since last check{extra}"
+
+    msg = "📦 NEW Ollama models since last check:\n" + "\n".join(
+        f"- {n}" for n in new_interesting[:15]
+    ) + ("\n…" if len(new_interesting) > 15 else "")
     try:
         import asyncio
         from tools.telegram_tool import proactive_send
