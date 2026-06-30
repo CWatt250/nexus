@@ -29,7 +29,6 @@ from safety import circuit_breaker, guardrails  # noqa: E402,F401
 from safety import sandbox as safety_sandbox  # noqa: E402,F401
 from tools import context_compressor  # noqa: E402
 from tools.sparky_state import SparkyCallbackHandler, instant_ack, post_state  # noqa: E402
-from tools.brave_search_tool import brave_search, brave_search_news  # noqa: E402
 from tools.searxng_tool import SEARXNG_TOOLS  # noqa: E402
 from tools.search_router import WEB_SEARCH_TOOLS  # noqa: E402
 from tools.scaffold_tool import SCAFFOLD_TOOLS  # noqa: E402
@@ -51,12 +50,12 @@ from tools.youtube_tool import YOUTUBE_TOOLS  # noqa: E402
 from tools.telegram_tool import TELEGRAM_TOOLS  # noqa: E402
 from tools.computer_use_tool import COMPUTER_USE_TOOLS  # noqa: E402
 from tools.image_gen_tool import IMAGE_GEN_TOOLS  # noqa: E402
-from tools.opengame_tool import OPENGAME_TOOLS  # noqa: E402
 from tools.vercel_tool import VERCEL_TOOLS  # noqa: E402
-from tools.godot_tool import GODOT_TOOLS  # noqa: E402
-from tools.audio_gen_tool import AUDIO_GEN_TOOLS  # noqa: E402
-from tools.bark_tool import BARK_TOOLS  # noqa: E402
-from tools.game_pipeline import GAME_PIPELINE_TOOLS  # noqa: E402
+# Tier-3 audit declutter (2026-06): the "game studio" cluster (opengame,
+# godot, audio_gen/AudioCraft, bark, game_pipeline) was never provisioned —
+# no Godot binary, AudioCraft/Bark uninstalled, OpenGame not cloned. Removed
+# from the tool belt so the model stops considering dead tools. Files remain
+# on disk; re-add the imports to restore if game dev is ever set up.
 from tools.codebase_tool import CODEBASE_TOOLS  # noqa: E402
 from tools.test_runner_tool import TEST_RUNNER_TOOLS  # noqa: E402
 from tools.diff_tool import DIFF_TOOLS  # noqa: E402
@@ -130,8 +129,8 @@ TOOLS = [
     mem0_add,
     mem0_search,
     *GITHUB_TOOLS,
-    brave_search,
-    brave_search_news,
+    # brave_search/_news removed (Tier-3 declutter): no API key + SearXNG
+    # covers web/news search locally for free.
     *SEARXNG_TOOLS,
     *WEB_SEARCH_TOOLS,
     *SCAFFOLD_TOOLS,
@@ -143,12 +142,7 @@ TOOLS = [
     *TELEGRAM_TOOLS,
     *COMPUTER_USE_TOOLS,
     *IMAGE_GEN_TOOLS,
-    *OPENGAME_TOOLS,
     *VERCEL_TOOLS,
-    *GODOT_TOOLS,
-    *AUDIO_GEN_TOOLS,
-    *BARK_TOOLS,
-    *GAME_PIPELINE_TOOLS,
     *CODEBASE_TOOLS,
     *TEST_RUNNER_TOOLS,
     *DIFF_TOOLS,
@@ -262,7 +256,6 @@ _TOOL_HINT = (
     "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
     "- `web_search(query, count)`: PREFER THIS for general web search. Picks the best backend automatically — Tavily > Brave > SearXNG (loopback Docker, free, always-on). No key needed.\n"
     "- `searxng_search(query, count)` / `searxng_search_news(query, count)`: direct hit on the local SearXNG container (free, unlimited).\n"
-    "- `brave_search(query, count)` / `brave_search_news(query, count)`: direct Brave (paid, used as backup if you specifically want Brave's ranking).\n"
     "- `searxng_health()`: probe the local SearXNG container, returns 'ok' or a reason string.\n"
     "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
     "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
