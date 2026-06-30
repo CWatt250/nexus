@@ -82,6 +82,7 @@ from tools.system_probe import system_status  # noqa: E402
 from tools.html_mockup import HTML_MOCKUP_TOOLS  # noqa: E402
 from tools.goals_tool import GOALS_TOOLS  # noqa: E402
 from tools.sandbox_tool import SANDBOX_TOOLS  # noqa: E402
+from tools.code_intel import CODE_INTEL_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -170,6 +171,7 @@ TOOLS = [
     *HTML_MOCKUP_TOOLS,
     *GOALS_TOOLS,
     *SANDBOX_TOOLS,
+    *CODE_INTEL_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,

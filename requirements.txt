@@ -254,3 +254,4 @@ youtube-transcript-api==1.0.3
 yt-dlp==2026.3.17
 zipp==3.23.1
 zstandard==0.25.0
+ruff>=0.15  # G6 code_intel diagnostics
