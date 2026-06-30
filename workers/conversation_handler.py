@@ -298,6 +298,69 @@ def _looks_like_false_promise(text: str) -> bool:
     return bool(_FALSE_PROMISE_RE.search(text or ""))
 
 
+# Personal-fact questions — the ones the intent classifier promised were
+# "already injected" but never were. Gate retrieval so ordinary chat pays
+# no embedding cost. Requires a first-person/recall reference AND a
+# question/recall shape.
+_FIRST_PERSON_RE = re.compile(r"\b(my|mine|i|i'?m|me)\b", re.IGNORECASE)
+_RECALL_SHAPE_RE = re.compile(
+    r"\?|\b(what|where|when|who|which|how|do|did|am|is|are|have|had|"
+    r"remember|recall|tell me|know about)\b", re.IGNORECASE,
+)
+
+
+def _is_personal_fact_query(message: str) -> bool:
+    m = (message or "").strip()
+    if not m or len(m) > 200:
+        return False
+    refs_user = bool(_FIRST_PERSON_RE.search(m)) or "remember" in m.lower() \
+        or "about me" in m.lower()
+    return refs_user and bool(_RECALL_SHAPE_RE.search(m))
+
+
+def _recall_personal_facts(message: str) -> str:
+    """Retrieve Colton-facts from long-term memory (mem0 + strict Chroma)
+    for injection into the chat prompt. Returns a compact block or "" — and
+    never injects garbage (strict recall fails to empty, scores are
+    filtered). Only runs for personal-fact questions."""
+    if not _is_personal_fact_query(message):
+        return ""
+    facts: list[str] = []
+    # mem0 is the clean Colton-fact store. The Chroma nexus-memory
+    # collection is deliberately NOT queried here — it's dominated by
+    # git-commit/SOUL chunks that pollute personal-fact recall.
+    try:
+        from tools.mem0_tool import recall_facts  # noqa: PLC0415
+        facts.extend(recall_facts(message, k=5))
+    except Exception as exc:
+        log.debug("mem0 recall failed: %s", exc)
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for f in facts:
+        key = (f or "").strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            uniq.append(f.strip())
+    if not uniq:
+        return ""
+    block = "\n".join(f"- {f}" for f in uniq[:5])
+    return ("## Known facts about Colton (from long-term memory — use if "
+            "they answer the question; if they don't, say you don't have "
+            "that saved yet rather than guessing):\n" + block)
+
+
+def _build_chat_system_prompt(message: str) -> str:
+    """Compose the quick_chat system prompt: persona/rules + live self-facts
+    + recalled personal facts (when relevant) + wall-clock. Self-facts and
+    recall are volatile, so they go here per-call, not in any cached base."""
+    parts = [get_quick_chat_system_prompt(), self_facts.self_facts_block()]
+    facts = _recall_personal_facts(message)
+    if facts:
+        parts.append(facts)
+    parts.append(_datetime_context())
+    return "\n\n".join(parts)
+
+
 # Phase B speed — unambiguous social messages that never need the router.
 # Matching the WHOLE message (anchored) keeps this safe: "hey" shortcuts,
 # but "hey, fix the bug" does not. Everything that doesn't full-match still
@@ -1022,11 +1085,7 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     # SOUL.md is the single source of truth — `get_quick_chat_system_prompt`
     # composes full SOUL + quick_chat-specific output / capability rules.
     # _datetime_context appends real wall-clock so "what time is it" works.
-    system_prompt = (
-        f"{get_quick_chat_system_prompt()}\n\n"
-        f"{self_facts.self_facts_block()}\n\n"
-        f"{_datetime_context()}"
-    )
+    system_prompt = _build_chat_system_prompt(message)
     t0 = _time.monotonic()
 
     history: list[dict] = []
@@ -1123,11 +1182,7 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
     the caller can fall back to the non-streaming quick_chat path; the
     reply is therefore never dropped.
     """
-    system_prompt = (
-        f"{get_quick_chat_system_prompt()}\n\n"
-        f"{self_facts.self_facts_block()}\n\n"
-        f"{_datetime_context()}"
-    )
+    system_prompt = _build_chat_system_prompt(message)
     history = (
         _build_quick_chat_history(chat_id, system_prompt, message)
         if chat_id is not None else []

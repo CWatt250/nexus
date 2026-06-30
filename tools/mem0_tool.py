@@ -65,11 +65,17 @@ def mem0_add(text: str) -> str:
     try:
         mem = _get_memory()
         result = mem.add(text, user_id=DEFAULT_USER)
+        results = result.get("results") if isinstance(result, dict) else result
+        # The local qwen3:4b extractor (infer=True) sometimes extracts
+        # nothing. Don't lose the fact — store it raw so it's still
+        # recallable. (mem0 2.0 keeps user_id top-level on add().)
+        if not results:
+            result = mem.add(text, user_id=DEFAULT_USER, infer=False)
+            results = result.get("results") if isinstance(result, dict) else result
     except Exception as exc:
         return f"ERROR: {type(exc).__name__}: {exc}"
-    results = result.get("results") if isinstance(result, dict) else result
     if not results:
-        return "(nothing extracted)"
+        return "(nothing stored)"
     lines = []
     for r in results:
         mid = r.get("id", "?") if isinstance(r, dict) else "?"
@@ -79,13 +85,40 @@ def mem0_add(text: str) -> str:
     return "\n".join(lines)
 
 
+def recall_facts(query: str, k: int = 4, min_score: float = 0.3) -> list[str]:
+    """Programmatic, score-filtered recall of Colton-facts from Mem0 for
+    prompt injection. Returns a list of memory strings (most relevant first),
+    or [] on any failure. Unlike the mem0_search @tool this returns structured
+    data and drops weak matches so chat never injects irrelevant 'facts'."""
+    try:
+        mem = _get_memory()
+        result = mem.search(query=query, top_k=k,
+                            filters={"user_id": DEFAULT_USER})
+    except Exception:
+        return []
+    results = result.get("results") if isinstance(result, dict) else result
+    out: list[str] = []
+    for r in results or []:
+        if not isinstance(r, dict):
+            continue
+        score = r.get("score")
+        text = (r.get("memory") or "").strip()
+        if text and (not isinstance(score, (int, float)) or score >= min_score):
+            out.append(text)
+    return out
+
+
 @tool
 def mem0_search(query: str, k: int = 5) -> str:
     """Semantic search over Mem0. Returns up to k extracted memories
     matching the query, ranked by similarity."""
     try:
         mem = _get_memory()
-        result = mem.search(query=query, user_id=DEFAULT_USER, limit=k)
+        # mem0 2.0 API: user_id moved into filters, limit → top_k. The old
+        # `search(query, user_id=, limit=)` call raised ValueError on every
+        # invocation, so personal-fact recall had silently never worked.
+        result = mem.search(query=query, top_k=k,
+                            filters={"user_id": DEFAULT_USER})
     except Exception as exc:
         return f"ERROR: {type(exc).__name__}: {exc}"
     results = result.get("results") if isinstance(result, dict) else result

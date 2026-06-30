@@ -125,6 +125,44 @@ def query(text: str, k: int = 4) -> list[dict]:
     return hits
 
 
+def _embed_strict(text: str) -> list[float]:
+    """Embed one query, RAISING on failure instead of the zero-vector
+    fallback. Used by recall() so a retrieval outage injects nothing rather
+    than silently matching garbage (the all-zero vector matches everything)."""
+    payload = json.dumps({"model": EMBED_MODEL, "input": [text],
+                          "truncate": True}).encode("utf-8")
+    req = urllib.request.Request(
+        OLLAMA_URL + "/api/embed", data=payload,
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        emb = json.loads(resp.read().decode("utf-8"))["embeddings"][0]
+    if not emb or not any(emb):
+        raise RuntimeError("embedding endpoint returned an empty/zero vector")
+    return emb
+
+
+def recall(text: str, k: int = 3, max_distance: float = 0.6) -> list[dict]:
+    """Strict semantic recall for prompt injection. Returns
+    [{document, distance}] for hits CLOSER than max_distance (cosine), or []
+    on any embed/query failure. Unlike query(), this never returns the
+    zero-vector fallback's meaningless neighbours, and the distance gate
+    drops irrelevant matter (e.g. the git-commit noise in nexus-memory sits
+    at distance ~1.0 and is filtered out)."""
+    try:
+        emb = _embed_strict(text)
+        res = _get_collection().query(query_embeddings=[emb], n_results=k)
+    except Exception:
+        return []
+    docs = (res.get("documents") or [[]])[0]
+    dists = (res.get("distances") or [[]])[0]
+    out: list[dict] = []
+    for i, doc in enumerate(docs):
+        d = dists[i] if i < len(dists) else None
+        if d is not None and d <= max_distance:
+            out.append({"document": doc, "distance": d})
+    return out
+
+
 def seed_documents(path: str, tag: str, source: str = "manual") -> int:
     """Read a file, split into chunks, and add to the collection.
     Returns the number of chunks added.
