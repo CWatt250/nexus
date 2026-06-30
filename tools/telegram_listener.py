@@ -109,22 +109,115 @@ async def _stream_quick_chat_reply(update: Update, message: str,
             if now - last_push >= DRAFT_THROTTLE_S:
                 last_push = now
                 try:
-                    await bot.send_message_draft(
-                        chat_id=chat_id, draft_id=draft_id,
-                        text=partial[:DRAFT_MAX_CHARS],
-                    )
+                    # Phase 42: the draft mechanism is chosen ONCE per
+                    # message (rich xor plain) — never mixed within a
+                    # lifecycle. On any failure we stop drafting entirely
+                    # rather than switch modes; the final send (rich-aware)
+                    # is what persists.
+                    if TELEGRAM_RICH_DRAFTS:
+                        await _send_rich_draft(
+                            chat_id, draft_id, partial[:DRAFT_MAX_CHARS])
+                    else:
+                        await bot.send_message_draft(
+                            chat_id=chat_id, draft_id=draft_id,
+                            text=partial[:DRAFT_MAX_CHARS],
+                        )
                 except Exception as exc:  # noqa: BLE001
                     draft_ok = False  # stop drafting, keep accumulating
-                    logger.info("sendMessageDraft unsupported/failed (%s) — "
-                                "degrading to final message only", exc)
+                    logger.info("%s draft failed (%s) — degrading to final "
+                                "message only",
+                                "rich" if TELEGRAM_RICH_DRAFTS else "plain", exc)
 
     if err is not None:
         raise err
     if not final_text:
         final_text = "(handler returned no text — try again)"
-    # Draft is ephemeral — the real message is what persists.
-    await _reply_chunked(update, final_text)
+    # Draft is ephemeral — the real message is what persists. Phase 42:
+    # finalize through the rich-aware path so tables/headings render
+    # natively (degrades to plain chunked on any rich failure).
+    await _reply_smart(update, final_text)
     return final_text
+
+
+# ── Phase 42 — Telegram Rich Messages (Bot API 10.1) ────────────────────
+import json  # noqa: E402
+import re  # noqa: E402
+
+# Rich messages allow up to 32,768 chars (vs 4096 plain) and render
+# markdown (headings, tables, code, lists) natively instead of as literal
+# `#`/`|`/``` characters. PTB 22.7 has no typed support, so these go
+# through a raw HTTP POST. rich_message is a JSON object: {"markdown": ...}.
+TELEGRAM_RICH_LIMIT = 32768
+# Part B is OFF by default — rich draft streaming has client-side render
+# glitches on some desktop apps. Flip TELEGRAM_RICH_DRAFTS=true to enable.
+TELEGRAM_RICH_DRAFTS = os.getenv("TELEGRAM_RICH_DRAFTS", "false").lower() in (
+    "1", "true", "yes", "on")
+
+# Markdown constructs worth rendering natively: headings, table rows, code
+# fences, bullet/numbered lists. A reply with none of these is plain prose
+# and stays on the existing path (no point rich-ifying a one-liner).
+_RICH_CONSTRUCT_RE = re.compile(
+    r"(^#{1,6}\s)"            # heading
+    r"|(^\s*\|.+\|\s*$)"      # table row
+    r"|(```)"                 # code fence
+    r"|(^\s*[-*]\s+\S)"       # bullet list item
+    r"|(^\s*\d+\.\s+\S)",     # numbered list item
+    re.MULTILINE,
+)
+
+
+def _has_rich_constructs(text: str) -> bool:
+    return bool(text) and bool(_RICH_CONSTRUCT_RE.search(text))
+
+
+async def _send_rich_message(chat_id: int, markdown_text: str) -> None:
+    """Send one rich message via the raw sendRichMessage endpoint (Bot API
+    10.1; PTB 22.7 lacks a typed method). Renders `markdown_text` natively.
+    Raises on any Telegram rejection / network error so the caller falls
+    back to the plain chunked path — a rich failure never drops the reply.
+    Isolated here so a future PTB typed method is a one-function swap."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendRichMessage"
+    payload = {
+        "chat_id": chat_id,
+        "rich_message": json.dumps({"markdown": markdown_text}),
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(url, data=payload)
+    body = resp.json()
+    if not body.get("ok"):
+        raise RuntimeError(f"sendRichMessage rejected: {body.get('description')}")
+
+
+async def _send_rich_draft(chat_id: int, draft_id: int,
+                           markdown_text: str) -> None:
+    """Stream a partial rich message via the raw sendRichMessageDraft
+    endpoint. Same JSON shape as _send_rich_message. Raises on rejection."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendRichMessageDraft"
+    payload = {
+        "chat_id": chat_id,
+        "draft_id": draft_id,
+        "rich_message": json.dumps({"markdown": markdown_text}),
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(url, data=payload)
+    body = resp.json()
+    if not body.get("ok"):
+        raise RuntimeError(f"sendRichMessageDraft rejected: {body.get('description')}")
+
+
+async def _reply_smart(update: Update, text: str) -> None:
+    """Reply with a native rich message when the text has formatting worth
+    preserving (tables/headings/code/lists) and fits the 32k rich limit;
+    otherwise — or on ANY rich-send failure — fall back to the plain
+    chunked path. Plain one-line replies skip rich entirely."""
+    if _has_rich_constructs(text) and len(text) <= TELEGRAM_RICH_LIMIT:
+        try:
+            await _send_rich_message(update.effective_chat.id, text)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.info("rich send failed (%s) — falling back to plain chunked",
+                        exc)
+    await _reply_chunked(update, text)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -462,7 +555,7 @@ async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if not reply:
         reply = "(no reply)"
-    await _reply_chunked(update, reply)
+    await _reply_smart(update, reply)
 
 
 async def computer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -924,16 +1017,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not reply:
         reply = "(handler returned no text — try again)"
 
-    # Phase 38: log the assistant reply before sending. Phase 41: the full
-    # reply is logged and sent — chunked across messages by _reply_chunked
-    # instead of truncated at 4000 chars.
+    # Phase 38: log the assistant reply before sending. Phase 41: full reply
+    # chunked, not truncated. Phase 42: sent rich-first (native tables/
+    # headings), degrading to the plain chunked path on any rich failure.
     try:
         from core import telegram_chats as _tcs
         _tcs.write_turn(chat_id, "assistant", reply)
     except Exception as e:
         logger.warning("telegram_chats assistant-write failed: %s", e)
 
-    await _reply_chunked(update, reply)
+    await _reply_smart(update, reply)
 
 
 def main() -> None:
