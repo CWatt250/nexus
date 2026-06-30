@@ -928,6 +928,65 @@ async def _handle_dispatch_command(update: Update, text: str) -> bool:
     return False
 
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Phase E — vision intake. A photo (or image document) sent to the bot
+    is downloaded and run through the local VLM (qwen2.5vl). The caption, if
+    any, is treated as the question; otherwise Nexus just describes it. Both
+    turns are persisted so follow-up questions have context.
+
+    Before this, the bot had NO photo handler — images were silently dropped.
+    """
+    if not is_authorized(update):
+        return
+    msg = update.message
+    file_id = None
+    if msg.photo:
+        file_id = msg.photo[-1].file_id          # largest rendition
+    elif msg.document and (msg.document.mime_type or "").startswith("image/"):
+        file_id = msg.document.file_id
+    if not file_id:
+        return
+
+    caption = (msg.caption or "").strip()
+    await msg.chat.send_action("typing")
+
+    import os  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from tools.vision_tool import (  # noqa: PLC0415
+        ask_about_image_core, describe_image_core,
+    )
+
+    tmp_path = None
+    try:
+        tg_file = await context.bot.get_file(file_id)
+        fd, tmp_path = tempfile.mkstemp(suffix=".jpg", prefix="nexus-tg-img-")
+        os.close(fd)
+        await tg_file.download_to_drive(tmp_path)
+        if caption:
+            reply = await asyncio.to_thread(ask_about_image_core, tmp_path, caption)
+        else:
+            reply = await asyncio.to_thread(describe_image_core, tmp_path)
+    except Exception as e:
+        logger.warning("handle_photo failed: %s", e)
+        reply = f"⚠️ couldn't process that image: {type(e).__name__}: {e}"
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    chat_id = update.effective_chat.id
+    try:
+        from core import telegram_chats as _tcs  # noqa: PLC0415
+        _tcs.write_turn(chat_id, "user", (f"[photo] {caption}").strip())
+        _tcs.write_turn(chat_id, "assistant", reply)
+    except Exception as e:
+        logger.warning("telegram_chats photo-write failed: %s", e)
+
+    await _reply_chunked(update, reply)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route user message through the conversation handler (Phase 15.5).
 
@@ -1066,6 +1125,9 @@ def main() -> None:
     # Phase 36 — Computer Use agent (Anthropic native, drives :99 browser).
     application.add_handler(CommandHandler("computer", computer_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Phase E — vision intake: photos + image documents → local VLM describe.
+    application.add_handler(
+        MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
 
     # Start the bot
     logger.info("Starting Telegram listener...")

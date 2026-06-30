@@ -204,12 +204,12 @@ State as of audit. Check live with `systemctl status <name>`.
 | `qwen3:8b` | ✅ pulled | 5.2 GB | mid route (currently the default mid backstop) |
 | `qwen3.6` | ✅ pulled, currently loaded | 23 GB | heavy / code / design route, EOD summary, intent classifier, glm-fallback context window |
 | `qwen3:14b` | ✅ pulled | 9.3 GB | reserve heavy fallback (not currently keep-alive) |
-| `qwen2.5vl:7b` | ⚠️ pulled but fails to load with `ROCm out of memory` | 6.0 GB | vision (`computer_use_tool.find_on_screen_vision`) — Phase 16.2 |
+| `qwen2.5vl:7b` | ✅ working — CPU-pinned (`num_gpu=0`) | 6.0 GB | vision: `vision_tool.describe_image`/`ask_about_image`, Telegram photo intake (Phase E), `computer_use_tool.find_on_screen_vision` |
 | `nomic-embed-text` | ✅ pulled | 274 MB | embeddings for Chroma RAG and mem0 |
 
 Disk: 113 GB used / 1.7 TB free — plenty of headroom.
 
-VRAM: shared with system RAM (Radeon 8060S iGPU). The qwen2.5vl OOM happens because qwen3.6 (23 GB), qwen3:4b, and the embedder were all keep_alive at once. **Phase 16.7 Performance Guardian's LRU rules need to allow unloading qwen3.6 when qwen2.5vl is requested**, or the vision path stays broken.
+VRAM: shared with system RAM (Radeon 8060S iGPU). The old qwen2.5vl OOM is RESOLVED: the VL model is pinned to CPU (`num_gpu=0`) in every call path, so it can't evict the resident brain. (And the brain is now Ornith ~21 GB, not the old gpt-oss:120b/qwen3.6 ~23 GB, so VRAM headroom is no longer tight — the CPU pin is kept for safety, not necessity.)
 
 ### Cloud (used or planned)
 

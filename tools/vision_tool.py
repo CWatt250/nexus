@@ -52,13 +52,12 @@ def _vision_chat(prompt: str, image_b64: str, *,
             model=model,
             messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
             stream=False,
-            # Phase 39 — num_gpu=0 pins the VL model to CPU. The brain
-            # (gpt-oss:120b) owns the 64GB VRAM carve; loading the VL
-            # model's ~13GB resident footprint on GPU OOMs the ROCm
-            # backend and crashes the brain runner. On Strix Halo
-            # unified memory, CPU decode for the occasional verify call
-            # runs ~30 t/s — fine for short verdicts, and nothing gets
-            # evicted.
+            # num_gpu=0 pins the VL model to CPU so it can never evict the
+            # resident brain from the VRAM carve. (The brain is now Ornith
+            # ~21GB, not gpt-oss:120b, so there IS headroom to put the VL
+            # model on GPU — but the CPU pin is kept for safety; CPU decode
+            # on Strix Halo unified memory runs ~30 t/s, fine for the short
+            # describe/ask calls here. Revisit if VL latency matters.)
             options={"temperature": 0.2, "num_ctx": num_ctx,
                      "num_predict": num_predict, "num_gpu": 0},
             keep_alive=300,  # keep VL model warm for ~5min between calls
@@ -108,6 +107,22 @@ def describe_image(path: str) -> str:
     return describe_image_core(path)
 
 
+def ask_about_image_core(path: str, question: str, *,
+                         model: str = DEFAULT_VISION_MODEL) -> str:
+    """Direct entry point used by the @tool and the Telegram photo handler."""
+    raw = _read_image_bytes(path)
+    if raw is None:
+        return f"vision: image not found at {path}"
+    if not question or not question.strip():
+        return "vision: question is empty"
+    image_b64 = base64.b64encode(raw).decode("ascii")
+    return _vision_chat(
+        question.strip() + "\n\nAnswer in 1-3 short sentences.",
+        image_b64,
+        model=model,
+    )
+
+
 @tool
 def ask_about_image(path: str, question: str) -> str:
     """Ask a free-form question about an image using a vision model.
@@ -123,16 +138,7 @@ def ask_about_image(path: str, question: str) -> str:
     Returns:
         Model's answer, or a vision-error string.
     """
-    raw = _read_image_bytes(path)
-    if raw is None:
-        return f"vision: image not found at {path}"
-    if not question or not question.strip():
-        return "vision: question is empty"
-    image_b64 = base64.b64encode(raw).decode("ascii")
-    return _vision_chat(
-        question.strip() + "\n\nAnswer in 1-3 short sentences.",
-        image_b64,
-    )
+    return ask_about_image_core(path, question)
 
 
 VISION_TOOLS = [describe_image, ask_about_image]

@@ -289,7 +289,11 @@ def find_on_screen_vision(description: str, vision_model: str = "qwen2.5vl:7b") 
             messages=[{"role": "user", "content": prompt, "images": [img_b64]}],
             stream=False,
             think=False,
-            options={"temperature": 0.0, "num_predict": 16, "num_ctx": 4096},
+            # num_gpu=0 pins the VL model to CPU so it can't evict/OOM the
+            # resident brain — matches tools/vision_tool._vision_chat. This
+            # call was the one VL path missing the pin.
+            options={"temperature": 0.0, "num_predict": 16, "num_ctx": 4096,
+                     "num_gpu": 0},
         )
     except Exception as exc:
         msg = str(exc).lower()
