@@ -7,12 +7,18 @@ COMPLETE
 NONE
 
 ## Last Completed Task
-Phase 41 — Telegram Smart Reply: Chunking + Native Draft Streaming
-(evals 34/34 exit 0; chunker 10 + stream 4 + dispatch 30 tests green).
-Fixed the cut-off quick_chat reply (real cause: 120-token qwen-tuned
-budget capped the Ornith brain — raised to 1024) + shared 4096-aware
-chunker + Bot API 9.5 sendMessageDraft live streaming with graceful
-fallback. Send/stream layer only. See CHANGELOG 2026-06-29.
+Phase 42 — Telegram Rich Messages (Bot API 10.1) (evals 34/34 exit 0;
+rich 9 + stream 4 + chunk 10 + dispatch 30 tests green). Native
+rendering of headings/tables/code/lists: rich_message just takes
+{"markdown": ...} (verified empirically; no converter). Part A rich
+final sends default ON with plain-chunk fallback; Part B rich draft
+streaming default OFF (TELEGRAM_RICH_DRAFTS), never mixes rich/plain in
+a lifecycle, never uses editMessageText. Chunker demoted to >32k
+overflow. Send layer only. See CHANGELOG 2026-06-29.
+
+Prior: Phase 41 — Telegram Smart Reply (chunking + num_predict fix +
+plain draft streaming). Real cause of the cut-off reply was the
+120-token qwen-tuned budget capping the Ornith brain — raised to 1024.
 
 Open (tracked separately, brain-swap fallout — NOT Phase 41): 6
 `test_quick_chat_fallback.py` cases assert hardcoded `gpt-oss:120b`;

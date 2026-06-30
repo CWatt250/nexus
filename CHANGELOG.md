@@ -1,5 +1,48 @@
 # Nexus Build Changelog
 
+## 2026-06-29 — Phase 42 (Telegram Rich Messages, Bot API 10.1) — PASS
+
+Native rich rendering (headings, tables, code, lists) for Telegram
+replies, with the chunker demoted to a >32k overflow fallback. Send
+layer only; brain/router untouched.
+
+### Verified the premise empirically (didn't assume)
+- `sendRichMessage`/`sendRichMessageDraft` returned method-specific 400s
+  (not 404) → they exist on the live API. Confirmed against Telegram docs
+  (InputRichMessage / RichBlock* / RichText* types, Bot API 10.1).
+- **Schema is trivial:** `rich_message = {"markdown": "..."}` — proved by
+  a bogus-chat_id probe returning "chat not found" (content accepted).
+  No markdown→blocks converter needed; the model's markdown passes
+  straight through and Telegram renders it (CommonMark-style: `##`
+  headings + `|` tables, which MarkdownV2 can't express, no escaping).
+- PTB 22.7 has **zero** typed support → isolated raw `httpx` POST.
+
+### Part A — rich final sends (default ON)
+- `_send_rich_message()` (raw POST) + `_reply_smart()`: routes final
+  quick_chat replies (`handle_message`, `/quick`, and the streamed
+  finalize) through `sendRichMessage` when the text has rich constructs
+  (heading/table/fence/list regex) and is ≤32,768 chars.
+- Mandatory graceful fallback: any rejection, >32k, or plain prose →
+  Phase 41 plain chunked path. Reply never dropped. Chunker retained as
+  the >32k overflow path.
+
+### Part B — rich draft streaming (default OFF, TELEGRAM_RICH_DRAFTS)
+- `_send_rich_draft()` (raw `sendRichMessageDraft`). The draft mechanism
+  is chosen ONCE per message (rich xor plain) and **never mixed within a
+  lifecycle** — on a rich-draft failure we stop drafting rather than
+  switch to plain. We never call `editMessageText`, so the
+  formatting-destruction bug class cannot occur. Finalize is always the
+  rich-aware send so preview and persisted message match.
+- Shipped behind the default-off toggle (desktop client render glitches);
+  the no-mixed-formatting guarantee is intact, so it was buildable
+  cleanly rather than deferred.
+
+### Gates
+- evals 34/34, exit 0. New `test_telegram_rich.py` (9); Phase 41 (14) and
+  dispatch chunking (30) still green.
+- Live reproducer: rich comparison table sent (msg 1061) — renders native
+  table/heading/code in the Telegram client.
+
 ## 2026-06-29 — Phase 41 (Telegram Smart Reply: Chunking + Native Draft Streaming) — PASS
 
 Fixed the cut-off quick_chat reply and added Bot API 9.5 live-draft
