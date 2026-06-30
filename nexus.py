@@ -79,6 +79,7 @@ from tools.file_write import FILE_WRITE_TOOLS  # noqa: E402
 from tools.bash_local import BASH_LOCAL_TOOLS  # noqa: E402
 from tools.git_local import GIT_LOCAL_TOOLS  # noqa: E402
 from tools.local_builder import LOCAL_BUILDER_TOOLS  # noqa: E402
+from tools.system_probe import system_status  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
 from memory import retros as agent_retros  # noqa: E402
 
@@ -168,6 +169,7 @@ TOOLS = [
     *BASH_LOCAL_TOOLS,
     *GIT_LOCAL_TOOLS,
     *LOCAL_BUILDER_TOOLS,
+    system_status,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,

@@ -70,6 +70,31 @@ def resolve_dispatch_tier(message: str, tier: str | None) -> str:
     return "local" if _LOCAL_TIER_RE.search(message or "") else "max"
 
 
+# Host/runtime-health questions always want the system_status tool, i.e.
+# lite_agent. The small router conflates "running processes" with the task
+# queue ("tasks running") → status. This deterministic guard forces
+# lite_agent ONLY when the router landed on the wrong shelf (status /
+# quick_chat); it never overrides task/dispatch/wiki (so "build a process
+# monitor" stays dispatch).
+_SYSTEM_HEALTH_RE = re.compile(
+    r"\b(?:"
+    r"running processes|process list|top processes|ps aux|"
+    r"system (?:status|health)|are you (?:healthy|ok|up|alive|running)|"
+    r"(?:memory|ram|disk|cpu|vram|gpu) (?:usage|use|free|status|pressure)|"
+    r"how(?:'?s| is| much)\s+(?:your\s+)?(?:memory|ram|disk|cpu|vram|gpu)|"
+    r"what(?:'?s| is)\s+(?:loaded|resident|serving you)|"
+    r"is ollama (?:up|running|healthy|alive)|"
+    r"which model (?:is )?(?:loaded|running|serving)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_system_health(message: str) -> bool:
+    """True for questions about Nexus's own host/runtime health."""
+    return bool(_SYSTEM_HEALTH_RE.search(message or ""))
+
+
 ROUTER_SYSTEM_PROMPT = """You are the message router for Nexus, Colton's personal agent.
 Classify the user's message into a route. You only ROUTE — you never
 answer, never rewrite the message, never add to it.
@@ -84,7 +109,10 @@ quick_chat — greetings, small talk, thanks, opinions, quick factual
 
 lite_agent — quick factual question needing exactly ONE tool call NOW:
   weather lookups, one web search ("search for X", "look up X",
-  "google X"), github auth status, list my repos, search my notes.
+  "google X"), github auth status, list my repos, search my notes,
+  and Nexus's OWN host/runtime health ("are you healthy", "what model
+  is loaded", "show the process list", "how's memory/disk/GPU",
+  "what's running", "is ollama up") — these hit the system_status tool.
   If it clearly needs more than one step, use task instead.
 
 task — multi-step work Nexus runs itself with its full tool belt:
@@ -99,10 +127,11 @@ dispatch — coding/build work for the Claude Code dispatcher: build/
   if the user explicitly names the tier. Use "quick" never (that's
   what quick_chat is for).
 
-status — questions about Nexus's OWN task queue or a specific task id:
+status — questions about Nexus's OWN task QUEUE or a specific task id:
   "queue status", "any tasks running", "is task abc12345 done".
-  "<some other domain> status" (github/supabase/weather/wifi status)
-  is lite_agent, NOT status.
+  This route is ONLY the task queue. "<some other domain> status"
+  (github/supabase/weather/wifi) AND Nexus's host/system/runtime health
+  ("system status", "are you healthy") are lite_agent, NOT status.
 
 wiki — "what is X / who is X / tell me about X / explain X" where X is
   a project, person, or entity Nexus tracks (BidWatt, Sparky, NIMO,
@@ -171,14 +200,23 @@ def route_llm(message: str) -> dict:
         log.warning("router returned unknown tier %r — nulling it", tier)
         tier = None
 
+    route = obj["route"]
+
     # Dispatch tier is resolved deterministically — the small router model
     # sometimes returns "quick" (invalid for dispatch) by echoing a keyword,
     # which would otherwise collapse a build into a chat reply downstream.
-    if obj["route"] == "dispatch":
+    if route == "dispatch":
         tier = resolve_dispatch_tier(msg, tier)
 
+    # Host-health guard: force lite_agent when the small router misfiled a
+    # system-health question as status/quick_chat. Never overrides an
+    # action route (task/dispatch/wiki).
+    if route in ("status", "quick_chat") and is_system_health(msg):
+        route = "lite_agent"
+        tier = None
+
     return {
-        "route": obj["route"],
+        "route": route,
         "tier": tier,
         # OR with deterministic keyword detection — the LLM can widen
         # recon, never narrow it.

@@ -36,9 +36,20 @@ from tools.github_tool import (
     github_get_file,
 )
 from tools.rag_tool import memory_search, memory_stats
+from tools.system_probe import system_status
 
 
 _REGISTRY: dict[str, dict[str, Any]] = {
+    # Self/host status — read-only psutil + /api/ps probe, instant. Lets
+    # the fast path answer "are you healthy / what's loaded / process list /
+    # memory" with REAL data instead of a hollow "let me check" promise.
+    "system_status": {
+        "tool": system_status,
+        "description": "Read-only status of Nexus's OWN host/runtime: health, "
+                       "loaded model(s), processes, memory, disk, GPU, services.",
+        "args": {"what": "string (optional: summary|processes|memory|disk|gpu|"
+                         "models|services, default 'summary')"},
+    },
     # Web — always SearXNG-first via the router; web_search auto-falls
     # through to direct searxng_search if it's the only backend available.
     "web_search": {

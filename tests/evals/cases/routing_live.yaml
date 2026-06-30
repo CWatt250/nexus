@@ -62,3 +62,15 @@
   expect:
     route: dispatch
     tier: local
+
+- name: process-list-routes-lite-agent
+  kind: router_live
+  input: "show me the top running processes"
+  expect:
+    route: lite_agent
+
+- name: host-health-routes-lite-agent
+  kind: router_live
+  input: "how much memory and disk are you using right now"
+  expect:
+    route: lite_agent

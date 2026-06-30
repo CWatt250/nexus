@@ -272,6 +272,32 @@ def _looks_like_denial(text: str) -> bool:
     return bool(_DENIAL_RE.search(text or ""))
 
 
+# A quick_chat reply that PROMISES to go do something — but quick_chat has
+# no tools, so the action never happens (the screenshot's "let me check the
+# process list" / "Let me dig into that — one sec"). Detected so route_message
+# re-issues the message as a real TASK that can actually act. Tuned to action
+# verbs that imply a tool (check/look/pull/run/fetch/search/dig…), NOT pure
+# cognition ("let me think", "let me know", "let me explain").
+_FALSE_PROMISE_RE = re.compile(
+    r"\b(?:"
+    r"let me (?:go )?(?:check|look|pull|run|fetch|grab|search|find|dig|see|"
+    r"verify|confirm|investigate|take a look|look into|look up|pull up|query)|"
+    r"i'?ll (?:go )?(?:check|look|pull|run|fetch|grab|search|find|dig|verify|"
+    r"confirm|investigate|look into|look up|pull up|query)|"
+    r"give me (?:a|one) (?:sec|second|moment) while i|"
+    r"(?:one|hang on|hold on)[, ]+(?:sec|second|moment)?\s*while i|"
+    r"checking (?:on )?(?:that|it|now)|let me dig into"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_false_promise(text: str) -> bool:
+    """True if a tool-less quick_chat reply promises an action it can't
+    perform. route_message recovers by enqueuing the original as a TASK."""
+    return bool(_FALSE_PROMISE_RE.search(text or ""))
+
+
 # Phase B speed — unambiguous social messages that never need the router.
 # Matching the WHOLE message (anchored) keeps this safe: "hey" shortcuts,
 # but "hey, fix the bug" does not. Everything that doesn't full-match still
@@ -1208,8 +1234,37 @@ def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250
     return body.strip()
 
 
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _parse_json_object(body: str):
+    """Parse a JSON object from an LLM reply, tolerating markdown code
+    fences (```json ... ```) and surrounding prose. Some models wrap their
+    output in a fence even with format=json, which broke the bare
+    json.loads and silently dropped the lite_agent tool call to TASK."""
+    if not body:
+        return None
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        pass
+    m = _JSON_FENCE_RE.search(body)
+    if not m:
+        # Last resort: the first {...} span in the text.
+        start, end = body.find("{"), body.rfind("}")
+        if start == -1 or end <= start:
+            return None
+        candidate = body[start:end + 1]
+    else:
+        candidate = m.group(1)
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+
+
 def _pick_tool(message: str) -> dict | None:
-    """First leg of lite_agent: ask qwen3.6 to pick one tool + args.
+    """First leg of lite_agent: pick one tool + args from the registry.
     Returns {"tool": str, "args": dict} or None on parse failure."""
     from tools.lite_agent_tools import picker_prompt_block  # noqa: PLC0415
     user_prompt = (
@@ -1230,9 +1285,8 @@ def _pick_tool(message: str) -> dict | None:
     except Exception as exc:
         log.warning("lite_agent picker failed: %s", exc)
         return None
-    try:
-        obj = json.loads(body)
-    except json.JSONDecodeError:
+    obj = _parse_json_object(body)
+    if obj is None:
         log.warning("lite_agent picker returned non-JSON: %r", body[:160])
         return None
     if not isinstance(obj, dict) or "tool" not in obj:
@@ -1394,8 +1448,12 @@ def lite_agent(message: str) -> dict:
     try:
         tool_result = tool_obj.invoke(args)
     except Exception as exc:
-        tool_result = f"ERROR: {type(exc).__name__}: {exc}"
-        log.warning("lite_agent tool %s raised: %s", tool_name, exc)
+        # Don't dress a hard tool failure as a confident answer — fall
+        # through to TASK so the full agent can retry with more capability.
+        log.warning("lite_agent tool %s raised: %s — falling through to TASK",
+                    tool_name, exc)
+        return {"ok": False,
+                "reason": f"tool {tool_name} errored: {type(exc).__name__}: {exc}"}
 
     # 3a. Cheap shortcuts that skip the LLM formatter (Fix #4 part B).
     # Most QUERY_TOOL turns hit one of these and save ~3-4s.
@@ -2505,21 +2563,24 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
     # None (non-Telegram callers like the dashboard /chat) → stateless.
     reply = quick_chat(msg, chat_id=chat_id)
 
-    # Capability self-check: if the reply reads like a capability
-    # denial, the brain misjudged — enqueue the ORIGINAL message as a
-    # task so the full agent can actually use tools, and reply with the
-    # friendly recovery line (BUG 10: "On it. task_id=…" is reserved
-    # for genuinely-routed TASK).
-    if _looks_like_denial(reply):
+    # Capability self-check: if the reply reads like a capability denial
+    # OR a tool-less false promise ("let me check…"), the brain misjudged
+    # — enqueue the ORIGINAL message as a task so the full agent can
+    # actually use tools, and reply with the friendly recovery line
+    # (BUG 10: "On it. task_id=…" is reserved for genuinely-routed TASK).
+    denied = _looks_like_denial(reply)
+    promised = not denied and _looks_like_false_promise(reply)
+    if denied or promised:
+        why = "denial" if denied else "false_promise"
         log.warning(
-            "quick_chat produced denial — recovering as TASK. "
-            "denial_text=%r msg=%r", reply[:160], msg[:120],
+            "quick_chat produced %s — recovering as TASK. text=%r msg=%r",
+            why, reply[:160], msg[:120],
         )
         tid = task_queue.enqueue(msg)
         return {
             "kind": "chat",
             "reply": "Let me dig into that properly — one sec.",
-            "meta": {**meta, "task_id": tid, "recovered_from": "denial"},
+            "meta": {**meta, "task_id": tid, "recovered_from": why},
         }
 
     return {"kind": "chat", "reply": reply, "meta": meta}
