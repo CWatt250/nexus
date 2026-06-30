@@ -576,19 +576,19 @@ def _quick_chat_num_predict(model: str) -> int:
     return QUICK_CHAT_NUM_PREDICT_BRAIN
 
 
+def _first_sentence(text: str) -> str:
+    parts = [x for x in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if x.strip()]
+    return parts[0] if parts else ""
+
+
 def _ollama_quick_chat(model: str, message: str, system_prompt: str,
                        history: list[dict] | None = None) -> str:
-    """One-shot quick_chat call against any model. Forces JSON-mode
-    output ({"reply": "..."}) and tight num_predict to suppress
-    qwen3:4b's CoT. Falls back to plain-text mode if the JSON parse
-    fails so any model that doesn't honour the format flag still gets
-    a chance to answer.
-
-    Phase 38: optional `history` (list of {role, content}) is inserted
-    between system and the current user message. num_ctx=8192 means
-    long histories may be silently truncated by Ollama; that's fine —
-    Ollama is the fallback path, DeepSeek's 64K window owns the primary.
-    """
+    """quick_chat against any model. JSON-mode first (suppresses qwen3:4b CoT),
+    plain-text fallback. qwen3:4b is a small reasoning model that leaks CoT
+    nondeterministically, so for it we RETRY on a leaky/long result (each roll
+    is independent → clean rate compounds) and, as a guaranteed last resort,
+    collapse to the first clean sentence (the scrubber has already dropped the
+    leak/meta sentences, so what remains is brief and leak-free)."""
     history = history or []
     json_messages = [{"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT}]
     json_messages.extend(history)
@@ -596,49 +596,47 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
     plain_messages = [{"role": "system", "content": system_prompt}]
     plain_messages.extend(history)
     plain_messages.append({"role": "user", "content": message})
-    # Phase 39 — per-model think suppression: gpt-oss → think="low"
-    # (CoT lands in the discarded `thinking` field), qwen → think=False
-    # (scrubber backstop catches the leaks). core/brain.py owns the rule.
     num_predict = _quick_chat_num_predict(model)
-    try:
-        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-            model=model,
-            messages=json_messages,
-            options={
-                "temperature": QUICK_CHAT_TEMPERATURE,
-                "num_ctx": 8192,
-                "num_predict": num_predict,
-            },
-            keep_alive=-1,
-            think=brain.think_param(model),
-            format="json",
-        )
-        body = (resp.get("message", {}) or {}).get("content", "").strip()
-        try:
-            obj = json.loads(body)
-            reply = (obj or {}).get("reply", "") if isinstance(obj, dict) else ""
-            if reply:
-                return _clean_quick_chat(reply)
-        except json.JSONDecodeError:
-            pass  # fall through to plain-text retry
-    except Exception as exc:
-        log.warning("quick_chat json mode failed: %s — retrying plain", exc)
 
-    # Plain-text fallback if the JSON path returned nothing useful.
-    # Same tight num_predict so a stuck model still can't ramble forever.
-    resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-        model=model,
-        messages=plain_messages,
-        options={
-            "temperature": QUICK_CHAT_TEMPERATURE,
-            "num_ctx": 8192,
-            "num_predict": num_predict * 2,  # bigger budget for plain mode
-        },
-        keep_alive=-1,
-        think=brain.think_param(model),
-    )
-    body = (resp.get("message", {}) or {}).get("content", "").strip()
-    return _clean_quick_chat(body)
+    def _one_attempt() -> str:
+        try:
+            resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+                model=model, messages=json_messages,
+                options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": 8192,
+                         "num_predict": num_predict},
+                keep_alive=-1, think=brain.think_param(model), format="json")
+            body = (resp.get("message", {}) or {}).get("content", "").strip()
+            try:
+                obj = json.loads(body)
+                reply = (obj or {}).get("reply", "") if isinstance(obj, dict) else ""
+                if reply:
+                    return _clean_quick_chat(reply)
+            except json.JSONDecodeError:
+                pass
+        except Exception as exc:
+            log.warning("quick_chat json mode failed: %s — retrying plain", exc)
+        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+            model=model, messages=plain_messages,
+            options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": 8192,
+                     "num_predict": num_predict * 2},
+            keep_alive=-1, think=brain.think_param(model))
+        body = (resp.get("message", {}) or {}).get("content", "").strip()
+        return _clean_quick_chat(body)
+
+    is_qwen = (model or "").startswith("qwen3:4b")
+    attempts = 3 if is_qwen else 1
+    best = ""
+    for _ in range(attempts):
+        reply = _one_attempt()
+        if not is_qwen:
+            return reply  # brain etc. — never retried/truncated
+        sents = [x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if x.strip()]
+        if reply.strip() and not looks_like_thinking_leak(reply) and len(sents) <= 1:
+            return reply
+        if not best:
+            best = reply
+    # qwen3:4b last resort — one clean sentence (leak/meta already stripped).
+    return _first_sentence(best) or best
 
 
 # qwen3:4b reliably leaks reasoning prose like:
@@ -700,8 +698,9 @@ def _strip_reasoning_preamble(text: str) -> str:
         if not low:
             continue
         if (any(sn in low for sn in _LEAK_SENTINELS)
-                or any(low.startswith(sn) for sn in _LEAK_SENTINELS_PREFIX_ONLY)):
-            continue  # drop ANY sentence containing a CoT sentinel, not just leading
+                or any(low.startswith(sn) for sn in _LEAK_SENTINELS_PREFIX_ONLY)
+                or _META_SENTENCE_RE.search(low)):
+            continue  # drop CoT-sentinel OR meta-reasoning sentences, anywhere
         kept.append(s.strip())
     return " ".join(kept).strip()
 
@@ -835,6 +834,25 @@ _LEAK_SENTINELS_PREFIX_ONLY = (
     "i recall that",
     "let's go with:",
     "final decision:",
+)
+
+# A SENTENCE that is meta-reasoning ABOUT how to reply (vs the reply itself).
+# Catches the open-ended instruction-echo shapes qwen3:4b emits that no fixed
+# sentinel list covers ("Keep it short and casual.", "The user asked for
+# exactly 3 words.", "I can't add anything.", "Use dry humor."). Used by the
+# sentence-drop sweep so the cleaner generalizes past the sentinel whack-a-mole.
+_META_SENTENCE_RE = re.compile(
+    r"\b(?:"
+    r"the user (?:asked|wants|said|is asking)|"
+    r"keep it (?:short|brief|casual|concise|under)|"
+    r"use (?:dry )?humor|match (?:his|the user'?s?|colton'?s?) (?:energy|tone|vibe|slang)|"
+    r"exactly \d+ words?|in \d+ words?|\b\d+[- ]word\b|"
+    r"i (?:can'?t|cannot|shouldn'?t|should|need to|gotta|must|'?ll) "
+    r"(?:add|say|keep|make|use|reply|respond|match|mirror|avoid|go with)|"
+    r"the (?:reply|response|answer|greeting) (?:should|must|needs|is|has to)|"
+    r"so i (?:can|should|need|must|'?ll)|as (?:per|for) the (?:rules|instructions|prompt)"
+    r")\b",
+    re.IGNORECASE,
 )
 
 
