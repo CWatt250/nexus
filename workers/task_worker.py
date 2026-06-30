@@ -172,7 +172,11 @@ async def _run_one(row: dict) -> None:
         "When asked about the current time, date, or day, use ONLY the "
         "datetime above. Never guess or use training data."
     ))
-    lc_msgs = [dt_msg] + nexus.fast_mode_messages(user_text, route=route)
+    # G1 — expand @file:/@diff/@git:/@url: refs into the agent input (routing
+    # + logging stay on the original user_text above; unchanged when no refs).
+    from core import context_refs  # noqa: PLC0415
+    agent_text = context_refs.expand_refs(user_text)
+    lc_msgs = [dt_msg] + nexus.fast_mode_messages(agent_text, route=route)
 
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(task_id, started, tool_state)

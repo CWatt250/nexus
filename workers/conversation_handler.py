@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 import nexus  # noqa: E402  — loads tools, prompt, etc.
 from core import brain  # noqa: E402
+from core import context_refs  # noqa: E402
 from core import self_facts  # noqa: E402
 from core import task_queue  # noqa: E402
 from langchain_core.messages import HumanMessage, SystemMessage  # noqa: E402
@@ -1115,6 +1116,9 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     # _datetime_context appends real wall-clock so "what time is it" works.
     system_prompt = _build_chat_system_prompt(message)
     t0 = _time.monotonic()
+    # G1 — expand @file:/@diff/@git:/@url: refs for the model. recall/history
+    # and logging stay on the original `message`; no-op without refs.
+    msg_for_model = context_refs.expand_refs(message)
 
     history: list[dict] = []
     if chat_id is not None:
@@ -1130,7 +1134,7 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     if use_deepseek:
         try:
             reply, _usage = _qcp.deepseek_chat(
-                message, system_prompt,
+                msg_for_model, system_prompt,
                 max_tokens=512, timeout=15.0,
                 history=history or None,
             )
@@ -1144,7 +1148,7 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
     # ── Tier 2: Ollama qwen3:4b ──────────────────────────────────
     try:
-        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, message,
+        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, msg_for_model,
                                      system_prompt, history=history or None)
     except Exception as exc:
         elapsed = _time.monotonic() - t0
@@ -1172,7 +1176,7 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
     try:
         fallback = _ollama_quick_chat(
-            QUICK_CHAT_DENIAL_FALLBACK_MODEL, message, system_prompt,
+            QUICK_CHAT_DENIAL_FALLBACK_MODEL, msg_for_model, system_prompt,
             history=history or None,
         )
     except Exception as exc:
