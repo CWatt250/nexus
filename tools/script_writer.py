@@ -33,7 +33,18 @@ SCRIPTS_DIR = ROOT / "content" / "scripts"
 ENTITIES_DIR = ROOT / "wiki" / "entities"
 SECONDS_PER_SCENE = 3.5  # spec says ~3-4s per scene; midpoint
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
-OLLAMA_MODEL = "qwen3.6:latest"
+
+
+def _live_model(key: str = "brain", default: str = "qwen3:8b") -> str:
+    """Resolve from models.json (was hardcoded qwen3.6, pinned 23GB via
+    keep_alive=-1). Resident brain = 0 extra VRAM."""
+    try:
+        return json.loads((Path.home() / "AI_Agent" / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+OLLAMA_MODEL = _live_model("brain")
 MAX_WIKI_ENTITIES = 5  # cap injection to avoid prompt bloat
 MAX_WIKI_CONTENT_CHARS = 4000  # per-entity cap; trim if longer
 

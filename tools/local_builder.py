@@ -25,7 +25,19 @@ from tools.file_write import _resolve_in_scope
 log = logging.getLogger("nexus.local_builder")
 
 OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_MODEL = "qwen3.6:latest"
+
+
+def _live_model(key: str = "code", default: str = "qwen3-coder:30b") -> str:
+    """Resolve from models.json (was hardcoded qwen3.6, which pinned 23GB
+    resident via keep_alive=-1). models.json `code` is the resident brain → 0 extra VRAM."""
+    try:
+        import json
+        return json.loads((Path.home() / "AI_Agent" / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+OLLAMA_MODEL = _live_model("code")
 
 # Tech-stack-keyed system prompts. Each one frames the model for the
 # format it's about to emit so the output isn't wrapped in markdown

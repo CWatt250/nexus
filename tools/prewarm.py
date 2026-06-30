@@ -63,7 +63,7 @@ def _warm(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[
 def main() -> int:
     cfg = _models()
     router = cfg.get("router", "qwen3:4b")
-    heavy = cfg.get("heavy", "qwen3.6")
+    heavy = cfg.get("heavy", "qwen3:4b")  # never the retired qwen3.6
     client = ollama.Client(host=OLLAMA_URL)
 
     targets = [

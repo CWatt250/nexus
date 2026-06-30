@@ -37,7 +37,16 @@ REMINDERS = ROOT / "memory" / "reminders.jsonl"
 TQ_DB = ROOT / "memory" / "tasks.db"
 EOD_DIR = ROOT / "memory" / "eod"
 OLLAMA_URL = "http://localhost:11434"
-SUMMARY_MODEL = "qwen3.6"  # heavy; pinned by prewarm — better instruction-following
+def _live_model(key: str = "brain", default: str = "qwen3:8b") -> str:
+    """Resolve a model from models.json (was hardcoded to the retired
+    qwen3.6, which pinned 23GB of VRAM). Using the resident brain = 0 extra VRAM."""
+    try:
+        return json.loads((ROOT / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+SUMMARY_MODEL = _live_model("brain")
 SYSTEM_PROMPT = (
     "You output ONLY the final markdown brief. Plain prose. "
     "No preamble, no reasoning, no <think> tags, no meta-commentary. "

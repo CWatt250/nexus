@@ -28,7 +28,18 @@ from pydantic import BaseModel
 HOST = "0.0.0.0"
 PORT = 11436
 OLLAMA_URL = "http://localhost:11434"
-MODEL = "qwen3.6"
+
+
+def _live_model(key: str = "brain", default: str = "qwen3:8b") -> str:
+    """Resolve from models.json (was hardcoded qwen3.6). Resident brain = 0 extra VRAM."""
+    try:
+        from pathlib import Path as _P
+        return json.loads((_P.home() / "AI_Agent" / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+MODEL = _live_model("brain")
 
 HOME = Path.home() / "AI_Agent"
 DESIGNS_DIR = HOME / "designs"

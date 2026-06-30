@@ -43,9 +43,17 @@ CHRONICLE_DIR = ROOT / "memory" / "chronicle"
 CLIPBOARD_LOG = ROOT / "memory" / "clipboard-log.md"
 GIT_LOG = ROOT / "memory" / "git-activity.log"
 OLLAMA_URL = "http://localhost:11434"
-# qwen3.6 follows the "output only the hint" instruction reliably; the
-# smaller qwen3:4b kept emitting "Okay let me tackle this…" preambles.
-MODEL = "qwen3.6:latest"
+# Was qwen3.6 (retired, 23GB). Use the resident brain via models.json so
+# Sparky hints cost 0 extra VRAM; falls back to qwen3:4b if config is missing.
+def _live_model(key: str = "brain", default: str = "qwen3:4b") -> str:
+    try:
+        from pathlib import Path as _P
+        return json.loads((_P.home() / "AI_Agent" / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+MODEL = _live_model("brain")
 
 HINT_TIMER_SECONDS = 300     # 5 minutes
 GREETING_DELAY = 25          # seconds after startup

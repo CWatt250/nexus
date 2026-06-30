@@ -10,7 +10,18 @@ import ollama
 from langchain_core.tools import tool
 
 OLLAMA_URL = "http://localhost:11434"
-REVIEW_MODEL = "qwen3.6:latest"
+
+
+def _live_model(key: str = "brain", default: str = "qwen3:8b") -> str:
+    """Resolve from models.json (was hardcoded qwen3.6). Resident brain = 0 extra VRAM."""
+    try:
+        import json
+        return json.loads((Path.home() / "AI_Agent" / "models.json").read_text()).get(key) or default
+    except Exception:
+        return default
+
+
+REVIEW_MODEL = _live_model("brain")
 log = logging.getLogger("nexus.diff")
 
 REVIEW_PROMPT = (
