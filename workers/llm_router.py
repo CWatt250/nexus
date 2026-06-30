@@ -51,6 +51,25 @@ def is_recon(message: str) -> bool:
     return bool(_RECON_RE.search(message or ""))
 
 
+# "quick/simple/tiny/..." → the cheap local build tier. Deterministic so a
+# small router model that fumbles the tier (e.g. echoes "quick", which is
+# NOT a valid dispatch tier and would collapse a build into quick_chat)
+# can't break dispatch. Mirrors the is_recon OR-guard philosophy.
+_LOCAL_TIER_RE = re.compile(
+    r"\b(quick|simple|tiny|small|basic|little|minimal)\b", re.IGNORECASE,
+)
+_VALID_DISPATCH_TIERS = ("local", "code", "pro", "real", "max")
+
+
+def resolve_dispatch_tier(message: str, tier: str | None) -> str:
+    """Resolve the final tier for a dispatch route. Honors an explicit
+    valid tier from the model; otherwise (None / the invalid "quick" /
+    junk) infers from keywords: quick/simple/tiny → local, else max."""
+    if tier in _VALID_DISPATCH_TIERS:
+        return tier
+    return "local" if _LOCAL_TIER_RE.search(message or "") else "max"
+
+
 ROUTER_SYSTEM_PROMPT = """You are the message router for Nexus, Colton's personal agent.
 Classify the user's message into a route. You only ROUTE — you never
 answer, never rewrite the message, never add to it.
@@ -120,6 +139,12 @@ def route_llm(message: str) -> dict:
                 {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
                 {"role": "user", "content": msg[:4000]},
             ],
+            # Route on the small resident model (models.json `router` →
+            # qwen3:4b), not the 35B brain. Classification is a constrained
+            # JSON task; this removes a full brain inference from the front
+            # of every message. brain.chat still degrades to qwen3:4b on
+            # failure, so worst case is identical to before.
+            model=brain.get_router_model(),
             fmt=ROUTER_SCHEMA,
             options={"temperature": 0.0, "num_ctx": 8192, "num_predict": 200},
             timeout=30.0,
@@ -145,6 +170,12 @@ def route_llm(message: str) -> dict:
     if tier is not None and tier not in TIERS:
         log.warning("router returned unknown tier %r — nulling it", tier)
         tier = None
+
+    # Dispatch tier is resolved deterministically — the small router model
+    # sometimes returns "quick" (invalid for dispatch) by echoing a keyword,
+    # which would otherwise collapse a build into a chat reply downstream.
+    if obj["route"] == "dispatch":
+        tier = resolve_dispatch_tier(msg, tier)
 
     return {
         "route": obj["route"],

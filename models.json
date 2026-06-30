@@ -1,6 +1,6 @@
 {
   "brain":  "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
-  "router": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
+  "router": "qwen3:4b",
   "fast":   "qwen3:4b",
   "mid":    "qwen3:8b",
   "heavy":  "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",

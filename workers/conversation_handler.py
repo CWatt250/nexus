@@ -272,6 +272,35 @@ def _looks_like_denial(text: str) -> bool:
     return bool(_DENIAL_RE.search(text or ""))
 
 
+# Phase B speed — unambiguous social messages that never need the router.
+# Matching the WHOLE message (anchored) keeps this safe: "hey" shortcuts,
+# but "hey, fix the bug" does not. Everything that doesn't full-match still
+# goes through the normal router, so this can only skip work, never misroute.
+_OBVIOUS_CHAT_RE = re.compile(
+    r"^(?:"
+    r"hi|hey+|hello|yo|sup|wassup|howdy|"
+    r"g(?:ood)?\s?m(?:orning)?|good\s?(?:afternoon|evening|night)|"
+    r"thanks?(?:\s?(?:you|man|dude))?|thank\s?you|ty|thx|cheers|"
+    r"appreciate\s?(?:it|you|that)|"
+    r"o?k(?:ay)?|cool|nice|sweet|awesome|lol+|haha+|"
+    r"got\s?it|sounds?\s?good|np|no\s?worries|"
+    r"how(?:'?s| are)?\s?(?:it\s?going|you|ya|things)|what'?s\s?up"
+    r")[\s!.,?—-]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_obvious_chat(message: str) -> bool:
+    """True for short, unambiguous social messages (greetings, thanks,
+    acknowledgements) that can skip the LLM router and go straight to
+    quick_chat — saving one inference. Conservative by design: only
+    full-message matches, and only when short."""
+    msg = (message or "").strip()
+    if not msg or len(msg) > 40 or len(msg.split()) > 6:
+        return False
+    return bool(_OBVIOUS_CHAT_RE.match(msg))
+
+
 def _datetime_context() -> str:
     """Real wall-clock context block for prompt injection.
 
@@ -1091,7 +1120,10 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
             "num_ctx": 8192,
-            "num_predict": _quick_chat_num_predict(model) * 2,
+            # Phase B — use the base per-model budget (brain=1024 ≈ ~4k chars,
+            # ample for a chat reply). The previous ×2 (=2048) risked a ~75s
+            # runaway decode; the Part-A chunker still splits long replies.
+            "num_predict": _quick_chat_num_predict(model),
         },
         keep_alive=-1,
         think=brain.think_param(model),
@@ -2395,17 +2427,28 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
     # fast-tool hard-override, STATUS keyword override) is gone from the
     # request path. Whatever the route, the ORIGINAL message bytes are
     # what flow downstream — no augmentation, no rewriting, ever.
-    from workers import llm_router as _lr  # noqa: PLC0415
-    decision = _lr.route_llm(msg)
-    route = decision["route"]
-    recon = bool(decision.get("recon_mode"))
-    meta: dict = {"router": {"route": route, "tier": decision.get("tier"),
-                             "recon_mode": recon}}
-    if decision.get("router_error"):
-        meta["router_error"] = decision["router_error"]
-    log.info("route: llm-router %r → %s tier=%s recon=%s%s",
-             msg[:60], route, decision.get("tier"), recon,
-             " [FALLBACK after router error]" if "router_error" in decision else "")
+    # Phase B speed — deterministic fast-path: unambiguous greetings/thanks
+    # skip the router entirely and fall straight through to quick_chat
+    # (incl. its denial-recovery). Pure optimization — anything that isn't a
+    # whole-message social match still routes normally below.
+    if _is_obvious_chat(msg):
+        route = "quick_chat"
+        recon = False
+        meta = {"router": {"route": "quick_chat", "tier": None,
+                           "recon_mode": False}, "router_skipped": True}
+        log.info("route: fast-path (router skipped) %r → quick_chat", msg[:60])
+    else:
+        from workers import llm_router as _lr  # noqa: PLC0415
+        decision = _lr.route_llm(msg)
+        route = decision["route"]
+        recon = bool(decision.get("recon_mode"))
+        meta: dict = {"router": {"route": route, "tier": decision.get("tier"),
+                                 "recon_mode": recon}}
+        if decision.get("router_error"):
+            meta["router_error"] = decision["router_error"]
+        log.info("route: llm-router %r → %s tier=%s recon=%s%s",
+                 msg[:60], route, decision.get("tier"), recon,
+                 " [FALLBACK after router error]" if "router_error" in decision else "")
 
     if route == "status":
         if _is_genuine_queue_status(msg):
