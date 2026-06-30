@@ -27,7 +27,20 @@ def _models() -> dict:
             return json.loads(MODELS_FILE.read_text())
         except (OSError, json.JSONDecodeError):
             pass
-    return {"router": "qwen3:4b", "heavy": "qwen3.6"}
+    # Fallback only when models.json is unreadable. qwen3:4b is always
+    # present; never default `heavy` to the retired qwen3.6.
+    return {"router": "qwen3:4b", "heavy": "qwen3:4b"}
+
+
+def _think_for(model: str):
+    """Per-family think suppression — reuse the brain's contract so a future
+    gpt-oss switch (think='low', not False) doesn't make prewarm hang/fail
+    the way the old gpt-oss:120b warm did."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.think_param(model)
+    except Exception:
+        return False
 
 
 def _warm(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[bool, float, str]:
@@ -38,7 +51,7 @@ def _warm(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[
             model=model,
             messages=[{"role": "user", "content": "ping"}],
             stream=False,
-            think=False,
+            think=_think_for(model),
             options={"num_predict": 1, "temperature": 0.0, "num_ctx": 256},
             keep_alive=keep_alive,
         )
