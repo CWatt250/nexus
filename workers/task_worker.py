@@ -146,6 +146,20 @@ async def _run_one(row: dict) -> None:
     timeout_s, user_text = _resolve_timeout(raw_input)
     started = time.monotonic()
 
+    # G3 — goal-advance driver sentinel (fired by the recurring [goal-advance]
+    # schedule). Runs the Ralph-loop one step per active goal instead of the
+    # agent, and reports to Telegram from inside advance_all_goals().
+    if user_text.strip() == "[goal-advance]":
+        from core import goals, task_queue as _tq  # noqa: PLC0415
+        try:
+            report = await asyncio.to_thread(goals.advance_all_goals)
+        except Exception as exc:
+            report = f"goal-advance failed: {type(exc).__name__}: {exc}"
+        _tq.update_status(task_id, "completed", output=report[:2000])
+        _publish({"ts": _now(), "event": "completed", "task_id": task_id,
+                  "thread_id": thread_id, "result_preview": report[:200]})
+        return
+
     route, model = router.classify_and_model(user_text)
     agent = await nexus.build_agent_async(model)
 
