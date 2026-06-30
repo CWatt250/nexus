@@ -121,7 +121,7 @@ def route_llm(message: str) -> dict:
                 {"role": "user", "content": msg[:4000]},
             ],
             fmt=ROUTER_SCHEMA,
-            options={"temperature": 0.0, "num_ctx": 4096, "num_predict": 200},
+            options={"temperature": 0.0, "num_ctx": 8192, "num_predict": 200},
             timeout=30.0,
         )
     except Exception as exc:

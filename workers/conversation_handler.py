@@ -1395,7 +1395,7 @@ def classify_intent_llm(message: str) -> Intent:
                 {"role": "system", "content": INTENT_SYSTEM_PROMPT},
                 {"role": "user", "content": msg},
             ],
-            options={"temperature": 0, "num_ctx": 2048, "num_predict": 50},
+            options={"temperature": 0, "num_ctx": 8192, "num_predict": 50},
             keep_alive=-1,
             think=brain.think_param(CLASSIFIER_OLLAMA_MODEL),
         )
@@ -1875,7 +1875,7 @@ def _wiki_grounded_reply(message: str) -> dict:
                     f"WIKI EXCERPT:\n{hits[:4000]}\n\n"
                     f"USER QUESTION: {message}")},
             ],
-            options={"temperature": 0.2, "num_ctx": 4096, "num_predict": 220},
+            options={"temperature": 0.2, "num_ctx": 8192, "num_predict": 220},
             timeout=20.0,
         )
         reply = _strip_think_final(reply)

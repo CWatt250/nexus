@@ -137,7 +137,7 @@ def classify(message: str, *, log: bool = True) -> str:
             stream=False,
             think=think,
             format="json",
-            options={"temperature": 0.0, "num_predict": 64, "num_ctx": 2048},
+            options={"temperature": 0.0, "num_predict": 64, "num_ctx": 8192},
             keep_alive=-1,
         )
     except Exception as exc:
