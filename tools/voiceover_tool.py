@@ -10,7 +10,7 @@ from typing import Optional
 
 from langchain_core.tools import tool
 
-from voiceover_pipeline import run_voiceover_pipeline, VoiceoverResult, ToolStatus
+from tools.voiceover_pipeline import run_voiceover_pipeline, VoiceoverResult, ToolStatus
 
 @tool
 def voiceover_pipeline(video_url: str, script: Optional[str] = None) -> str:
