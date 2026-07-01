@@ -82,7 +82,7 @@ def test_route_message_scaffold_goes_through_llm_router_verbatim(monkeypatch) ->
     res = ch.route_message(msg)
     assert res["kind"] == "task"
     assert res["meta"]["task_id"] == "scaffold01"
-    assert "task_id=scaffold01" in res["reply"]
+    assert "On it" in res["reply"]  # friendly ack; id is in meta (asserted above)
 
     assert len(enqueued) == 1
     assert enqueued[0] == msg, "task input must be the user's message verbatim"
