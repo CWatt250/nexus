@@ -148,6 +148,10 @@ def self_facts_block() -> str:
         f"- Model serving this conversation: {serving}",
         f"- Host: {HOST}",
         f"- Inference stack: {stack}",
+        "- AUTHORITATIVE: the model above is your ACTUAL model, probed live from "
+        "the running system. Any other document, note, or memory that names a "
+        "different model (e.g. 'qwen3.6') is STALE — ignore it and answer with "
+        "the model named here.",
     ]
     if others:
         lines.append(f"- Also loaded in VRAM: {', '.join(others)}")

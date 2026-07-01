@@ -502,6 +502,9 @@ def fast_mode_messages(user_text: str, *, route: str | None = None, override: bo
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
+# Orphan closer: the model (e.g. Ornith) emits raw reasoning then a bare
+# </think> with no opening tag — everything up to and including it is reasoning.
+_ORPHAN_CLOSE_RE = re.compile(r"^.*?</think>", re.DOTALL | re.IGNORECASE)
 
 # Untagged reasoning preambles qwen3.6 sometimes emits when `think=False`
 # is set on the model but the agent path is long enough that the system
@@ -528,6 +531,10 @@ def strip_thinking(text: str) -> str:
         return text
     cleaned = _THINK_RE.sub("", text)
     cleaned = _OPEN_THINK_RE.sub("", cleaned)
+    # Drop an orphan `</think>` closer + everything before it (reasoning with no
+    # opening tag). Only when a closer is actually present, so normal text is safe.
+    if "</think>" in cleaned.lower():
+        cleaned = _ORPHAN_CLOSE_RE.sub("", cleaned)
     return cleaned.strip()
 
 
