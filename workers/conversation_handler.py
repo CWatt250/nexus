@@ -702,7 +702,12 @@ def _strip_reasoning_preamble(text: str) -> str:
                 or _META_SENTENCE_RE.search(low)):
             continue  # drop CoT-sentinel OR meta-reasoning sentences, anywhere
         kept.append(s.strip())
-    return " ".join(kept).strip()
+    result = " ".join(kept).strip()
+    # Never nuke a reply to empty: a real answer can legitimately contain a meta
+    # phrase (e.g. "The answer is 42" trips _META_SENTENCE_RE). If the sweep
+    # dropped everything, keep the preamble-stripped text — a slightly-imperfect
+    # answer beats a blank reply.
+    return result if result else text.strip()
 
 
 def _split_unbalanced_close_think(text: str) -> str:

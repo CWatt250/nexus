@@ -118,8 +118,12 @@ def test_lite_agent_handles_tool_exception(monkeypatch) -> None:
     monkeypatch.setattr(lite_agent_tools, "get_registry", lambda: registry)
 
     out = ch.lite_agent("is search up?")
-    assert out["ok"] is True  # we still produce a reply via the formatter
-    assert "unreachable" in out["reply"].lower() or "search" in out["reply"].lower()
+    # A hard tool failure deliberately falls through to TASK (the full agent can
+    # retry with more capability) rather than dressing the failure as a confident
+    # answer — so lite_agent reports ok=False with the error reason.
+    assert out["ok"] is False
+    assert "searxng_health" in out["reason"]
+    assert "connection refused" in out["reason"].lower()
 
 
 # --- 7. classify_intent_llm exposes new labels (parse path) --------------
@@ -182,7 +186,7 @@ def test_route_message_query_tool_falls_through_on_miss(monkeypatch) -> None:
     msg = "research the top 5 AI agent frameworks please"
     result = ch.route_message(msg)
     assert result["kind"] == "task"
-    assert "task_id=queuedXYZ" in result["reply"]
+    assert result["meta"]["task_id"] == "queuedXYZ"
     assert result["meta"]["lite_agent_fallthrough"] == "picker chose _none"
     assert enqueued == [msg], "fall-through must enqueue the message verbatim"
 

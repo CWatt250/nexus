@@ -10,6 +10,12 @@ from pathlib import Path
 
 import pytest
 
+from core import brain
+
+# Resolve the brain model from models.json so this test never drifts when the
+# brain changes (was hardcoded 'gpt-oss:120b'; live brain is Ornith-1.0-35B).
+BRAIN = brain.get_brain_model()
+
 
 def _patch_ollama(monkeypatch, replies_by_model):
     """Stub `_ollama_quick_chat` to return canned replies per model id.
@@ -30,7 +36,7 @@ def test_quick_chat_returns_primary_when_no_denial(monkeypatch, tmp_path) -> Non
     from workers import conversation_handler as ch
 
     monkeypatch.setattr(ch, "_DENIAL_LOG", tmp_path / "denials.jsonl")
-    _patch_ollama(monkeypatch, {"gpt-oss:120b": "It's 15."})
+    _patch_ollama(monkeypatch, {BRAIN: "It's 15."})
 
     out = ch.quick_chat("what's 7+8")
     assert out == "It's 15."
@@ -47,7 +53,7 @@ def test_quick_chat_falls_back_on_denial(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     _patch_ollama(monkeypatch, {
-        "gpt-oss:120b": "I can't browse the web for current weather.",
+        BRAIN: "I can't browse the web for current weather.",
         "qwen3:4b":  "Sunny, 72F in Pasco, WA today.",
     })
 
@@ -55,7 +61,7 @@ def test_quick_chat_falls_back_on_denial(monkeypatch, tmp_path) -> None:
     assert "Sunny" in out
     assert log_path.exists()
     entry = json.loads(log_path.read_text().strip().splitlines()[-1])
-    assert entry["model"] == "gpt-oss:120b"
+    assert entry["model"] == BRAIN
     assert "weather" in entry["msg"]
 
 
@@ -68,7 +74,7 @@ def test_quick_chat_returns_primary_if_both_deny(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     _patch_ollama(monkeypatch, {
-        "gpt-oss:120b": "I can't help with that.",
+        BRAIN: "I can't help with that.",
         "qwen3:4b":  "I cannot browse the web.",
     })
 
@@ -85,7 +91,7 @@ def test_quick_chat_handles_fallback_exception(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     def fake(model, msg, sys, history=None):
-        if model == "gpt-oss:120b":
+        if model == BRAIN:
             return "I can't access the internet."
         raise RuntimeError("ollama down for fallback")
 
@@ -105,11 +111,11 @@ def test_denials_in_last_24h_counts_only_recent(monkeypatch, tmp_path) -> None:
 
     now = datetime.now(timezone.utc)
     rows = [
-        {"ts": (now - timedelta(hours=2)).isoformat(timespec="seconds"),  "msg": "fresh1", "model": "gpt-oss:120b"},
-        {"ts": (now - timedelta(hours=10)).isoformat(timespec="seconds"), "msg": "fresh2", "model": "gpt-oss:120b"},
-        {"ts": (now - timedelta(hours=23)).isoformat(timespec="seconds"), "msg": "fresh3", "model": "gpt-oss:120b"},
-        {"ts": (now - timedelta(hours=30)).isoformat(timespec="seconds"), "msg": "stale1", "model": "gpt-oss:120b"},
-        {"ts": (now - timedelta(days=7)).isoformat(timespec="seconds"),   "msg": "stale2", "model": "gpt-oss:120b"},
+        {"ts": (now - timedelta(hours=2)).isoformat(timespec="seconds"),  "msg": "fresh1", "model": BRAIN},
+        {"ts": (now - timedelta(hours=10)).isoformat(timespec="seconds"), "msg": "fresh2", "model": BRAIN},
+        {"ts": (now - timedelta(hours=23)).isoformat(timespec="seconds"), "msg": "fresh3", "model": BRAIN},
+        {"ts": (now - timedelta(hours=30)).isoformat(timespec="seconds"), "msg": "stale1", "model": BRAIN},
+        {"ts": (now - timedelta(days=7)).isoformat(timespec="seconds"),   "msg": "stale2", "model": BRAIN},
     ]
     log_path.write_text("\n".join(json.dumps(r) for r in rows))
 
@@ -221,7 +227,7 @@ def test_quick_chat_falls_back_on_thinking_leak(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ch, "_maybe_alert_telegram", lambda n: None)
 
     def fake(model, msg, sys, history=None):
-        if model == "gpt-oss:120b":
+        if model == BRAIN:
             return ("I need to banter back lightly as per the rules. "
                     "Keep it 2-3 sentences. Since they're greeting me, "
                     "I'll respond with a friendly reply.")
@@ -252,4 +258,4 @@ def test_quick_chat_records_cleanliness_when_clean(monkeypatch, tmp_path) -> Non
     rec = json.loads((tmp_path / "clean.jsonl").read_text().strip())
     assert rec["clean"] is True
     assert rec["fallback_used"] is False
-    assert rec["model"] == "gpt-oss:120b"
+    assert rec["model"] == BRAIN
