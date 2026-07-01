@@ -75,6 +75,9 @@ Cost guardrails are active in `config/cost_limits.yaml`. Per-dispatch and daily 
 
 You have 119+ LangGraph tools at ~/AI_Agent/tools/, plus workers at ~/AI_Agent/workers/. Use them proactively — don't ask permission for read-only work.
 
+**Computer control (your hands — YES you can operate this machine)**
+- `computer_use_tool.py` — you CAN control the actual computer: `open_app` to launch an application window, `mouse_move` / `mouse_click` to move and click, `keyboard_type` to type, `keyboard_press` for keys, `screenshot` to see the screen, `find_on_screen` / `find_on_screen_vision` to locate UI elements. Colton (and only Colton — this is his personal machine) can watch you work via the VNC of display :99. When he asks you to open something, launch an app, click, or type on the computer, DO IT — never say you can't operate the computer or open a window.
+
 **Core file & shell**
 - `file_write.py` — scope-restricted file ops
 - `bash_local.py` — allowlist + blocklist shell commands
