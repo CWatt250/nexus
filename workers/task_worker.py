@@ -312,12 +312,21 @@ async def _main_loop() -> None:
     log.info("task_worker ready (pid=%d)", os.getpid())
     stop = asyncio.Event()
 
-    def _sig(_signum, _frame):
+    # Use asyncio's native signal handling — a plain signal.signal handler that
+    # calls stop.set() does NOT reliably wake a loop blocked in epoll, so the
+    # worker hung on every restart until systemd SIGKILL'd it at 90s. add_signal_
+    # handler schedules the wake on the loop itself, so idle shutdown is instant.
+    loop = asyncio.get_running_loop()
+
+    def _sig():
         log.info("signal received — finishing current task before exit")
         stop.set()
 
-    signal.signal(signal.SIGTERM, _sig)
-    signal.signal(signal.SIGINT, _sig)
+    for _s in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(_s, _sig)
+        except NotImplementedError:  # non-Unix fallback
+            signal.signal(_s, lambda *_: stop.set())
 
     while not stop.is_set():
         row = task_queue.claim_next()

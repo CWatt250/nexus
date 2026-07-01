@@ -99,13 +99,30 @@ def _restart(svc: str) -> tuple[bool, str]:
     return ok, (res.stderr or res.stdout or "").strip()
 
 
+# systemd transitional states — a service is fine mid-(re)start; restarting it
+# now would collide with the in-progress transition (the false-positive race).
+_TRANSIENT = {"activating", "deactivating", "reloading"}
+# Debounce: only restart after a service reads down on two consecutive polls, so
+# a momentary blip during a legitimate restart never triggers a redundant one.
+_down_streak: dict[str, int] = {}
+
+
 def _check_services(known: set[str]) -> None:
     for svc in SERVICES:
         if svc not in known:
             continue
         active, state = _is_active(svc)
         if active:
+            _down_streak[svc] = 0
             continue
+        if state in _TRANSIENT:
+            log.debug("%s is %s (transient) — not acting", svc, state)
+            continue
+        _down_streak[svc] = _down_streak.get(svc, 0) + 1
+        if _down_streak[svc] < 2:
+            log.info("%s is %s (1st poll) — confirming before restart", svc, state)
+            continue
+        _down_streak[svc] = 0
         log.warning("%s is %s — restarting", svc, state or "inactive")
         _log_event("service_down", {"service": svc, "state": state})
         ok, detail = _restart(svc)
