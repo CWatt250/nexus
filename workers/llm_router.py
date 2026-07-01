@@ -44,6 +44,35 @@ _RECON_RE = re.compile(
 )
 
 
+# Chatty guard — a short question/greeting with no "do work" verb should get an
+# instant quick_chat reply, never be escalated to a heavy background task or
+# cloud dispatch. The small router model over-escalates these (e.g. it filed
+# "what model are you running?" as a task). Deterministic so it can't be fumbled.
+_ACTION_RE = re.compile(
+    r"\b(build|make|create|write|code|program|deploy|research|fix|debug|generate|"
+    r"design|set\s?up|install|schedule|refactor|scaffold|implement|migrate|"
+    r"scrape|compile|automate|draft)\b",
+    re.IGNORECASE,
+)
+_CHATTY_START_RE = re.compile(
+    r"^\s*(what|whats|what's|who|who's|whos|when|where|why|how|is|are|am|do|does|"
+    r"did|can|could|should|would|will|which|whose|tell\s+me|explain|hi|hey|hello|"
+    r"thanks|thank\s+you|good\s+morning|good\s+night|yo|sup|ok|okay)\b",
+    re.IGNORECASE,
+)
+
+
+def is_chatty(message: str) -> bool:
+    """True for a short question / greeting with no action verb — answer it
+    instantly via quick_chat instead of spinning up a background task."""
+    msg = (message or "").strip()
+    if not msg or len(msg.split()) > 30:
+        return False
+    if _ACTION_RE.search(msg):
+        return False  # it's a work request, keep whatever the router chose
+    return bool(_CHATTY_START_RE.match(msg) or msg.rstrip().endswith("?"))
+
+
 def is_recon(message: str) -> bool:
     """True when the prompt asks for read-only investigation. Disables
     visual_verify auto-fire and any HTML/screenshot generation in the
@@ -213,6 +242,13 @@ def route_llm(message: str) -> dict:
     # action route (task/dispatch/wiki).
     if route in ("status", "quick_chat") and is_system_health(msg):
         route = "lite_agent"
+        tier = None
+
+    # Chatty guard: a short question/greeting with no action verb gets an instant
+    # quick_chat reply — never a heavy task/dispatch. (Fixes "what model are you
+    # running?" being escalated to a background task with a raw task_id.)
+    if route in ("task", "dispatch") and is_chatty(msg) and not is_system_health(msg):
+        route = "quick_chat"
         tier = None
 
     return {

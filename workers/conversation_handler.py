@@ -2530,7 +2530,8 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
             return {"kind": "queue", "reply": "queue: needs a task body.", "meta": {}}
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
-        return {"kind": "queue", "reply": f"On it. task_id={tid}", "meta": {"task_id": tid}}
+        return {"kind": "queue", "reply": "On it — I'll have that ready in a moment. 🔨",
+                "meta": {"task_id": tid}}
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
     # the prompt to the cc_dispatcher daemon (background Claude Code
@@ -2667,7 +2668,7 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
         # Wall-clock context is injected transiently by task_worker at
         # message-build time, not baked into the queue row.
         tid = task_queue.enqueue(msg)
-        return {"kind": "task", "reply": f"On it. task_id={tid}",
+        return {"kind": "task", "reply": "On it — working on that now, I'll send it over shortly. 🔨",
                 "meta": {**meta, "task_id": tid}}
 
     # quick_chat (also the router-failure fallback).
