@@ -38,6 +38,7 @@ from tools.github_tool import (
 from tools.rag_tool import memory_search, memory_stats
 from tools.restart_services_tool import nexus_restart_services
 from tools.system_probe import system_status
+from tools.weather_tool import get_weather
 
 
 _REGISTRY: dict[str, dict[str, Any]] = {
@@ -61,6 +62,17 @@ _REGISTRY: dict[str, dict[str, Any]] = {
                        "anything else refused). E.g. hermes-gateway, nexus-api.",
         "args": {"services": "string (required) comma-separated unit names, "
                              "e.g. 'hermes-gateway'"},
+    },
+
+    # Weather — dedicated wttr.in call. Generic web search ranked random
+    # cities (Cardston AB, Lodi CA) for "weather today"; this is
+    # deterministic about location. Listed before web_search so the picker
+    # sees it first for weather questions.
+    "get_weather": {
+        "tool": get_weather,
+        "description": "Current weather + today/tomorrow forecast. USE THIS "
+                       "for any weather question, not web_search.",
+        "args": {"location": "string (optional, e.g. 'Seattle'; empty = user's home area)"},
     },
 
     # Web — always SearXNG-first via the router; web_search auto-falls

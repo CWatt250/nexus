@@ -1294,13 +1294,21 @@ LITE_AGENT_FORMATTER_BUDGET = 4.0
 LITE_AGENT_MODEL = brain.get_brain_model()
 
 
+# Colton's home area — used ONLY to localize tool args (weather/news/events
+# with no explicit place). Searching "weather today" bare returned a random
+# Canadian forecast (2026-07-04).
+USER_HOME_LOCATION = "Pasco, WA"
+
 _PICKER_SYSTEM = (
     "You are a tool router. Given a user question, pick the SINGLE best "
     "tool from the list below and the args to call it with. Return ONLY "
     "a JSON object of the form: "
     '{"tool": "<exact tool name>", "args": {"<arg>": "<value>", ...}}. '
     "No prose. No reasoning. No <think> tags.\n\n"
-    'If no listed tool fits, return {"tool": "_none", "args": {}}.'
+    'If no listed tool fits, return {"tool": "_none", "args": {}}.\n\n'
+    f"The user is in {USER_HOME_LOCATION}. For location-dependent queries "
+    "(weather, local news, events, places) where they didn't name a place, "
+    "include that location in the search query."
 )
 
 

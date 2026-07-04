@@ -64,20 +64,23 @@ def _fmt_elapsed(seconds: float) -> str:
 
 
 async def notify_done(task_id: str, output: str, *, elapsed_s: float) -> None:
-    """`✅ task_id=XXX done.` then the full output, chunked at 3000 chars."""
+    """Friendly completion header, then the full output, chunked at 3000
+    chars. The raw task_id stays out of the header (it read as debug spam
+    on the phone) — the id lives in the continuation markers only, where
+    it's needed to stitch chunks together."""
     chunks = _chunks(output or "(empty output)")
     n = len(chunks)
     suffix = "" if n == 1 else f" (1/{n})"
-    header = f"✅ task_id={task_id} done in {_fmt_elapsed(elapsed_s)}.{suffix}"
+    header = f"✅ Done ({_fmt_elapsed(elapsed_s)}){suffix}"
     await _send(f"{header}\n\n{chunks[0]}")
     for i, c in enumerate(chunks[1:], start=2):
-        await _send(f"…task_id={task_id} continued ({i}/{n})\n\n{c}")
+        await _send(f"…continued ({i}/{n})\n\n{c}")
 
 
 async def notify_failed(task_id: str, error: str, *, elapsed_s: float,
                         output: Optional[str] = None) -> None:
-    """`❌ task_id=XXX failed: <error>.`"""
-    msg = f"❌ task_id={task_id} failed after {_fmt_elapsed(elapsed_s)}: {error or 'unknown error'}"
+    """`❌ failed: <error>.`"""
+    msg = f"❌ That task failed after {_fmt_elapsed(elapsed_s)}: {error or 'unknown error'}"
     if output:
         msg += f"\n\nPartial output:\n{output[:CHUNK_BODY_CHARS]}"
     msg += "\n\nWant me to retry?"

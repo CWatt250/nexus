@@ -70,6 +70,7 @@ from tools.chat_history_import import HISTORY_TOOLS  # noqa: E402
 from tools.model_watcher import MODEL_WATCHER_TOOLS  # noqa: E402
 from tools.cc_dispatch_tool import CC_DISPATCH_TOOLS  # noqa: E402
 from tools.restart_services_tool import RESTART_SERVICES_TOOLS  # noqa: E402
+from tools.weather_tool import WEATHER_TOOLS  # noqa: E402
 from tools.wiki_tool import WIKI_TOOLS  # noqa: E402
 from tools.script_writer import SCRIPT_WRITER_TOOLS  # noqa: E402
 from tools.content_create import CONTENT_CREATE_TOOLS  # noqa: E402
@@ -159,6 +160,7 @@ TOOLS = [
     *MODEL_WATCHER_TOOLS,
     *CC_DISPATCH_TOOLS,
     *RESTART_SERVICES_TOOLS,
+    *WEATHER_TOOLS,
     *WIKI_TOOLS,
     *SCRIPT_WRITER_TOOLS,
     *CONTENT_CREATE_TOOLS,
