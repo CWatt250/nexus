@@ -23,19 +23,29 @@ DEFAULT_SERVICES = [
     "nexus-cc-reporter",
 ]
 
-ALLOWED_PREFIX = "nexus-"
+ALLOWED_PREFIXES = ("nexus-", "hermes-")
+
+# hermes-* live in ~/.config/systemd/user/ → `systemctl --user`, no sudo.
+USER_UNIT_PREFIXES = ("hermes-",)
 
 
 def _restart_one(name: str, *, dry_run: bool = False) -> tuple[bool, str]:
-    """Returns (ok, message). Validates the service name starts with the
+    """Returns (ok, message). Validates the service name starts with an
     allowed prefix so a mistyped tool call can't restart sshd."""
-    if not name.startswith(ALLOWED_PREFIX):
-        return False, f"refused: {name} — must start with {ALLOWED_PREFIX!r}"
+    # the model often passes the human name ("Hermes gateway") — normalize
+    name = name.strip().lower().replace(" ", "-")
+    if not name.startswith(ALLOWED_PREFIXES):
+        return False, (f"refused: {name} — must start with one of "
+                       f"{', '.join(repr(p) for p in ALLOWED_PREFIXES)}")
     if dry_run:
         return True, f"dry-run: would restart {name}"
+    if name.startswith(USER_UNIT_PREFIXES):
+        argv = ["/bin/systemctl", "--user", "restart", f"{name}.service"]
+    else:
+        argv = ["sudo", "-n", "/bin/systemctl", "restart", f"{name}.service"]
     try:
         proc = subprocess.run(
-            ["sudo", "-n", "/bin/systemctl", "restart", f"{name}.service"],
+            argv,
             capture_output=True, text=True, timeout=30,
         )
     except subprocess.TimeoutExpired:
@@ -63,11 +73,11 @@ def _normalize_services(services: Optional[Iterable[str]]) -> list[str]:
 
 @tool
 def nexus_restart_services(services: str = "", dry_run: bool = False) -> str:
-    """Restart one or more nexus-* systemd services.
+    """Restart one or more nexus-* or hermes-* systemd services.
 
     Args:
         services: Comma-separated service names without `.service` suffix
-            (e.g. `nexus-api,nexus-task-worker`). Empty = restart the
+            (e.g. `nexus-api,hermes-gateway`). Empty = restart the
             full default set: api, agent, telegram, task-worker,
             dashboard, cc-dispatcher, cc-reporter.
         dry_run: If true, validates names but doesn't actually restart.
