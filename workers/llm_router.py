@@ -51,7 +51,14 @@ _RECON_RE = re.compile(
 _ACTION_RE = re.compile(
     r"\b(build|make|create|write|code|program|deploy|research|fix|debug|generate|"
     r"design|set\s?up|install|schedule|refactor|scaffold|implement|migrate|"
-    r"scrape|compile|automate|draft)\b",
+    r"scrape|compile|automate|draft|"
+    # ops verbs — "Can you bash, Hermes gateway restart?" is WORK, not chat.
+    # Missing these routed real requests to the no-tools chat path, which then
+    # denied having shell access (telegram msg 188-191, 2026-07-04).
+    r"run|rerun|execute|bash|restart|reboot|relaunch|start|stop|kill|launch|"
+    r"check|verify|test|update|upgrade|pull|push|commit|revert|delete|remove|"
+    r"clean\s?up|clear|tail|grep|scan|download|upload|send|ping|monitor|"
+    r"investigate|audit|look\s+into|dig\s+into|show\s+me)\b",
     re.IGNORECASE,
 )
 _CHATTY_START_RE = re.compile(
@@ -249,6 +256,14 @@ def route_llm(message: str) -> dict:
     # running?" being escalated to a background task with a raw task_id.)
     if route in ("task", "dispatch") and is_chatty(msg) and not is_system_health(msg):
         route = "quick_chat"
+        tier = None
+
+    # Action guard (inverse of the chatty guard): when the small router files a
+    # real "can you restart/run/check X?" request as chat, the no-tools path
+    # then denies having shell access. A clear action verb deterministically
+    # upgrades chat → lite_agent (has tools), mirroring the host-health guard.
+    if route in ("quick_chat", "status") and _ACTION_RE.search(msg):
+        route = "lite_agent"
         tier = None
 
     return {
