@@ -72,13 +72,14 @@ def _normalize_services(services: Optional[Iterable[str]]) -> list[str]:
 
 
 @tool
-def nexus_restart_services(services: str = "", dry_run: bool = False) -> str:
+def nexus_restart_services(services: str | list[str] = "", dry_run: bool = False) -> str:
     """Restart one or more nexus-* or hermes-* systemd services.
 
     Args:
-        services: Comma-separated service names without `.service` suffix
-            (e.g. `nexus-api,hermes-gateway`). Empty = restart the
-            full default set: api, agent, telegram, task-worker,
+        services: Service names without `.service` suffix, as a
+            comma-separated string or a list (e.g. `nexus-api,hermes-gateway`
+            or `["hermes-gateway"]` — LLM callers pass either). Empty =
+            restart the full default set: api, agent, telegram, task-worker,
             dashboard, cc-dispatcher, cc-reporter.
         dry_run: If true, validates names but doesn't actually restart.
 

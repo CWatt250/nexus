@@ -1279,11 +1279,15 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
     yield {"final": _strip_think_final(_clean_quick_chat(acc))}
 
 
-LITE_AGENT_TIMEOUT_S = 15.0
+# 25s total (was 15): must exceed the 15s picker budget below or the
+# "timeout before picker" pre-check fails instantly. 15+tool+4 fits in 25.
+LITE_AGENT_TIMEOUT_S = 25.0
 # Bumped from 5s → 8s after smoke runs showed the picker timing out
 # under contention (model serving was busy with the EOD summary job).
 # 8s + 4s + small tool window keeps total under the 15s ceiling.
-LITE_AGENT_PICKER_BUDGET = 8.0
+# 15s (was 8): a cold brain load alone takes ~7s — the old budget timed the
+# picker out before the model had even finished loading.
+LITE_AGENT_PICKER_BUDGET = 15.0
 LITE_AGENT_TOOL_BUDGET = 6.0
 LITE_AGENT_FORMATTER_BUDGET = 4.0
 # Phase 39 — qwen3.6 retired as resident; the brain owns lite_agent.

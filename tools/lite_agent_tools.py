@@ -36,6 +36,7 @@ from tools.github_tool import (
     github_get_file,
 )
 from tools.rag_tool import memory_search, memory_stats
+from tools.restart_services_tool import nexus_restart_services
 from tools.system_probe import system_status
 
 
@@ -50,6 +51,18 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "args": {"what": "string (optional: summary|processes|memory|disk|gpu|"
                          "models|services, default 'summary')"},
     },
+    # Service control — single systemctl call, hard-allowlisted inside the
+    # tool (nexus-*/hermes-* only; sshd/docker/anything else is refused), so
+    # it meets the "no destructive ops" bar. Without this, "restart the
+    # hermes gateway" escalated to a full Claude Code dispatch.
+    "restart_service": {
+        "tool": nexus_restart_services,
+        "description": "Restart Nexus/Hermes services (nexus-*, hermes-* only; "
+                       "anything else refused). E.g. hermes-gateway, nexus-api.",
+        "args": {"services": "string (required) comma-separated unit names, "
+                             "e.g. 'hermes-gateway'"},
+    },
+
     # Web — always SearXNG-first via the router; web_search auto-falls
     # through to direct searxng_search if it's the only backend available.
     "web_search": {

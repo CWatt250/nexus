@@ -61,6 +61,15 @@ _ACTION_RE = re.compile(
     r"investigate|audit|look\s+into|dig\s+into|show\s+me)\b",
     re.IGNORECASE,
 )
+# A short "restart/stop/start <some service>" is a single systemctl call —
+# it belongs on the lite_agent fast path, never a Claude Code dispatch.
+_SERVICE_OP_RE = re.compile(
+    r"\b(restart|reboot|relaunch|bounce|start|stop)\b.{0,40}"
+    r"\b(service|gateway|worker|daemon|poller|watcher|listener|dashboard|"
+    r"api|bot|nexus-[\w-]+|hermes-[\w-]+)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _CHATTY_START_RE = re.compile(
     r"^\s*(what|whats|what's|who|who's|whos|when|where|why|how|is|are|am|do|does|"
     r"did|can|could|should|would|will|which|whose|tell\s+me|explain|hi|hey|hello|"
@@ -263,6 +272,14 @@ def route_llm(message: str) -> dict:
     # then denies having shell access. A clear action verb deterministically
     # upgrades chat → lite_agent (has tools), mirroring the host-health guard.
     if route in ("quick_chat", "status") and _ACTION_RE.search(msg):
+        route = "lite_agent"
+        tier = None
+
+    # Service-op guard: "restart the hermes gateway" is ONE systemctl call —
+    # lite_agent's restart_service tool does it in seconds. Without this the
+    # router escalated it to a full Claude Code dispatch (tier=max).
+    if (route in ("task", "dispatch") and len(msg.split()) <= 12
+            and _SERVICE_OP_RE.search(msg)):
         route = "lite_agent"
         tier = None
 
