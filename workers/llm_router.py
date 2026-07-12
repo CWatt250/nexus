@@ -122,6 +122,16 @@ def resolve_dispatch_tier(message: str, tier: str | None) -> str:
 # lite_agent ONLY when the router landed on the wrong shelf (status /
 # quick_chat); it never overrides task/dispatch/wiki (so "build a process
 # monitor" stays dispatch).
+# Requests for a play link / game URL — answered by the game_links tool
+# in lite_agent, never by a no-tools chat model.
+_GAME_LINK_RE = re.compile(
+    r"(?:\b(?:link|url)\b.{0,40}\b(?:play|game)\b)"
+    r"|(?:\b(?:play|game)s?\b.{0,40}\b(?:link|url)\b)"
+    r"|\bpull up\b.{0,40}\bgame\b"
+    r"|\bwhat games\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _SYSTEM_HEALTH_RE = re.compile(
     r"\b(?:"
     r"running processes|process list|top processes|ps aux|"
@@ -272,6 +282,14 @@ def route_llm(message: str) -> dict:
     # then denies having shell access. A clear action verb deterministically
     # upgrades chat → lite_agent (has tools), mirroring the host-health guard.
     if route in ("quick_chat", "status") and _ACTION_RE.search(msg):
+        route = "lite_agent"
+        tier = None
+
+    # Game-link guard: "send me the link to play it" is ONE game_links
+    # tool call. Without this the router filed it as a task and a
+    # no-tools qwen3:4b hallucinated a path for 4 minutes (2026-07-12).
+    # Never overrides dispatch ("build a game" stays a build).
+    if route in ("task", "quick_chat", "status") and _GAME_LINK_RE.search(msg):
         route = "lite_agent"
         tier = None
 

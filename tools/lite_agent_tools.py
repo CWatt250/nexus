@@ -35,6 +35,7 @@ from tools.github_tool import (
     github_list_issues,
     github_get_file,
 )
+from tools.game_links_tool import game_links
 from tools.rag_tool import memory_search, memory_stats
 from tools.restart_services_tool import nexus_restart_services
 from tools.system_probe import system_status
@@ -129,6 +130,17 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "args": {"repo": "string 'owner/name' (required)",
                  "path": "string (required)",
                  "ref": "string (optional, branch/tag/sha)"},
+    },
+
+    # Games — instant directory listing of ~/AI_Agent/games with play
+    # URLs. Before this, "send me the link to play it" fell into a
+    # no-tools chat path and hallucinated a path (2026-07-12).
+    "game_links": {
+        "tool": game_links,
+        "description": "Play URLs for games Nexus has built. USE THIS for "
+                       "'send me the link', 'pull up <game>', 'what games "
+                       "do I have'.",
+        "args": {"limit": "int (optional, default 5, newest first)"},
     },
 
     # Memory — local Chroma queries, instant.

@@ -127,7 +127,14 @@ def _read_log_body(dispatch_id: str, tail_lines: int = 200) -> str:
 
 def _is_investigation(result: cc_dispatch.DispatchResult) -> bool:
     """True when the dispatch made no git changes and ran for >60 s.
-    In that case the entire deliverable is Claude's reply in the log."""
+    In that case the entire deliverable is Claude's reply in the log.
+
+    Artifact-producing builds are NEVER investigations: a local game
+    build has files_changed==0 (games/ is gitignored) but its
+    deliverable is the artifact + play link — shipping the log body
+    buried the play URL under ~10 chunks of raw HTML (2026-07-12)."""
+    if getattr(result, "artifact_paths", None):
+        return False
     return (
         result.files_changed == 0
         and not result.commits_made

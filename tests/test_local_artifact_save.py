@@ -78,3 +78,14 @@ def test_collision_gets_suffixed_name(tmp_path, monkeypatch):
 def test_summary_skips_fence_lines(tmp_path):
     log = _write_log(tmp_path, "All done, game complete.\n```\n")
     assert mod._summarize_log_tail(log) == "All done, game complete."
+
+
+def test_artifact_result_is_not_investigation():
+    import workers.cc_result_reporter as rep
+    from core.cc_dispatch import DispatchResult
+    base = dict(dispatch_id="cc_x", status="done", duration_seconds=150.0,
+                files_changed=0, commits_made=[])
+    with_artifact = DispatchResult(**base, artifact_paths=["/home/x/AI_Agent/games/snake.html"])
+    without = DispatchResult(**base)
+    assert rep._is_investigation(with_artifact) is False
+    assert rep._is_investigation(without) is True
