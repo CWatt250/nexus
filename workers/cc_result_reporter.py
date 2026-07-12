@@ -75,6 +75,8 @@ def _load_reporter_config() -> dict:
         "max_total_chunks": 10,
         "include_log_tail_for_investigations": True,
         "log_tail_lines": 200,
+        # Tailscale URL of nexus-games.service (serves ~/AI_Agent/games)
+        "games_url_base": "http://100.124.210.84:8788",
     }
     try:
         import yaml  # noqa: PLC0415
@@ -273,18 +275,26 @@ def _format_telegram(meta_label: str, result: cc_dispatch.DispatchResult) -> str
         files_line = (
             f"\nFiles changed: {result.files_changed}" if result.files_changed else ""
         )
+        cfg = _load_reporter_config()
         artifact_line = ""
         artifacts = getattr(result, "artifact_paths", []) or []
         if artifacts:
             names = [Path(p).name for p in artifacts[:5]]
             artifact_line = f"\nArtifacts: {', '.join(names)}"
+            # All-local (2026-07-12): games land in ~/AI_Agent/games,
+            # served by nexus-games.service — give a tap-to-play link.
+            base = str(cfg.get("games_url_base", "")).rstrip("/")
+            games_dir = Path.home() / "AI_Agent" / "games"
+            if base:
+                for p in artifacts[:5]:
+                    pp = Path(p)
+                    if pp.suffix == ".html" and pp.parent == games_dir:
+                        artifact_line += f"\n▶ Play: {base}/{pp.name}"
         cost_line = f"\nCost: {cost}" if cost else ""
         review_line = ""
         if getattr(result, "needs_review", False):
             notes = (getattr(result, "review_notes", "") or "")[:240]
             review_line = f"\n⚠️ needs_review: {notes}"
-
-        cfg = _load_reporter_config()
 
         # --- Investigation dispatch: ship the full log body ---
         if _is_investigation(result) and cfg.get("include_log_tail_for_investigations", True):

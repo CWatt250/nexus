@@ -117,6 +117,10 @@ def _summarize_log_tail(log_path: Path) -> str:
         return ""
     text = _ANSI_RE.sub("", text)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
+    # Drop markdown fences / rule lines — "```" was being picked as the
+    # one_line_summary for local-tier dispatches whose log ends in a
+    # code block.
+    lines = [l for l in lines if not re.fullmatch(r"[`~#\-=*_]{3,}", l)]
     if not lines:
         return ""
     # Look for a line that reads like a summary — e.g. "✓ Done", "Tests
@@ -346,6 +350,50 @@ def _file_idle_seconds(path: Path) -> float:
         return 0.0
 
 
+_HTML_FENCE_RE = re.compile(r"```[a-zA-Z]*\s*\n(.*?)```", re.S)
+_HTML_BARE_RE = re.compile(r"(<!DOCTYPE\s+html.*?</html\s*>)", re.S | re.I)
+
+
+def _looks_like_html(text: str) -> bool:
+    low = (text or "").lower()
+    return "<!doctype" in low or "<html" in low or "<canvas" in low
+
+
+def _save_local_artifact(log_path: Path, label: str,
+                         dispatch_id: str) -> Optional[Path]:
+    """All-local (2026-07-12) — the local tier has no file tools, so its
+    generated code exists only in the log. Extract the largest HTML
+    payload (fenced block first, bare <!DOCTYPE…</html> as fallback) and
+    land it in ~/AI_Agent/games/ BEFORE _detect_artifact_paths scans that
+    dir — the reporter and visual-verify then treat local builds exactly
+    like claude-tier builds. Returns the saved path or None."""
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    candidates = [b for b in _HTML_FENCE_RE.findall(text) if _looks_like_html(b)]
+    if not candidates:
+        candidates = _HTML_BARE_RE.findall(text)
+    if not candidates:
+        return None
+    html = max(candidates, key=len).strip()
+    games_dir = Path.home() / "AI_Agent" / "games"
+    games_dir.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "-", (label or "").lower()).strip("-")[:48]
+    if not slug:
+        slug = dispatch_id
+    path = games_dir / f"{slug}.html"
+    if path.exists():
+        path = games_dir / f"{slug}-{dispatch_id.removeprefix('cc_')[:6]}.html"
+    try:
+        path.write_text(html + "\n", encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not save local artifact for %s: %s", dispatch_id, exc)
+        return None
+    log.info("local artifact saved: %s (%d bytes)", path, len(html))
+    return path
+
+
 def _detect_artifact_paths(prompt_body: str, started_iso: str) -> list[str]:
     """Phase 28 — find files claude (or qwen) wrote during this dispatch.
     Two sources:
@@ -490,6 +538,7 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     killed_by_inactivity = False
     exit_code: Optional[int] = None
     proc: Optional[subprocess.Popen] = None
+    local_artifact: Optional[Path] = None
 
     if tier == "local":
         # No subprocess to poll — _run_local_qwen handles its own
@@ -502,6 +551,10 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
         except Exception as exc:
             log.exception("local-tier dispatch crashed: %s", exc)
             exit_code = -1
+        if exit_code == 0:
+            # Land the generated HTML in ~/AI_Agent/games/ so the
+            # artifact scan below picks it up like a claude-tier build.
+            local_artifact = _save_local_artifact(log_path, meta.label, meta.dispatch_id)
     else:
         proc = _spawn_claude(body, log_path, tier=tier)
         try:
@@ -548,6 +601,10 @@ def _run_one(prompt_path: Path, stop_event_check) -> None:
     commits = _git_commits_since(head_before)
     files_changed = _git_files_changed_since(head_before)
     summary = _summarize_log_tail(log_path)
+    if local_artifact is not None:
+        # Log tail of a local build is the code itself — "</html>" is
+        # not a summary. Say what actually happened.
+        summary = f"saved {local_artifact.name}"
     err_tail = ""
 
     if killed_by_timeout:

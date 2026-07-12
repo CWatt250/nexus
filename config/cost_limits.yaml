@@ -63,6 +63,8 @@ result_reporter:
   max_total_chunks: 10
   include_log_tail_for_investigations: true
   log_tail_lines: 200
+  # Tailscale URL of nexus-games.service (serves ~/AI_Agent/games on 8788)
+  games_url_base: "http://100.124.210.84:8788"
 
 quick_chat:
   provider: deepseek
