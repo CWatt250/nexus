@@ -249,10 +249,14 @@ def _spawn_claude(prompt_body: str, log_path: Path,
 
 def _run_local_qwen(prompt_body: str, log_path: Path,
                     budget_seconds: float, stop_event_check) -> tuple[int, bool, bool]:
-    """Phase 28 — tier='local'. Calls qwen3-coder:30b via Ollama instead
-    of spawning claude. Streams output into log_path so the same
+    """Phase 28 — tier='local'. Calls the local coding model via Ollama
+    instead of spawning claude. Streams output into log_path so the same
     inactivity / budget machinery in _run_one applies. Returns
-    (exit_code, killed_by_timeout, killed_by_inactivity)."""
+    (exit_code, killed_by_timeout, killed_by_inactivity).
+
+    All-local (2026-07-12): model upgraded qwen3-coder:30b →
+    qwen3.5:122b-a10b (100% GPU after the 1G UMA carve; ~28 tok/s,
+    passed the flappy-bird build gate)."""
     log_fh = log_path.open("w", encoding="utf-8")
     started = time.monotonic()
     last_chunk = started
@@ -268,7 +272,7 @@ def _run_local_qwen(prompt_body: str, log_path: Path,
     try:
         client = ollama.Client(host="http://localhost:11434")
         stream = client.chat(
-            model="qwen3-coder:30b",
+            model="qwen3.5:122b-a10b",
             messages=[
                 {"role": "system", "content": (
                     "You are a senior software engineer. Output complete, working code "

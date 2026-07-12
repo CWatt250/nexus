@@ -52,28 +52,28 @@ Every tool is registered in both `nexus.TOOLS` and `mcp/server.py`. Total tool c
 
 ## Phases 28 + 29 — Coding Router (slash-command tier ladder)
 When you (or an automated path) need to dispatch coding work, prefer
-the slash commands over the legacy `dispatch:` prefix. Phase 29 made
-`/max` the default for complex builds because Colton already pays for
-a Claude Max subscription, so the API-key path is now a fallback —
-not the first choice.
+the slash commands over the legacy `dispatch:` prefix. **All-local
+(2026-07-12): every router-inferred dispatch runs on the local tier**
+(qwen3.5:122b-a10b via Ollama, 100% GPU after the 1G UMA carve).
+Cloud tiers still exist but fire ONLY on an explicit slash command —
+the router never infers them.
 
 Tier ladder (cheapest marginal cost first):
 
 | Slash | Backend | Marginal cost | When to use |
 |-------|---------|---------------|-------------|
-| `/max` | Claude Sonnet 4.6 via Max plan | $0 | **Default for complex builds.** Multi-file work, refactors, anything you'd reach for Claude Code on. |
-| `/local` | qwen3-coder:30b via Ollama | $0 | Offline work, simple builds, "make a quick X". |
+| `/local` | qwen3.5:122b-a10b via Ollama | $0 | **Default for ALL builds.** ~28 tok/s, 262K ctx, passed the flappy-bird build gate 2026-07-12. |
 | `/quick` | qwen3:4b chat | $0 | One-shot Q&A, no thinking trace, no tools. Not for code. |
-| `/code` | DeepSeek V4-Flash | ~$0.005 | Save Max plan quota when the build is small + cheap. |
-| `/pro` | DeepSeek V4-Pro | ~$0.05 | DeepSeek mid-tier; rarely needed. |
-| `/api` | Sonnet 4.6 via API key | ~$0.10–1.00 | Fallback when Max session limits hit. Spends real $$. |
+| `/max` | Claude Sonnet 4.6 via Max plan | $0 | Explicit-only cloud escape hatch. Note: dispatcher passes no --model, so the CLI inherits ~/.claude/settings.json ("fable") which headless runs can't use — broken until fixed. |
+| `/code` | DeepSeek V4-Flash | ~$0.005 | Explicit-only. |
+| `/pro` | DeepSeek V4-Pro | ~$0.05 | Explicit-only; rarely needed. |
+| `/api` | Sonnet 4.6 via API key | ~$0.10–1.00 | Explicit-only. Spends real $$. |
 | `/real` | _alias for `/api`_ | _same as /api_ | DEPRECATED — logs to `cc_logs/_deprecation.log`. Update muscle memory. |
 
 Routing without an explicit slash:
 - Casual chat → `/quick` (qwen3:4b, fast no-thinking)
-- `make a quick/simple/tiny X` → `/local` (qwen3-coder:30b)
-- `build me X` / `create X` / `make me X` / `code X` → `/max`
-  (Phase 29 default — was `/code` in Phase 28)
+- Any build/create/fix/refactor request → `/local` (qwen3.5:122b-a10b)
+  (All-local 2026-07-12 — was `/max` in Phase 29, `/code` in Phase 28)
 
 Cost guardrails live in `config/cost_limits.yaml` with tier-specific
 ceilings (`max`/`local`/`quick` are uncapped). Daily ceiling applies

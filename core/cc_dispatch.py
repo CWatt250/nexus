@@ -98,7 +98,7 @@ class DispatchMeta:
     # Phase 28 — tier picks the model + env file the dispatcher sources
     # before spawning claude. flash/pro = DeepSeek (cheap), real =
     # Anthropic Sonnet (premium, default for backwards compat with
-    # Phase 22 callers that don't set tier), local = qwen3-coder:30b
+    # Phase 22 callers that don't set tier), local = qwen3.5:122b-a10b
     # via Ollama (no subprocess, no API call).
     tier: str = "real"
     # Phase 39 — read-only investigation dispatch: the dispatcher must
@@ -324,7 +324,7 @@ DEFAULT_OUTPUT_TOKENS_PER_MINUTE = 1200  # ~1.2k output tokens/minute
 #   flash: DeepSeek V4-Flash
 #   pro:   DeepSeek V4-Pro
 #   api:   Anthropic Sonnet 4.6 via API key (renamed from "real" in P29)
-#   local: qwen3-coder:30b via Ollama
+#   local: qwen3.5:122b-a10b via Ollama
 #   quick: qwen3:4b (not a dispatcher tier — kept here for entity-table
 #     symmetry; quick_chat doesn't go through cc_dispatcher)
 TIER_PRICING: dict[str, tuple[float, float]] = {
@@ -340,7 +340,7 @@ TIER_MODELS: dict[str, str] = {
     "flash": "deepseek-v4-flash",
     "pro":   "deepseek-v4-pro",
     "api":   "claude-sonnet-4-6",
-    "local": "qwen3-coder:30b",
+    "local": "qwen3.5:122b-a10b",
     "quick": "qwen3:4b",
 }
 

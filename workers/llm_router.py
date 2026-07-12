@@ -107,12 +107,13 @@ _VALID_DISPATCH_TIERS = ("local", "code", "pro", "real", "max")
 
 
 def resolve_dispatch_tier(message: str, tier: str | None) -> str:
-    """Resolve the final tier for a dispatch route. Honors an explicit
-    valid tier from the model; otherwise (None / the invalid "quick" /
-    junk) infers from keywords: quick/simple/tiny → local, else max."""
-    if tier in _VALID_DISPATCH_TIERS:
-        return tier
-    return "local" if _LOCAL_TIER_RE.search(message or "") else "max"
+    """Resolve the final tier for a dispatch route. All-local
+    (2026-07-12): every router-resolved dispatch runs on the local
+    tier. Slash commands bypass the router, so anything reaching here
+    was inferred — and inferred work must never spend cloud tokens.
+    Cloud tiers (/max, /code, /pro, /api) remain available as explicit
+    slash commands only."""
+    return "local"
 
 
 # Host/runtime-health questions always want the system_status tool, i.e.
@@ -165,12 +166,11 @@ task — multi-step work Nexus runs itself with its full tool belt:
   fixing or editing files in the Nexus workspace, deploys, anything
   needing several tool calls. Imperative with a SPECIFIC object.
 
-dispatch — coding/build work for the Claude Code dispatcher: build/
+dispatch — coding/build work for the coding dispatcher: build/
   create/fix/refactor an app, game, component, script, or repo.
-  Pick tier: "local" when the user says quick/simple/tiny/small,
-  "max" for everything else (default). Only use "code"/"pro"/"real"
-  if the user explicitly names the tier. Use "quick" never (that's
-  what quick_chat is for).
+  Always set tier to "local" — all dispatches run on the local model;
+  cloud tiers exist only behind explicit slash commands, which never
+  reach this router. Use "quick" never (that's what quick_chat is for).
 
 status — questions about Nexus's OWN task QUEUE or a specific task id:
   "queue status", "any tasks running", "is task abc12345 done".
