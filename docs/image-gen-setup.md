@@ -67,8 +67,22 @@ curl -sL -o ~/AI_Agent/models/sdcpp/models/sdxl-turbo.safetensors \
   https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors
 ```
 
+### Provision Qwen-Image-2512 (optional, best text/layout quality)
+20B model — ~17.4 GB of assets, ~6 min per 1024px image (20 steps @ ~16 s/it).
+Installed 2026-07-22, verified working (chalkboard-sign text test passed).
+```bash
+mkdir -p ~/AI_Agent/models/sdcpp/qwen && cd ~/AI_Agent/models/sdcpp/qwen
+wget -c https://huggingface.co/unsloth/Qwen-Image-2512-GGUF/resolve/main/qwen-image-2512-Q4_K_M.gguf                     # 12.6 GB
+wget -c https://huggingface.co/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf  # 4.6 GB
+wget -c https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors     # 243 MB
+```
+Settings live in `MODELS["qwen"]`: euler / 20 steps / cfg 2.5 / flow-shift 3,
+900 s timeout. Note: Qwen-Image-**3.0** (July 2026) is API-only — no weights —
+which is why 2512 is the newest local option.
+
 ## Usage
 
-- **Tool:** `generate_image(prompt, model="flux"|"sdxl"|"sd15", ...)` (heavy
-  agent) → saves to `output/images/`.
-- **Telegram:** `/image <prompt>` (FLUX) or `/image sd15 <prompt>` (fast).
+- **Tool:** `generate_image(prompt, model="flux"|"qwen"|"sdxl"|"sd15", ...)`
+  (heavy agent) → saves to `output/images/`.
+- **Telegram:** `/image <prompt>` (FLUX) or `/image sd15 <prompt>` (fast) or
+  `/image qwen <prompt>` (slow, best in-image text).

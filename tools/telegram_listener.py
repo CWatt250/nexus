@@ -565,22 +565,25 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     args = list(context.args or [])
     model = "flux"  # default — best quality + real text (~37s)
-    if args and args[0].lower() in ("flux", "sdxl", "sd15"):
+    if args and args[0].lower() in ("flux", "qwen", "sdxl", "sd15"):
         model = args.pop(0).lower()
     prompt = " ".join(args).strip()
     if not prompt:
         await update.message.reply_text(
-            "/image [flux|sdxl|sd15] <prompt>\n"
+            "/image [flux|qwen|sdxl|sd15] <prompt>\n"
             "e.g. /image a husky in a santa hat, watercolor  (flux, default)\n"
-            "     /image sd15 a quick doodle of a fox        (faster)")
+            "     /image sd15 a quick doodle of a fox        (faster)\n"
+            "     /image qwen a poster titled \"BIG SALE\"    (~6min, best text)")
         return
     await update.message.chat.send_action("upload_photo")
+    # qwen is a full 20-step CFG run of a 20B model (~6 min) — give it headroom
+    wait_s = 960 if model == "qwen" else 300
     try:
         from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
         res = await asyncio.wait_for(
-            asyncio.to_thread(generate_image_core, prompt, model=model), timeout=300)
+            asyncio.to_thread(generate_image_core, prompt, model=model), timeout=wait_s)
     except asyncio.TimeoutError:
-        await update.message.reply_text("/image timed out (>300s).")
+        await update.message.reply_text(f"/image timed out (>{wait_s}s).")
         return
     except Exception as exc:
         await update.message.reply_text(f"/image error: {type(exc).__name__}: {exc}")
