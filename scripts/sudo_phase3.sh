@@ -20,7 +20,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get install -y openbox tint2 python3-pyatspi at-spi2-core fonts-dejavu-core xterm
 
 echo "[2/5] install nexus-desktop.service (openbox + tint2 + Chrome on :99)"
-install -m 0755 -o $OWNER -g $OWNER "$ROOT/scripts/desktop_session.sh" "$ROOT/scripts/desktop_session.sh"
+chmod 0755 "$ROOT/scripts/desktop_session.sh"
 install -m 0644 "$ROOT/scripts/nexus-desktop.service" /etc/systemd/system/nexus-desktop.service
 
 echo "[3/5] nexus-vnc drop-in: listen on tailnet 100.124.210.84 with password"
