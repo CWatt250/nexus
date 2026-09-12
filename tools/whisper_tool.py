@@ -30,24 +30,36 @@ MIN_RECORD_MS = 800              # require at least this much audio before cutti
 
 log = logging.getLogger("nexus.whisper")
 
-_model = None
+HF_HUB_DIR = Path.home() / ".cache" / "huggingface" / "hub"
+
+_models: dict[str, object] = {}   # model_size → loaded WhisperModel
 
 
-def _get_model():
-    """Lazy-load faster-whisper so importing this file is free."""
-    global _model
-    if _model is not None:
-        return _model
+def _download_root(model_size: str) -> str | None:
+    """Prefer an already-cached HF snapshot (~/.cache/huggingface) so we
+    never re-download; otherwise fall back to MODEL_DIR."""
+    if (HF_HUB_DIR / f"models--Systran--faster-whisper-{model_size}").exists():
+        return None  # default HF cache
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    return str(MODEL_DIR)
+
+
+def _get_model(model_size: str = MODEL_NAME):
+    """Lazy-load faster-whisper so importing this file is free. Loaded
+    once per `model_size` and cached at module level."""
+    model = _models.get(model_size)
+    if model is not None:
+        return model
     from faster_whisper import WhisperModel
     # int8 on CPU — small footprint, fast enough for interactive use.
-    _model = WhisperModel(
-        MODEL_NAME,
+    model = WhisperModel(
+        model_size,
         device="cpu",
         compute_type="int8",
-        download_root=str(MODEL_DIR),
+        download_root=_download_root(model_size),
     )
-    return _model
+    _models[model_size] = model
+    return model
 
 
 def _rms(block) -> float:
@@ -120,13 +132,16 @@ def record_and_transcribe(
         return f"ERROR: transcription failed — {type(exc).__name__}: {exc}"
 
 
-def transcribe_file(path: str) -> str:
-    """Transcribe an existing audio file (wav, mp3, m4a, …)."""
+def transcribe_file(path: str, model_size: str = MODEL_NAME) -> str:
+    """Transcribe an existing audio file (wav, mp3, m4a, ogg/opus, …).
+    faster-whisper decodes through PyAV, so Telegram OGG/Opus voice notes
+    work without a conversion step. `model_size` picks the whisper model
+    (e.g. "base", "small.en"); each size is loaded once and cached."""
     p = Path(path).expanduser()
     if not p.exists():
         return f"ERROR: no such file: {p}"
     try:
-        model = _get_model()
+        model = _get_model(model_size)
         segments, _info = model.transcribe(str(p), language="en", beam_size=1)
         return "".join(seg.text for seg in segments).strip()
     except Exception as exc:

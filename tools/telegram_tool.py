@@ -59,6 +59,26 @@ async def _send_file_async(file_path: str, caption: str = "") -> str:
         return f"Error sending Telegram file: {type(e).__name__}: {e}"
 
 
+async def _send_voice_async(file_path: str, caption: str = "") -> str:
+    """Send an OGG/Opus file as a playable voice note."""
+    bot = _get_bot()
+    if bot is None:
+        return "Error: TELEGRAM_BOT_TOKEN not configured. Add it to ~/AI_Agent/.env"
+    if not TELEGRAM_CHAT_ID:
+        return "Error: TELEGRAM_CHAT_ID not configured. Add it to ~/AI_Agent/.env"
+
+    path = Path(file_path)
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+
+    try:
+        with open(path, "rb") as f:
+            await bot.send_voice(chat_id=TELEGRAM_CHAT_ID, voice=f, caption=caption or None)
+        return f"Voice note sent to Telegram successfully: {path.name}"
+    except Exception as e:
+        return f"Error sending Telegram voice note: {type(e).__name__}: {e}"
+
+
 def _run_async(coro):
     """Run async function in sync context."""
     try:
@@ -112,6 +132,21 @@ def telegram_send_file(file_path: str, caption: str = "") -> str:
     return _run_async(_send_file_async(file_path, caption))
 
 
+@tool
+def telegram_send_voice(file_path: str, caption: str = "") -> str:
+    """Send an OGG/Opus audio file to Colton's Telegram as a playable voice
+    note (use tools.tts_tool.tts_to_ogg to make one from text).
+
+    Args:
+        file_path: Path to the .ogg (Opus) file to send
+        caption: Optional caption for the voice note
+
+    Returns:
+        Success or error message
+    """
+    return _run_async(_send_voice_async(file_path, caption))
+
+
 # Synchronous versions for direct use (not as LangGraph tools)
 def notify_sync(message: str, parse_mode: Optional[str] = "Markdown") -> str:
     """Synchronous version of telegram_notify for direct use."""
@@ -121,6 +156,11 @@ def notify_sync(message: str, parse_mode: Optional[str] = "Markdown") -> str:
 def send_file_sync(file_path: str, caption: str = "") -> str:
     """Synchronous version of telegram_send_file for direct use."""
     return asyncio.run(_send_file_async(file_path, caption))
+
+
+def send_voice_sync(file_path: str, caption: str = "") -> str:
+    """Synchronous version of telegram_send_voice for direct use."""
+    return asyncio.run(_send_voice_async(file_path, caption))
 
 
 # Event notification helpers
@@ -158,4 +198,4 @@ def notify_sudo_needed(commands: list[str]) -> str:
 
 
 # Export for easy import
-TELEGRAM_TOOLS = [telegram_notify, telegram_send_file]
+TELEGRAM_TOOLS = [telegram_notify, telegram_send_file, telegram_send_voice]

@@ -303,6 +303,41 @@ def save_audio(text: str, path: str, *, voice: str | None = None, speed: float =
     return str(out)
 
 
+def tts_to_ogg(text: str, out_path: str, *, voice: str | None = None,
+               speed: float = 1.0) -> str:
+    """Synthesize `text` and write a Telegram-ready OGG/Opus voice note
+    (48 kHz mono, 32 kbps) at `out_path` via ffmpeg. Returns the path, or
+    an 'ERROR: …' string. Headless-safe — never touches sounddevice."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    out = Path(out_path).expanduser().resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return "ERROR: ffmpeg not found on PATH"
+    wav = Path(tempfile.mkstemp(prefix="nexus-tts-", suffix=".wav")[1])
+    try:
+        saved = save_audio(text, str(wav), voice=voice, speed=speed)
+        if saved.startswith("ERROR") or saved.startswith("("):
+            return saved if saved.startswith("ERROR") else "ERROR: nothing to synthesize"
+        cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(wav),
+               "-ac", "1", "-ar", "48000", "-c:a", "libopus", "-b:a", "32k",
+               str(out)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            return f"ERROR: ffmpeg failed — {proc.stderr.strip()[:300]}"
+    except Exception as exc:
+        return f"ERROR: tts_to_ogg failed — {type(exc).__name__}: {exc}"
+    finally:
+        try:
+            wav.unlink()
+        except OSError:
+            pass
+    return str(out)
+
+
 # ---------------------------------------------------------------------------
 # LangGraph tools
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # Setup
@@ -213,6 +213,8 @@ def _help_text() -> str:
         "Me:\n"
         "  /think on|off — show my reasoning under each reply (💭). "
         "\"show your work\" in a message does it once.\n"
+        "  /voice on|off — reply with a voice note too (🎙️). "
+        "Voice notes you send are transcribed and always answered in voice.\n"
         "  /creds [service] — credential status, or setup steps for one service\n"
         "  /computer <task> — drive the :99 browser (caps: 30 min, $5; --unsafe skips stops)\n"
         "  /image [flux|qwen|sdxl|sd15] <prompt> — local image gen\n"
@@ -1048,18 +1050,44 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _reply_chunked(update, reply)
 
 
+# Phase 4 (voice) — reply hooks. Each is `async (update, reply_text)`;
+# they fire after the final text reply lands (tools/telegram_voice
+# appends one that voices the reply when the chat has /voice on).
+REPLY_HOOKS: list = []
+
+
+async def _emit_reply(update: Update, reply: str, on_reply=None) -> None:
+    """Fire the per-call `on_reply` (if given) else every REPLY_HOOK.
+    Best-effort: a hook failure never loses the text reply."""
+    hooks = [on_reply] if on_reply is not None else list(REPLY_HOOKS)
+    for hook in hooks:
+        try:
+            await hook(update, reply)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("reply hook %s failed: %s", getattr(hook, "__name__", hook), e)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """TEXT messages → the shared text path."""
+    await _handle_text(update, context, update.message.text)
+
+
+async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                       user_message: str, on_reply=None) -> None:
     """Route user message through the conversation handler (Phase 15.5).
 
     The handler runs on qwen3:4b only and decides — via its own tool calls
     — whether to answer from queue state, modify a running task, or
     enqueue a new heavy task for the task_worker. Heavy turns NEVER run
     in this request; the bot replies fast (<10s) and the worker streams
-    progress to memory/active_tasks.jsonl independently."""
+    progress to memory/active_tasks.jsonl independently.
+
+    `user_message` is passed explicitly so non-text intakes (voice notes
+    transcribed by tools/telegram_voice) share this exact path. `on_reply`
+    overrides REPLY_HOOKS for this one turn (see _emit_reply)."""
     if not is_authorized(update):
         return
 
-    user_message = update.message.text
     logger.info("Received message: %s", user_message[:100])
     await update.message.chat.send_action("typing")
 
@@ -1119,6 +1147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if streamed_reply is not None:
         logger.info("route kind=chat chat_id=%s (streamed)", chat_id)
         _after_chat_turn(chat_id, user_message, streamed_reply)
+        await _emit_reply(update, streamed_reply, on_reply)
         return
 
     # Blocking router off the event loop. The thread can't be cancelled,
@@ -1134,29 +1163,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await bubble.stage(
             "⏳ still on it — this one's taking longer than a minute. "
             "I'll drop the answer here when it lands.")
-        asyncio.create_task(_deliver_late(update, bubble, fut, chat_id, user_message))
+        asyncio.create_task(_deliver_late(update, bubble, fut, chat_id, user_message,
+                                          on_reply))
         return
     except Exception as e:
         logger.exception("conversation handler error: %s", e)
         await bubble.finish("That one tripped on the way out — it's logged. Try again?")
         return
 
-    await _deliver_result(update, bubble, result, chat_id, user_message)
+    await _deliver_result(update, bubble, result, chat_id, user_message, on_reply)
 
 
 async def _deliver_late(update: Update, bubble, fut: "asyncio.Future",
-                        chat_id: int, user_message: str) -> None:
+                        chat_id: int, user_message: str, on_reply=None) -> None:
     try:
         result = await fut
     except Exception as e:
         logger.exception("late route_message failed: %s", e)
         await bubble.finish("That one died on the way back — it's logged. Try again?")
         return
-    await _deliver_result(update, bubble, result, chat_id, user_message)
+    await _deliver_result(update, bubble, result, chat_id, user_message, on_reply)
 
 
 async def _deliver_result(update: Update, bubble, result: dict,
-                          chat_id: int, user_message: str) -> None:
+                          chat_id: int, user_message: str, on_reply=None) -> None:
     reply = result.get("reply", "") or "Came back empty — say that again?"
     logger.info("route kind=%s chat_id=%s", result.get("kind"), chat_id)
     if result.get("kind") == "chat":
@@ -1168,6 +1198,7 @@ async def _deliver_result(update: Update, bubble, result: dict,
         except Exception as e:
             logger.warning("telegram_chats assistant-write failed: %s", e)
     await _finish_bubble(update, bubble, reply)
+    await _emit_reply(update, reply, on_reply)
 
 
 def _after_chat_turn(chat_id: int, user_message: str, reply: str) -> None:
@@ -1182,6 +1213,41 @@ def _after_chat_turn(chat_id: int, user_message: str, reply: str) -> None:
         conversation_handler.maybe_reflect(chat_id, user_message, reply)
     except Exception as e:
         logger.debug("reflection spawn failed: %s", e)
+
+
+
+# Menu shown by Telegram when the user types "/". Ordered by how often
+# Colton reaches for them; descriptions are what the popup displays.
+COMMAND_MENU: list[tuple[str, str]] = [
+    ("screenshot", "What Nexus sees on its desktop right now"),
+    ("desktop", "Do something on the desktop: /desktop open x.com and …"),
+    ("open", "Open a URL on the desktop and screenshot it"),
+    ("watch", "VNC connect string to watch the desktop live"),
+    ("local", "Build it on the resident brain (default for builds)"),
+    ("quick", "One-shot fast answer, no tools"),
+    ("think", "on|off — show my reasoning under replies"),
+    ("voice", "on|off — reply with a voice note too"),
+    ("status", "Queue + system status"),
+    ("tasks", "Recent tasks"),
+    ("stop", "Cancel the running task"),
+    ("image", "Generate an image locally"),
+    ("creds", "SaaS credential status / setup"),
+    ("help", "Every command with details"),
+    ("max", "Cloud build via Claude Max (explicit only)"),
+    ("code", "Cloud build via DeepSeek Flash (explicit only, ~$0.005)"),
+    ("pro", "Cloud build via DeepSeek Pro (explicit only)"),
+    ("api", "Cloud build via Claude API (explicit only, real $$)"),
+    ("computer", "Cloud computer-use agent on the desktop (explicit only)"),
+]
+
+
+async def _register_command_menu(application) -> None:
+    try:
+        await application.bot.set_my_commands(
+            [BotCommand(c, d[:256]) for c, d in COMMAND_MENU])
+        logger.info("command menu registered: %d commands", len(COMMAND_MENU))
+    except Exception as e:  # never block startup on this
+        logger.warning("set_my_commands failed: %s", e)
 
 
 def main() -> None:
@@ -1200,8 +1266,11 @@ def main() -> None:
     except Exception as e:
         logger.warning("telegram_chats init failed: %s", e)
 
-    # Create the Application
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    # Create the Application. post_init registers the command menu with
+    # Telegram (setMyCommands) so typing "/" pops the list on the phone —
+    # without it the client shows nothing.
+    application = (Application.builder().token(TELEGRAM_BOT_TOKEN)
+                   .post_init(_register_command_menu).build())
 
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
@@ -1233,6 +1302,13 @@ def main() -> None:
         telegram_desktop.register(application)
     except Exception as e:
         logger.warning("telegram_desktop not registered: %s", e)
+    # Phase 4 — voice notes in (whisper) + /voice on|off spoken replies
+    # (Kokoro). Registered AFTER the TEXT handler so text keeps priority.
+    try:
+        from tools import telegram_voice  # noqa: PLC0415
+        telegram_voice.register(application)
+    except Exception as e:
+        logger.warning("telegram_voice not registered: %s", e)
 
     # Start the bot
     logger.info("Starting Telegram listener...")
