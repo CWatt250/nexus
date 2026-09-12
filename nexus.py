@@ -358,7 +358,7 @@ def load_system_prompt() -> str:
 # via different saver objects so each variant sees only the methods it can
 # call safely. Phase 1: toolset ("lite" / "heavy" / "full", see
 # core/toolsets.py) decides which subset of TOOLS the LLM is bound to.
-_AGENT_CACHE: dict[tuple[str, str, bool], object] = {}
+_AGENT_CACHE: dict[tuple[str, str, bool, bool], object] = {}
 
 
 def tools_for(toolset: str | None = None) -> list:
@@ -377,11 +377,14 @@ def set_system_prompt(prompt: str) -> None:
     _SYSTEM_PROMPT = prompt or ""
 
 
-def _make_llm(model: str) -> ChatOllama:
+def _make_llm(model: str, *, reasoning: bool = False) -> ChatOllama:
     # num_ctx MUST be pinned — unset means the GGUF max (262144), which
     # allocated a 36.9 GB KV cache on qwen3:4b and crashed the GPU nightly.
+    # reasoning=True (TASK-route agents only): Ollama `think` on — the
+    # narration lands in additional_kwargs["reasoning_content"], content
+    # stays the deliverable.
     from core import brain as _b  # noqa: PLC0415
-    return ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=False,
+    return ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=reasoning,
                       num_ctx=_b.num_ctx_for(model))
 
 
@@ -396,7 +399,7 @@ def build_agent(model: str | None = None, toolset: str | None = None):
     from core import toolsets  # noqa: PLC0415
     model = model or router.model_for("heavy")
     toolset = toolsets.resolve_name(toolset)
-    key = (model, toolset, False)
+    key = (model, toolset, False, False)
     if key not in _AGENT_CACHE:
         _AGENT_CACHE[key] = create_react_agent(
             _make_llm(model),
@@ -432,21 +435,24 @@ async def _get_async_checkpointer() -> AsyncSqliteSaver:
     return _ASYNC_CHECKPOINTER
 
 
-async def build_agent_async(model: str | None = None, toolset: str | None = None):
+async def build_agent_async(model: str | None = None, toolset: str | None = None,
+                            *, reasoning: bool = False):
     """Build (and cache) an ASYNC LangGraph agent backed by AsyncSqliteSaver
     on the same checkpoints.db. Use this from async contexts so state
     reads/writes don't block the event loop (or bounce through the thread
-    pool on every turn). `toolset` as in `build_agent` (default heavy)."""
+    pool on every turn). `toolset` as in `build_agent` (default heavy).
+    `reasoning=True` is the TASK-route variant: Ollama think on + the
+    phone-delivery style folded into the per-turn context."""
     from core import toolsets  # noqa: PLC0415
     model = model or router.model_for("heavy")
     toolset = toolsets.resolve_name(toolset)
-    key = (model, toolset, True)
+    key = (model, toolset, True, reasoning)
     if key not in _AGENT_CACHE:
         saver = await _get_async_checkpointer()
         _AGENT_CACHE[key] = create_react_agent(
-            _make_llm(model),
+            _make_llm(model, reasoning=reasoning),
             tools_for(toolset),
-            prompt=_agent_prompt,
+            prompt=_task_agent_prompt if reasoning else _agent_prompt,
             checkpointer=saver,
         )
     return _AGENT_CACHE[key]
@@ -471,8 +477,16 @@ def is_fast_route(route: str) -> bool:
 
 _DT_MARKER = "[Current date and time:"
 
+# Per-turn delivery rule for TASK-route agents (Telegram is the only
+# consumer of queued-task output). Rides in the turn context, not SOUL.md.
+TELEGRAM_DELIVERY_STYLE = (
+    "Delivery is a phone screen. Lead with the answer in ≤3 lines. "
+    "Prefer a table (≤4 columns, cells ≤6 words) or bullets over paragraphs. "
+    "No preamble about sources or process. No closing questions or offers."
+)
 
-def turn_context_message(user_text: str = "") -> SystemMessage:
+
+def turn_context_message(user_text: str = "", extra: str = "") -> SystemMessage:
     """Phase 1 — the volatile per-turn context (live self-facts + wall
     clock) as ONE SystemMessage, placed right after the static prefix by
     `_agent_prompt` on every step. It used to live in the system prompt,
@@ -491,26 +505,35 @@ def turn_context_message(user_text: str = "") -> SystemMessage:
             f"{_DT_MARKER} {now.isoformat(timespec='seconds')} "
             f"({now.strftime('%A')}). Use ONLY this for any time/date/day question.]"
         )
+    if extra:
+        parts.append(extra)
     return SystemMessage(content="\n\n".join(parts))
 
 
-def _agent_prompt(state) -> list:
+def _make_agent_prompt(extra: str = ""):
     """Per-step prompt builder handed to create_react_agent.
 
     Emits [static system prompt][turn context][…thread messages]. The
     static prefix (`_SYSTEM_PROMPT`) is byte-stable; the volatile bits
-    (self-facts + wall clock) are a separate SystemMessage rebuilt on every
-    step, so they never get baked into the prefix and — unlike appending
-    them to the per-turn message list — never accumulate in the checkpoint
-    history of long threads."""
-    history = list(state["messages"])
-    last_human = next(
-        (m.content for m in reversed(history) if isinstance(m, HumanMessage)), "")
-    out: list = []
-    if _SYSTEM_PROMPT:
-        out.append(SystemMessage(content=_SYSTEM_PROMPT))
-    out.append(turn_context_message(last_human if isinstance(last_human, str) else ""))
-    return out + history
+    (self-facts + wall clock, plus `extra`) are a separate SystemMessage
+    rebuilt on every step, so they never get baked into the prefix and —
+    unlike appending them to the per-turn message list — never accumulate
+    in the checkpoint history of long threads."""
+    def _agent_prompt(state) -> list:
+        history = list(state["messages"])
+        last_human = next(
+            (m.content for m in reversed(history) if isinstance(m, HumanMessage)), "")
+        out: list = []
+        if _SYSTEM_PROMPT:
+            out.append(SystemMessage(content=_SYSTEM_PROMPT))
+        out.append(turn_context_message(
+            last_human if isinstance(last_human, str) else "", extra))
+        return out + history
+    return _agent_prompt
+
+
+_agent_prompt = _make_agent_prompt()
+_task_agent_prompt = _make_agent_prompt(TELEGRAM_DELIVERY_STYLE)
 
 
 def fast_mode_messages(user_text: str, *, route: str | None = None, override: bool | None = None) -> list:

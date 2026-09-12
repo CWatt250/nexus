@@ -159,7 +159,7 @@ def test_rich_final_replaces_bubble_via_rich_send(monkeypatch):
 
     def fake_stream(message, chat_id):
         yield {"partial": "## par"}
-        yield {"final": "## Done\n\n| a | b |\n|---|---|\n| 1 | 2 |"}
+        yield {"final": "## Done\n\n- a\n- b"}
     monkeypatch.setattr(ch, "quick_chat_stream", fake_stream)
 
     bubble = _Bubble()
@@ -170,6 +170,26 @@ def test_rich_final_replaces_bubble_via_rich_send(monkeypatch):
     assert bubble.deleted is True                     # bubble removed
     assert bubble.finished == []                      # NOT also edited plain
     assert bubble.stages == ["## par"]                # partial streamed into bubble
+
+
+def test_table_final_takes_bubble_finish_not_rich(monkeypatch):
+    """Pipe tables skip the rich send: bubble.finish() renders them as
+    PNG photos (raw pipes are unreadable on a phone)."""
+    captured = []
+
+    async def fake_rich_final(chat_id, md):
+        captured.append((chat_id, md))
+    monkeypatch.setattr(tl, "_send_rich_message", fake_rich_final)
+    monkeypatch.setattr(ch, "guard_quick_chat_reply", lambda m, r: None)
+
+    def fake_stream(message, chat_id):
+        yield {"final": "## Done\n\n| a | b |\n|---|---|\n| 1 | 2 |"}
+    monkeypatch.setattr(ch, "quick_chat_stream", fake_stream)
+
+    bubble = _Bubble()
+    asyncio.run(tl._stream_quick_chat_reply(FakeUpdate(bot=None), "hi", 9, bubble))
+    assert captured == []
+    assert bubble.finished and "| a | b |" in bubble.finished[0]
 
 
 def test_plain_final_edits_bubble_when_rich_fails(monkeypatch):

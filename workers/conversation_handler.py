@@ -223,6 +223,9 @@ load_soul()
 # prompt is re-prefilled each turn on Ornith's hybrid attention.
 _QUICK_CHAT_OUTPUT_RULES = (
     "Output only the reply itself — no reasoning, no preamble, no meta-commentary.\n"
+    "Length: casual → one short sentence. Questions → at most 4 sentences "
+    "unless they asked for detail. Opinions → the verdict plus one or two "
+    "reasons, not an essay. This is a phone screen.\n"
     "You have tools (web, GitHub, files, shell, memory, computer use) via the "
     "task path; never deny having them, and never claim to have checked "
     "something you didn't."
@@ -639,6 +642,10 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
                 body = (obj.get("reply") if isinstance(obj, dict) else "") or body
             except (json.JSONDecodeError, AttributeError):
                 pass
+            # qwen3:4b tacks "How's it going?" onto casual replies no matter
+            # what the prompt says — enforce "one sentence" in code.
+            if len((message or "").split()) <= 6:
+                body = _first_sentence(body) or body
         return _clean_quick_chat(body)
 
     reply = _one_attempt()
@@ -1677,8 +1684,15 @@ def _shape_lookup_query(message: str, query: str) -> str:
     q = _QUERY_NOISE_RE.sub(" ", query)
     q = re.sub(r"\s+", " ", q).strip(" ?.,")
     lowered = (message or "").lower()
-    if re.search(r"\b(?:how much|price|cost|costs|pricing)\b", lowered) and "price" not in q.lower():
-        q += " price"
+    if re.search(r"\b(?:how much|price|cost|costs|pricing)\b", lowered):
+        # SearXNG (bing) returns nothing for "X price current" but $-hits for
+        # "X price" — keep only the product tokens + "price".
+        q = re.sub(r"\b(?:how much|cost|costs|pricing|does|do|right now|today|currently|"
+                   r"current|now|latest|new|the|a|an|is|of|for|what|what's)\b",
+                   " ", q, flags=re.IGNORECASE)
+        q = re.sub(r"\s+", " ", q).strip(" ?.,")
+        if "price" not in q.lower():
+            q += " price"
     elif re.search(r"\b(?:latest|newest|current)\b", lowered) and "latest" not in q.lower():
         q += " latest"
     return q or query
@@ -2895,8 +2909,33 @@ def guard_quick_chat_reply(message: str, reply: str) -> dict | None:
                         "why": f"{why}->lite_agent:{result.get('tool', '')}"}
         except Exception as exc:  # never let the recovery path crash a reply
             log.warning("lite_agent recovery failed: %s", exc)
+    # A statement, opinion, or date question doesn't need a task at all —
+    # the brain got pulled by a stale promise in history. Re-ask once with
+    # the record set straight; only real work requests become tasks.
+    if not _WORK_REQUEST_RE.search(message or ""):
+        try:
+            retry = _ollama_quick_chat(
+                brain.get_brain_model(), message,
+                get_quick_chat_system_prompt() + _NO_PENDING_WORK_NOTE)
+            retry = _strip_think_final(retry)
+            if retry.strip() and not _looks_like_false_promise(retry) and not _looks_like_denial(retry):
+                return {"reply": retry, "task_id": None, "why": f"{why}->retry"}
+        except Exception as exc:
+            log.warning("guard retry failed: %s", exc)
     tid = task_queue.enqueue(message)
     return {"reply": RECOVERY_REPLY, "task_id": tid, "why": why}
+
+
+_WORK_REQUEST_RE = re.compile(
+    r"\b(?:build|create|make|write|fix|debug|refactor|deploy|research|find|"
+    r"look up|check|investigate|audit|run|install|update|generate|scrape|"
+    r"summari[sz]e|compare|analy[sz]e|set up|configure|search|open|test)\b",
+    re.IGNORECASE)
+_NO_PENDING_WORK_NOTE = (
+    "\n\nCorrection: you have NO pending or in-progress work for this user. "
+    "Ignore any earlier line that promised a task or said you'd ping them. "
+    "Answer the message directly, now, in one reply — do not promise to "
+    "check, look, or get back to them.")
 
 
 def _lookup_re():

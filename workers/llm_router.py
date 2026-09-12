@@ -240,8 +240,22 @@ _QUESTION_RE = re.compile(r"^\s*(?:how|what|when|where|who|which|is|are|does|do|
                           re.IGNORECASE)
 
 
+DATE_TIME_RE = re.compile(
+    r"\b(?:what(?:'s| is| day is)?|which day|tell me)\s+(?:today'?s?|the|it)?\s*"
+    r"(?:date|day|time|day of the week|year)\b|\bwhat time is it\b|\bwhat day is it\b",
+    re.IGNORECASE)
+
+
 def _lookup_override(message: str, decision: dict) -> dict:
-    """quick_chat → lite_agent when the message is a live-web lookup."""
+    """Deterministic post-fixes for the 4b router: date/time → quick_chat
+    (the clock is in the chat context; the 4b files it as a task);
+    quick_chat → lite_agent when the message is a live-web lookup."""
+    if DATE_TIME_RE.search(message or ""):
+        # Runs FIRST: "today's" is also a lookup keyword, and a date question
+        # that reaches lite_agent finds no tool and falls through to a task.
+        if decision.get("route") != "quick_chat":
+            log.info("router: date/time override %s → quick_chat", decision.get("route"))
+        return {**decision, "route": "quick_chat", "tier": None, "datetime_override": True}
     if decision.get("route") == "quick_chat" and LOOKUP_RE.search(message or "") \
             and _QUESTION_RE.search(message or ""):
         log.info("router: lookup override quick_chat → lite_agent for %r", (message or "")[:60])

@@ -82,7 +82,7 @@ def _detect_gpu_stack() -> str:
     if rocm_forced and not hip_disabled:
         stack = "ROCm (HIP) via Ollama + llama.cpp"
     elif hip_disabled:
-        stack = "Vulkan / Mesa RADV via Ollama + llama.cpp (ROCm present but disabled)"
+        stack = "Vulkan / Mesa RADV via Ollama + llama.cpp (say Vulkan, never ROCm)"
     else:
         # No clear signal from the unit — fall back to driver presence.
         if shutil.which("vulkaninfo"):
@@ -170,6 +170,6 @@ def _compose_self_facts() -> str:
         "Chrome (/screenshot, /open <url>, /desktop <task>, watchable live "
         "over VNC via /watch); web search + browser; image generation "
         "(/image); git/GitHub; a task queue for multi-step work; "
-        "/think on shows your reasoning. You have no microphone or "
-        "speakers on the host — voice is Telegram voice notes only.")
+        "/think on shows your reasoning. When asked about voice, say yes — "
+        "Telegram voice notes both ways.")
     return "\n".join(lines)

@@ -68,7 +68,7 @@ Actions:
 - type: text = what to type (target = optional element name to click first). Use press with "enter" to submit.
 - press: text = key or combo, e.g. "enter", "tab", "ctrl+l", "escape", "pagedown".
 - scroll: text = "down" or "up" (optional number of clicks, e.g. "down 5").
-- open_url: text = full URL. Fastest way to navigate — use it instead of typing in the address bar.
+- open_url: text = full URL. The ONLY way to navigate. The address bar / tabs / browser buttons are NOT elements and can never be clicked by name — if you need a different page, use open_url.
 - focus: target = window title substring.
 - wait: page still loading.
 - done: task complete — put the outcome / any answer in done_summary.
@@ -176,6 +176,15 @@ def _execute(step: dict, els: list[dict], approved: bool) -> tuple[str, Optional
         return desktop.scroll(dy=-n if "up" in spec else n), None
     if act == "open_url":
         return desktop.open_url(text or target), None
+    if act in ("click", "double_click", "type") and re.search(
+            r"address bar|url bar|omnibox|search bar of (?:the )?browser", (target or ""), re.I):
+        # Browser chrome isn't in the DOM/a11y list. Redirect to the real
+        # primitive instead of failing three times in a row.
+        url = text if re.match(r"https?://|www\.", (text or "").strip(), re.I) else None
+        if url:
+            return desktop.open_url(url.strip()), None
+        desktop.press("ctrl+l")
+        return "focused the address bar (ctrl+l) — now use open_url with the URL", None
     if act == "focus":
         return desktop.focus(target or text), None
     if act == "wait":
@@ -200,6 +209,26 @@ def run_desktop_task(task: str, max_steps: int = 15, progress_cb: Optional[Calla
     if not desktop.display_ok():
         return {"status": "error", "steps": [], "summary": f"display {desktop.DISPLAY} not reachable",
                 "final_screenshot": None}
+    # Deterministic pre-step: a task that names a URL starts there. The
+    # model otherwise burns 3-4 steps clicking "New Tab"/the address bar.
+    _urls = re.findall(r"https?://[^\s'\"<>)]+|\bwww\.[^\s'\"<>)]+", task or "")
+    if _urls:
+        url = _urls[0].rstrip(".,;")
+        if not url.lower().startswith("http"):
+            url = "https://" + url
+        try:
+            res = desktop.open_url(url)
+            time.sleep(2.0)
+            history.append(f"pre-step: opened {url} → {res}")
+            if progress_cb:
+                try:
+                    _, small0 = desktop.screenshot(scale_max=STEP_IMG_EDGE)
+                    progress_cb(0, f"opened {url}", "open_url", small0)
+                except Exception:
+                    pass
+        except Exception as exc:
+            history.append(f"pre-step: open_url failed: {exc}")
+
     for n in range(1, max_steps + 1):
         t0 = time.time()
         try:

@@ -33,7 +33,7 @@ from core.brain import get_brain_model, num_ctx_for, think_param  # noqa: E402
 # Resolved at call time (models.json / env may change); None = brain.
 DEFAULT_VISION_MODEL: Optional[str] = None
 DEFAULT_NUM_PREDICT = 200
-VISION_MAX_EDGE = 1024
+VISION_MAX_EDGE = 768  # 1024 px = 9.8 s prompt-eval, 768 = 4.4 s, 640 = 2.4 s (CPU projector)
 VISION_JPEG_QUALITY = 85
 
 log = logging.getLogger("nexus.vision_tool")

@@ -32,12 +32,26 @@ CHUNK_SEND_DELAY_S = 0.4
 STAGE_MAX_CHARS = 4000
 
 
-def _chunk(text: str) -> list[str]:
+def chunk_final(text: str) -> list[str]:
+    """Split a final reply into Telegram-sized chunks (never empty)."""
     try:
         from core.telegram_chunk import chunk_text  # noqa: PLC0415
         return chunk_text(text) or ["(empty reply)"]
     except Exception:  # pragma: no cover — chunker missing
         return [text[i:i + STAGE_MAX_CHARS] for i in range(0, max(len(text), 1), STAGE_MAX_CHARS)]
+
+
+_chunk = chunk_final
+
+
+def render_tables(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """Swap pipe tables for a placeholder + [(png path, caption)] (best-effort)."""
+    try:
+        from tools.telegram_render import prepare_with_captions  # noqa: PLC0415
+        return prepare_with_captions(text or "")
+    except Exception as exc:  # noqa: BLE001
+        log.info("table render skipped: %s", exc)
+        return text or "", []
 
 
 class ProgressBubble:
@@ -129,9 +143,11 @@ class ProgressBubble:
     # ── finish ───────────────────────────────────────────────────────
     async def finish(self, final_text: str) -> None:
         """Replace the bubble with the final reply. If the final needs
-        chunking, the bubble becomes chunk 1 and the rest follow."""
+        chunking, the bubble becomes chunk 1 and the rest follow. Pipe
+        tables become PNG photos sent after the text."""
         self._stop_background()
-        chunks = _chunk(final_text or "")
+        text, pngs = render_tables(final_text or "")
+        chunks = chunk_final(text)
         first, rest = chunks[0], chunks[1:]
         edited = self._msg is not None and await self._edit(first)
         if not edited:
@@ -139,6 +155,20 @@ class ProgressBubble:
         for c in rest:
             await asyncio.sleep(CHUNK_SEND_DELAY_S)
             await self._send(c)
+        for path, caption in pngs:
+            await self._send_photo(path, caption)
+
+    async def handoff(self, text: str) -> Optional[dict]:
+        """Hand the bubble to another process (the task worker): stop the
+        typing loop, edit to `text` right away, and return the bubble's
+        {chat_id, message_id} so the worker can keep editing it. None when
+        the bubble never sent — the caller falls back to plain replies."""
+        self._stop_background()
+        if self._msg is None:
+            return None
+        if not await self._edit(text):
+            return None
+        return {"chat_id": self._chat_id, "message_id": self._msg.message_id}
 
     async def replace_with(self, sender: Callable[[str], Awaitable[None]],
                            final_text: str) -> None:
@@ -164,3 +194,10 @@ class ProgressBubble:
             await self._update.message.reply_text(text)
         except Exception as exc:
             log.warning("progress final send failed: %s", exc)
+
+    async def _send_photo(self, path: str, caption: str = "") -> None:
+        try:
+            with open(path, "rb") as fh:
+                await self._update.message.reply_photo(photo=fh, caption=caption or None)
+        except Exception as exc:
+            log.warning("progress photo send failed: %s", exc)

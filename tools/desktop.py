@@ -214,18 +214,18 @@ _BUTTONS = {"left": "1", "middle": "2", "right": "3"}
 
 
 def move(x: int, y: int) -> str:
-    _xdo("mousemove", "--sync", str(int(x)), str(int(y)))
+    _xdo("mousemove", str(int(x)), str(int(y)))
     return f"moved to ({int(x)}, {int(y)})"
 
 
 def click(x: int, y: int, button: str = "left") -> str:
     b = _BUTTONS.get(button, button)
-    _xdo("mousemove", "--sync", str(int(x)), str(int(y)), "click", str(b))
+    _xdo("mousemove", str(int(x)), str(int(y)), "click", str(b))
     return f"clicked {button} at ({int(x)}, {int(y)})"
 
 
 def double_click(x: int, y: int) -> str:
-    _xdo("mousemove", "--sync", str(int(x)), str(int(y)),
+    _xdo("mousemove", str(int(x)), str(int(y)),
          "click", "--repeat", "2", "--delay", "80", "1")
     return f"double-clicked at ({int(x)}, {int(y)})"
 
@@ -268,7 +268,7 @@ def press(key: str, approve: bool = False) -> str:
 def scroll(dx: int = 0, dy: int = 0, x: int | None = None, y: int | None = None) -> str:
     """Scroll by wheel clicks. dy>0 = down, dy<0 = up; dx>0 = right."""
     if x is not None and y is not None:
-        _xdo("mousemove", "--sync", str(int(x)), str(int(y)))
+        _xdo("mousemove", str(int(x)), str(int(y)))
     if dy:
         _xdo("click", "--repeat", str(abs(int(dy))), "--delay", "30", "5" if dy > 0 else "4")
     if dx:

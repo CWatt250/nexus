@@ -89,20 +89,166 @@ async def _heartbeat_loop(task_id: str, started: float, tool_counter: list) -> N
         return
 
 
-def _make_tool_tracker():
-    """Tiny LangChain callback handler that bumps a counter + records the
-    most recent tool name. Used by the heartbeat loop for content."""
-    from langchain_core.callbacks import BaseCallbackHandler  # noqa: PLC0415
+def _make_tool_tracker(progress=None, *, think_on: bool = False,
+                       started: float | None = None):
+    """LangChain callback handler: bumps a counter + records the most
+    recent tool name (heartbeat content), and — when a live bubble
+    `progress` (workers.task_progress.TaskProgress) is attached — edits
+    it with a rolling window of `🔧 tool args` lines, `💭 reasoning`
+    glimpses (only when /think is on for that chat), and ✓ marks.
+    Also measures each LLM step so reasoning=True overhead is logged."""
+    from langchain_core.callbacks import AsyncCallbackHandler  # noqa: PLC0415
+    from workers.task_progress import (ProgressWindow, arg_preview,  # noqa: PLC0415
+                                       first_sentence)
 
     state = [0, ""]  # [count, last_tool_name]
+    t0 = started if started is not None else time.monotonic()
 
-    class ToolTracker(BaseCallbackHandler):
-        def on_tool_start(self, serialized, input_str, **kwargs):  # noqa: D401
+    class ToolTracker(AsyncCallbackHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.window = ProgressWindow(progress.title) if progress else None
+            self.last_activity = time.monotonic()
+            self.reasoning: list[str] = []      # first sentence per LLM step
+            self.step_stats: list[dict] = []    # per-step timing / token counts
+            self._llm_t0: dict = {}
+
+        def _push(self, *, idle: bool = False) -> None:
+            if progress is None or self.window is None:
+                return
+            text = self.window.render(time.monotonic() - t0, idle=idle)
+            asyncio.ensure_future(progress.stage(text))
+
+        def _touch(self) -> None:
+            self.last_activity = time.monotonic()
+
+        async def on_chat_model_start(self, serialized, messages, *, run_id, **kw):
+            self._llm_t0[run_id] = time.monotonic()
+
+        async def on_llm_start(self, serialized, prompts, *, run_id, **kw):
+            self._llm_t0[run_id] = time.monotonic()
+
+        async def on_llm_end(self, response, *, run_id, **kw):
+            dur = time.monotonic() - self._llm_t0.pop(run_id, time.monotonic())
+            gen = response.generations[0][0] if response.generations and response.generations[0] else None
+            msg = getattr(gen, "message", None)
+            reasoning = ""
+            if msg is not None:
+                reasoning = (getattr(msg, "additional_kwargs", {}) or {}).get("reasoning_content") or ""
+            info = getattr(gen, "generation_info", None) or {}
+            stat = {"step": len(self.step_stats) + 1, "llm_s": round(dur, 2),
+                    "reasoning_chars": len(reasoning),
+                    "eval_count": info.get("eval_count"),
+                    "prompt_eval_count": info.get("prompt_eval_count"),
+                    "content_chars": len(getattr(msg, "content", "") or "")}
+            self.step_stats.append(stat)
+            log.info("llm step %(step)d: %(llm_s).1fs, eval_count=%(eval_count)s, "
+                     "reasoning_chars=%(reasoning_chars)d, content_chars=%(content_chars)d", stat)
+            if reasoning:
+                glimpse = first_sentence(reasoning, 140)
+                self.reasoning.append(glimpse)
+                if think_on and self.window is not None:
+                    self.window.add(f"💭 {glimpse}")
+                    self._push()
+            self._touch()
+
+        async def on_tool_start(self, serialized, input_str, *, inputs=None, **kw):
             name = (serialized or {}).get("name") or "(tool)"
             state[0] += 1
             state[1] = name
+            if self.window is not None:
+                self.window.add(f"🔧 {name} {arg_preview(inputs if inputs is not None else input_str)}".rstrip())
+                self._push()
+            self._touch()
+
+        async def on_tool_end(self, output, **kw):
+            if self.window is not None:
+                self.window.mark_done()
+                self._push()
+            self._touch()
+
+        async def on_tool_error(self, error, **kw):
+            self._touch()
+
+        def think_trail(self) -> str:
+            """💭 trail for the separate trailing message when /think is on."""
+            if not self.reasoning:
+                return ""
+            return "💭\n" + "\n".join(f"> {r}" for r in self.reasoning[-8:])
 
     return ToolTracker(), state
+
+
+async def _idle_loop(progress, tracker) -> None:
+    """Bubble-mode heartbeat: after IDLE_HEARTBEAT_S with no tool/LLM
+    activity, edit the bubble to 'still thinking… 1m10s'. Replaces the
+    5-min task_notifier heartbeat (which would be a second message)."""
+    from workers.task_progress import IDLE_HEARTBEAT_S  # noqa: PLC0415
+    last_hb = time.monotonic()
+    try:
+        while True:
+            await asyncio.sleep(5)
+            now = time.monotonic()
+            if now - tracker.last_activity >= IDLE_HEARTBEAT_S and now - last_hb >= IDLE_HEARTBEAT_S:
+                tracker._push(idle=True)
+                last_hb = now
+    except asyncio.CancelledError:
+        return
+
+
+def _is_fresh(created_at: str | None) -> bool:
+    """True when the row was enqueued within FRESH_TASK_S — the listener
+    may still be writing its bubble handoff, so the worker waits for it."""
+    from workers.task_progress import FRESH_TASK_S  # noqa: PLC0415
+    try:
+        ts = datetime.fromisoformat(created_at or "")
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds() < FRESH_TASK_S
+    except ValueError:
+        return False
+
+
+def _note_history(progress, task_id: str, *, ok: bool, timed_out: bool, reply: str) -> None:
+    """Close the loop in the chat history so the brain knows the queued
+    task is DONE (pairs with the listener's "[queued task …]" turn)."""
+    chat_id = getattr(progress, "chat_id", None)
+    if not chat_id:
+        return
+    try:
+        from core import telegram_chats as _tcs  # noqa: PLC0415
+        if ok:
+            body = f"[task {task_id} finished — result delivered: {(reply or '')[:300]}]"
+        elif timed_out:
+            body = f"[task {task_id} timed out — nothing delivered]"
+        else:
+            body = f"[task {task_id} failed — nothing delivered]"
+        _tcs.write_turn(int(chat_id), "assistant", body)
+    except Exception as exc:  # history is best-effort
+        log.warning("history note for task %s failed: %s", task_id, exc)
+
+
+async def _finish_bubble(progress, tracker, task_id: str, *, ok: bool, timed_out: bool,
+                         reply: str, err: str, elapsed: float, think_on: bool) -> None:
+    """Terminal edit of the live bubble. The deliverable replaces the
+    bubble; the 💭 trail (when /think is on) goes out as a separate
+    trailing message so the deliverable stays clean."""
+    from workers import task_notifier  # noqa: PLC0415
+    fe = task_notifier._fmt_elapsed
+    _note_history(progress, task_id, ok=ok, timed_out=timed_out, reply=reply)
+    if ok:
+        await progress.finish(reply or "", elapsed_s=elapsed)
+        if think_on:
+            trail = tracker.think_trail() or task_notifier._work_trail(task_id)
+            if trail:
+                await progress.send(trail if trail.startswith("💭") else f"💭\n{trail}")
+    elif timed_out:
+        await progress.fail(f"⚠️ ran out of time on that one ({fe(elapsed)}). "
+                            f"Say 'retry {task_id}' and I'll give it a longer leash.")
+    else:
+        log.warning("task %s failed after %.1fs: %s", task_id, elapsed, err)
+        await progress.fail(f"❌ that one didn't make it — {task_notifier._humanize_error(err)} "
+                            f"after {fe(elapsed)}. Say 'retry {task_id}' and I'll take another run at it.")
 
 
 def _resolve_timeout(user_text: str) -> tuple[int, str]:
@@ -167,7 +313,23 @@ async def _run_one(row: dict) -> None:
                                 task_id=task_id, route=route, input=user_text[:500])
     except Exception:
         pass
-    agent = await nexus.build_agent_async(model)
+    # Live bubble handed off by the Telegram listener (None for CLI/API
+    # enqueues → task_notifier sends a new message instead).
+    from workers import task_progress, task_notifier  # noqa: PLC0415
+    progress = await task_progress.TaskProgress.for_task(
+        task_id, fresh=_is_fresh(row.get("created_at")))
+    if progress is not None:
+        try:
+            from workers.conversation_handler import get_think_pref  # noqa: PLC0415
+            think_on = get_think_pref(progress.chat_id)
+        except Exception:
+            think_on = False
+    else:
+        think_on = task_notifier._think_on()
+
+    # TASK-route agents run with reasoning on: narration → reasoning_content,
+    # content = deliverable. See nexus._make_llm.
+    agent = await nexus.build_agent_async(model, reasoning=True)
 
     _publish({
         "ts": _now(), "event": "started", "task_id": task_id,
@@ -179,7 +341,7 @@ async def _run_one(row: dict) -> None:
         input_preview=user_text[:200],
     )
 
-    tracker, tool_state = _make_tool_tracker()
+    tracker, tool_state = _make_tool_tracker(progress, think_on=think_on, started=started)
     config = {"configurable": {"thread_id": thread_id}, "callbacks": [tracker]}
     # Phase 39 — the queue row stores the user's message VERBATIM (the
     # enqueue-time "[Current date and time: ...]" prefix is gone).
@@ -200,9 +362,13 @@ async def _run_one(row: dict) -> None:
     agent_text = f"{dt_line}\n\n{context_refs.expand_refs(user_text)}"
     lc_msgs = nexus.fast_mode_messages(agent_text, route=route)
 
-    heartbeat_task = asyncio.create_task(
-        _heartbeat_loop(task_id, started, tool_state)
-    )
+    if progress is not None:
+        progress.start()
+        heartbeat_task = asyncio.create_task(_idle_loop(progress, tracker))
+    else:
+        heartbeat_task = asyncio.create_task(
+            _heartbeat_loop(task_id, started, tool_state)
+        )
 
     ok = True
     err = ""
@@ -247,6 +413,11 @@ async def _run_one(row: dict) -> None:
 
     elapsed = time.monotonic() - started
     tool_calls = sum(1 for m in msgs if m.__class__.__name__ == "ToolMessage")
+    if tracker.step_stats:
+        log.info("task %s reasoning cost: %d llm steps, llm %.1fs total, %d reasoning chars",
+                 task_id, len(tracker.step_stats),
+                 sum(s["llm_s"] for s in tracker.step_stats),
+                 sum(s["reasoning_chars"] for s in tracker.step_stats))
 
     agent_metrics.record_agent_turn(
         task_id=task_id,
@@ -290,14 +461,16 @@ async def _run_one(row: dict) -> None:
     # Telegram message. task_notifier handles formatting + 3000-char
     # chunking + Markdown fallback. Best-effort: never raises.
     try:
-        from workers import task_notifier  # noqa: PLC0415
         last_step = ""
         if msgs:
             for m in reversed(msgs):
                 if m.__class__.__name__ == "ToolMessage":
                     last_step = getattr(m, "name", "") or "(tool)"
                     break
-        if ok:
+        if progress is not None:
+            await _finish_bubble(progress, tracker, task_id, ok=ok, timed_out=timed_out,
+                                 reply=reply, err=err, elapsed=elapsed, think_on=think_on)
+        elif ok:
             await task_notifier.notify_done(task_id, reply or "", elapsed_s=elapsed)
         elif timed_out:
             await task_notifier.notify_timeout(task_id, elapsed_s=elapsed, last_step=last_step)

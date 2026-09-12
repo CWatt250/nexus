@@ -15,10 +15,80 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger("nexus.task_notifier")
+
+# ── deliverable-only backstop ────────────────────────────────────────
+# With reasoning=True the model's narration lands in reasoning_content,
+# not content. These heuristics catch what still leaks: a leading
+# "I have enough to build the table" paragraph and a trailing
+# "Want me to…?" offer.
+_NARRATION_RE = re.compile(
+    r"\b(?:I have enough|I now have|I'?ve got enough|I need|I don'?t need"
+    r"|results? (?:are|is|were)|let me|the signal|noise"
+    r"|I can (?:now )?(?:build|compile|put together|answer)"
+    r"|enough to (?:build|write|answer|give)|I'?ll (?:build|put|compile|give))\b",
+    re.IGNORECASE,
+)
+_OFFER_RE = re.compile(
+    r"^\s*(?:want me to|should i|shall i|let me know|would you like|do you want"
+    r"|need me to|say the word|just say|happy to|i can also)\b",
+    re.IGNORECASE,
+)
+_STRUCTURAL_RE = re.compile(r"^\s*(?:\||#|[-*•]\s|\d+[.)]\s|```)")
+
+
+def _is_structural(para: str) -> bool:
+    return bool(_STRUCTURAL_RE.match(para))
+
+
+def _looks_like_narration(para: str) -> bool:
+    if _is_structural(para) or len(para) > 900:
+        return False
+    hits = len(_NARRATION_RE.findall(para))
+    return hits >= 2 or bool(re.search(r"\bI have enough\b", para, re.IGNORECASE))
+
+
+_LAST_QUESTION_RE = re.compile(r"(?:^|(?<=[.!?])\s+)([^.!?\n]+\?)\s*$")
+
+
+def _drop_trailing_offer(para: str) -> str:
+    """Strip offer/question sentences off the END of a paragraph."""
+    para = para.strip()
+    if _is_structural(para):
+        return para
+    while True:
+        m = _LAST_QUESTION_RE.search(para)
+        if not m or not _OFFER_RE.match(m.group(1)):
+            return para
+        para = para[:m.start()].rstrip()
+
+
+def strip_narration(text: str) -> str:
+    """Deliverable only: drop a leading process-narration paragraph (only
+    when something follows it) and any trailing question/offer."""
+    if not text or not text.strip():
+        return text or ""
+    paras = re.split(r"\n\s*\n", text.strip())
+    # Narration glued to the table with a single newline: split it off.
+    first_lines = paras[0].splitlines()
+    cut = next((i for i, ln in enumerate(first_lines) if i and _is_structural(ln)), None)
+    if cut:
+        paras[0:1] = ["\n".join(first_lines[:cut]), "\n".join(first_lines[cut:])]
+    if len(paras) >= 2 and _looks_like_narration(paras[0]):
+        paras = paras[1:]
+    while paras:
+        kept = _drop_trailing_offer(paras[-1])
+        if kept == paras[-1].strip():
+            break
+        if kept:
+            paras[-1] = kept
+            break
+        paras.pop()
+    return "\n\n".join(p.strip() for p in paras).strip()
 
 # Telegram's hard limit is 4096 chars. We split bodies at 3000 to leave
 # room for the header + safety margin and to match user spec.
@@ -134,21 +204,43 @@ def _work_trail(task_id: str) -> str:
     return "\n".join(f"> {b}" for b in bits)
 
 
+def done_header(elapsed_s: float) -> str:
+    return f"✅ done in {_fmt_elapsed(elapsed_s)}"
+
+
+def _render_tables(text: str) -> tuple[str, list[tuple[str, str]]]:
+    try:
+        from tools.telegram_render import prepare_with_captions  # noqa: PLC0415
+        return prepare_with_captions(text)
+    except Exception as exc:  # noqa: BLE001
+        log.info("table render skipped: %s", exc)
+        return text, []
+
+
 async def notify_done(task_id: str, output: str, *, elapsed_s: float) -> None:
-    """Friendly completion header, then the full output, chunked at 3000
-    chars. When /think is on, a short 💭 trail (last tools + why) rides
-    under the header."""
-    chunks = _chunks(output or "(empty output)")
+    """Fallback path (no live bubble — CLI/API enqueue): completion header,
+    the deliverable chunked at 3000 chars, tables as photos. When /think
+    is on, the 💭 trail goes out as a SEPARATE trailing message so the
+    deliverable stays clean."""
+    body = strip_narration(output or "") or "(empty output)"
+    body, pngs = _render_tables(body)
+    chunks = _chunks(body)
     n = len(chunks)
     suffix = "" if n == 1 else f" (1/{n})"
-    header = f"✅ Done ({_fmt_elapsed(elapsed_s)}){suffix}"
+    await _send(f"{done_header(elapsed_s)}{suffix}\n\n{chunks[0]}")
+    for i, c in enumerate(chunks[1:], start=2):
+        await _send(f"…continued ({i}/{n})\n\n{c}")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    for path, caption in pngs:
+        try:
+            from workers.task_progress import send_photo  # noqa: PLC0415
+            await send_photo(chat_id, path, caption)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("table photo send failed: %s", exc)
     if _think_on():
         trail = _work_trail(task_id)
         if trail:
-            header += f"\n💭\n{trail}"
-    await _send(f"{header}\n\n{chunks[0]}")
-    for i, c in enumerate(chunks[1:], start=2):
-        await _send(f"…continued ({i}/{n})\n\n{c}")
+            await _send(f"💭\n{trail}")
 
 
 async def notify_failed(task_id: str, error: str, *, elapsed_s: float,

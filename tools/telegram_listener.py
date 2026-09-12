@@ -124,8 +124,11 @@ async def _stream_quick_chat_reply(update: Update, message: str,
 async def _finish_bubble(update: Update, bubble, text: str) -> None:
     """Final delivery: rich markdown (tables/headings) replaces the bubble
     with a native rich message; everything else edits the bubble in
-    place, chunked if long."""
-    if _has_rich_constructs(text) and len(text) <= TELEGRAM_RICH_LIMIT:
+    place, chunked if long. Pipe tables take the bubble.finish() route:
+    text edits the bubble, each table lands as a PNG photo (raw pipes are
+    unreadable on a phone)."""
+    from tools.telegram_render import has_table  # noqa: PLC0415
+    if _has_rich_constructs(text) and len(text) <= TELEGRAM_RICH_LIMIT and not has_table(text):
         try:
             await bubble.replace_with(
                 lambda md: _send_rich_message(update.effective_chat.id, md), text)
@@ -1189,6 +1192,35 @@ async def _deliver_result(update: Update, bubble, result: dict,
                           chat_id: int, user_message: str, on_reply=None) -> None:
     reply = result.get("reply", "") or "Came back empty — say that again?"
     logger.info("route kind=%s chat_id=%s", result.get("kind"), chat_id)
+    task_id = (result.get("meta") or {}).get("task_id")
+    if result.get("kind") == "task" and task_id:
+        # Hand the bubble to the task worker: it keeps editing this same
+        # message (tool lines, heartbeats) and replaces it with the result.
+        from workers import task_progress  # noqa: PLC0415
+        title = task_progress.derive_title(user_message)
+        handoff = await bubble.handoff(title)
+        if handoff:
+            try:
+                task_progress.write_handoff(task_id, title=title, **handoff)
+                reply = title
+            except OSError as e:
+                logger.warning("task handoff write failed: %s", e)
+                await bubble.finish(reply)
+        else:
+            await bubble.finish(reply)
+        try:
+            from core import telegram_chats as _tcs
+            # History must read as STATE, not as a standing promise: the
+            # brain otherwise re-reads "On it — I'll ping you" forever and
+            # keeps promising (observed 2026-09-12). The worker appends a
+            # matching "[task … finished]" turn when it completes.
+            _tcs.write_turn(chat_id, "assistant",
+                            f"[queued task {task_id}: {user_message[:140]} — "
+                            "the result is posted separately when it finishes]")
+        except Exception as e:
+            logger.warning("telegram_chats assistant-write failed: %s", e)
+        await _emit_reply(update, reply, on_reply)
+        return
     if result.get("kind") == "chat":
         _after_chat_turn(chat_id, user_message, reply)
     else:
