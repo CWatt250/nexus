@@ -1,0 +1,20 @@
+[Unit]
+Description=Nexus headless desktop session on Xvfb :99 (openbox + tint2 + Chrome)
+After=nexus-xvfb.service
+Requires=nexus-xvfb.service
+
+[Service]
+User=cwatt250
+Group=cwatt250
+Type=simple
+Environment=DISPLAY=:99
+Environment=HOME=/home/cwatt250
+# No Wayland on :99 — make sure Chrome never picks the ozone/wayland path.
+UnsetEnvironment=WAYLAND_DISPLAY XDG_SESSION_TYPE
+ExecStart=/home/cwatt250/AI_Agent/scripts/desktop_session.sh
+Restart=always
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

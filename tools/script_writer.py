@@ -26,6 +26,16 @@ from langchain_core.tools import tool
 
 from core import secrets
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 log = logging.getLogger("nexus.script_writer")
 
 ROOT = Path.home() / "AI_Agent"
@@ -212,7 +222,7 @@ def _ollama_generate(topic: str, duration_seconds: int, tone: str) -> tuple[str,
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        options={"temperature": 0.7, "num_predict": 1500, "num_ctx": 8192},
+        options={"temperature": 0.7, "num_predict": 1500, "num_ctx": _nctx(OLLAMA_MODEL)},
         stream=False,
         think=False,
         keep_alive=-1,

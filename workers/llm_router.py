@@ -162,6 +162,11 @@ quick_chat — greetings, small talk, thanks, opinions, quick factual
   (Colton's name, role at Irex Argus, projects, preferences), date/time
   questions, vague hype with no concrete object ("wanna build something
   cool?", "let's ship something" with no named thing).
+  ALSO quick_chat: opinions, statements, and suggestions — "we should
+  use X", "I think Y is better", "you should try Z", "what do you think
+  about W", "maybe we switch to Q". Those want a reply, not work. A
+  task/dispatch requires an IMPERATIVE build/fix/create/research request
+  with a specific object. Musing about a change is not asking for it.
 
 lite_agent — quick factual question needing exactly ONE tool call NOW:
   weather lookups, one web search ("search for X", "look up X",
@@ -198,6 +203,14 @@ tier — only set for dispatch; null for every other route.
 recon_mode — true when the message asks for read-only investigation,
   audit, recon, or report-only output, or says do-not-edit/modify/push.
   Otherwise false.
+
+Examples:
+"we should probably move BidWatt to Drizzle" → {"route":"quick_chat","tier":null,"recon_mode":false}
+"I think the router is over-escalating lately" → {"route":"quick_chat","tier":null,"recon_mode":false}
+"you should add caching to the wiki path" → {"route":"quick_chat","tier":null,"recon_mode":false}
+"add caching to the wiki path" → {"route":"dispatch","tier":"local","recon_mode":false}
+"build a flappy bird clone in one html file" → {"route":"dispatch","tier":"local","recon_mode":false}
+"what's the weather in Pasco" → {"route":"lite_agent","tier":null,"recon_mode":false}
 
 Respond with ONLY the JSON object. No prose."""
 

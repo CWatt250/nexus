@@ -10,6 +10,7 @@ modify ~/.gitconfig or the repo's stored config.
 from __future__ import annotations
 
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -55,8 +56,32 @@ def _stage_tracked() -> list[str]:
     return [ln for ln in r.stdout.splitlines() if ln.strip()]
 
 
-def auto_commit(message: str | None = None) -> bool:
-    """Stage + commit the tracked paths. Returns True if a commit was made."""
+# Phase 1 — pushes are throttled: auto_commit() commits every turn but only
+# pushes when the last push is older than this (or when called with
+# push=True). A push costs a network round-trip + up to 60 s timeout, which
+# is dead time on every chat turn.
+PUSH_INTERVAL_S = 600
+_LAST_PUSH_TS = REPO / ".git" / "nexus_last_push"   # inside .git → never shows in status
+
+
+def _last_push_age() -> float:
+    """Seconds since the last recorded push (inf if never)."""
+    try:
+        return time.time() - _LAST_PUSH_TS.stat().st_mtime
+    except OSError:
+        return float("inf")
+
+
+def _push_due() -> bool:
+    return _last_push_age() > PUSH_INTERVAL_S
+
+
+def auto_commit(message: str | None = None, *, push: bool = False) -> bool:
+    """Stage + commit the tracked paths. Returns True if a commit was made.
+
+    Pushes afterwards only when `push=True` or the last push was more than
+    PUSH_INTERVAL_S ago (never on every turn). A push failure never masks a
+    successful commit."""
     if not is_repo():
         return False
     staged = _stage_tracked()
@@ -70,18 +95,35 @@ def auto_commit(message: str | None = None) -> bool:
             summary += f" (+{len(names) - 5} more)"
         message = f"nexus: {ts} — {summary}"
     r = _git("commit", "-m", message)
-    return r.returncode == 0
+    committed = r.returncode == 0
+    if committed and (push or _push_due()):
+        try:
+            push_if_remote()
+        except Exception:
+            pass
+    return committed
 
 
 def push_if_remote() -> bool:
-    """Push HEAD to origin if a remote is configured. Silent no-op otherwise."""
+    """Push HEAD to origin if a remote is configured. Silent no-op otherwise.
+    Explicit callers always push; the throttle only applies to auto_commit."""
     if not is_repo():
         return False
     r = _git("remote")
     if r.returncode != 0 or not r.stdout.strip():
         return False
-    r2 = _git("push", timeout=60)
-    return r2.returncode == 0
+    try:
+        r2 = _git("push", timeout=60)
+    except subprocess.TimeoutExpired:
+        return False
+    if r2.returncode == 0:
+        try:
+            _LAST_PUSH_TS.parent.mkdir(parents=True, exist_ok=True)
+            _LAST_PUSH_TS.touch()
+        except OSError:
+            pass
+        return True
+    return False
 
 
 def get_log(n: int = 10) -> list[str]:

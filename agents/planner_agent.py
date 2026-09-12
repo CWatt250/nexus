@@ -22,6 +22,16 @@ import ollama
 OLLAMA_URL = "http://localhost:11434"
 PLANNER_MODEL = "qwen3:4b"
 
+
+def _num_ctx(model: str) -> int:
+    """core.brain.num_ctx_for — the ONE num_ctx per model (a mismatched
+    literal forces an Ollama runner reload)."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
 _ROOT = Path(__file__).resolve().parent.parent
 _TOOLS_MD_PATH = _ROOT / "TOOLS.md"
 
@@ -83,7 +93,7 @@ def _ask_for_clarification(msg: str) -> list[str]:
             model=PLANNER_MODEL,
             messages=[{"role": "user", "content": prompt}],
             stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.1, "num_predict": 240, "num_ctx": 4096},
+            options={"temperature": 0.1, "num_predict": 240, "num_ctx": _num_ctx(PLANNER_MODEL)},
         )
     except Exception:
         # Default questions if the LLM is unavailable.
@@ -131,7 +141,7 @@ def _short_plan(msg: str) -> str:
             model=PLANNER_MODEL,
             messages=[{"role": "user", "content": prompt}],
             stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.1, "num_predict": 400, "num_ctx": 4096},
+            options={"temperature": 0.1, "num_predict": 400, "num_ctx": _num_ctx(PLANNER_MODEL)},
         )
     except Exception as exc:
         return f"_(planner unavailable: {type(exc).__name__})_"

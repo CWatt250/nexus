@@ -1,28 +1,67 @@
-"""Phase 16.7 — vision tool wrapping qwen2.5vl:7b.
+"""Phase 16.7 / Phase 3 — vision tool on the brain's built-in projector.
 
 Exposes describe_image(path) and ask_about_image(path, question) as
 LangGraph tools. Sibling to tools/computer_use_tool.find_on_screen_vision
 (which is screen-coordinate-specific); this one handles arbitrary
 image files.
 
-Backend: Ollama-served qwen2.5vl:7b. Loads in ~5s warm, ~13 GB on the
-GPU partition. Returns a clear 'vision unavailable' string if the
-model isn't pulled, so callers don't need to handle exceptions.
+Backend (Phase 3): the resident brain (Ornith-1.5, `core.brain.get_brain_model()`)
+which ships a CLIP projector — no separate VL model to load. Override with
+NEXUS_VISION_MODEL. The projector runs on CPU on this iGPU, so every
+image is downscaled to ≤1024 px long edge / JPEG q85 before the call
+(a 919x2000 raw screenshot = 3,015 image tokens = 196 s; downscaled it
+is ~220 tokens). Returns a clear 'vision ...' string on any failure.
 """
 from __future__ import annotations
 
 import base64
+import io
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Optional
 
 from langchain_core.tools import tool
 
-DEFAULT_VISION_MODEL = "qwen2.5vl:7b"
-DEFAULT_NUM_CTX = 4096
+_ROOT = Path.home() / "AI_Agent"
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from core.brain import get_brain_model, num_ctx_for, think_param  # noqa: E402
+
+# Resolved at call time (models.json / env may change); None = brain.
+DEFAULT_VISION_MODEL: Optional[str] = None
 DEFAULT_NUM_PREDICT = 200
+VISION_MAX_EDGE = 1024
+VISION_JPEG_QUALITY = 85
 
 log = logging.getLogger("nexus.vision_tool")
+
+
+def vision_model() -> str:
+    """Model used for vision calls: NEXUS_VISION_MODEL env, else the brain."""
+    return os.environ.get("NEXUS_VISION_MODEL") or get_brain_model()
+
+
+def downscale_bytes(raw: bytes, max_edge: int = VISION_MAX_EDGE,
+                    quality: int = VISION_JPEG_QUALITY) -> bytes:
+    """≤max_edge on the long side (LANCZOS), JPEG q85. Falls back to the
+    raw bytes if PIL can't decode them."""
+    try:
+        from PIL import Image  # noqa: PLC0415
+        with Image.open(io.BytesIO(raw)) as im:
+            im = im.convert("RGB")
+            w, h = im.size
+            scale = max(w, h) / float(max_edge)
+            if scale > 1.0:
+                im = im.resize((round(w / scale), round(h / scale)), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=quality, optimize=True)
+            return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("vision_tool: downscale failed (%s) — sending raw", exc)
+        return raw
 
 
 def _read_image_bytes(path: str) -> Optional[bytes]:
@@ -38,25 +77,34 @@ def _read_image_bytes(path: str) -> Optional[bytes]:
 
 
 def _vision_chat(prompt: str, image_b64: str, *,
-                 model: str = DEFAULT_VISION_MODEL,
-                 num_ctx: int = DEFAULT_NUM_CTX,
+                 model: Optional[str] = DEFAULT_VISION_MODEL,
+                 num_ctx: Optional[int] = None,
                  num_predict: int = DEFAULT_NUM_PREDICT) -> str:
     """Single Ollama VL call. Returns the response text or a clear
-    error string starting with 'vision'. Never raises."""
+    error string starting with 'vision'. Never raises.
+    num_ctx is always `core.brain.num_ctx_for(model)` (one ctx per model —
+    a different value forces an Ollama runner reload); the param is kept
+    for signature compatibility and ignored."""
     try:
         import ollama  # noqa: PLC0415
     except Exception as exc:
         return f"vision unavailable: ollama package missing ({exc})"
+    model = model or vision_model()
+    # Downscale here so EVERY caller (incl. tools/visual_verify) obeys the
+    # ≤1024px rule — a raw screenshot costs minutes on the CPU projector.
     try:
-        resp = ollama.Client(host="http://localhost:11434").chat(
+        image_b64 = base64.b64encode(downscale_bytes(base64.b64decode(image_b64))).decode("ascii")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("vision_tool: could not downscale payload (%s)", exc)
+    try:
+        resp = ollama.Client(host="http://localhost:11434", timeout=300).chat(
             model=model,
             messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
             stream=False,
-            # GPU-resident (the old num_gpu=0 CPU pin measured 1.76 tok/s —
-            # a 64 GB-carve-era workaround; GTT is 115 GB now).
-            options={"temperature": 0.2, "num_ctx": num_ctx,
+            think=think_param(model),
+            options={"temperature": 0.2, "num_ctx": num_ctx_for(model),
                      "num_predict": num_predict},
-            keep_alive=300,  # keep VL model warm for ~5min between calls
+            keep_alive=-1,
         )
     except Exception as exc:
         msg = str(exc).lower()
@@ -69,7 +117,7 @@ def _vision_chat(prompt: str, image_b64: str, *,
     return (resp.get("message", {}) or {}).get("content", "").strip() or "(no response)"
 
 
-def describe_image_core(path: str, *, model: str = DEFAULT_VISION_MODEL) -> str:
+def describe_image_core(path: str, *, model: Optional[str] = DEFAULT_VISION_MODEL) -> str:
     """Direct entry point used by ask_about_image and unit tests."""
     raw = _read_image_bytes(path)
     if raw is None:
@@ -88,8 +136,8 @@ def describe_image_core(path: str, *, model: str = DEFAULT_VISION_MODEL) -> str:
 def describe_image(path: str) -> str:
     """Describe what's in an image using a vision-language model.
 
-    Loads the image at `path`, sends it to Ollama-served qwen2.5vl:7b,
-    and returns a 1-2 sentence description of the actual visual
+    Loads the image at `path`, downscales it, sends it to the local brain's
+    vision projector, and returns a 1-2 sentence description of the actual visual
     content (colors, shapes, text, subjects). For screen coordinates
     use `find_on_screen_vision` instead.
 
@@ -104,7 +152,7 @@ def describe_image(path: str) -> str:
 
 
 def ask_about_image_core(path: str, question: str, *,
-                         model: str = DEFAULT_VISION_MODEL) -> str:
+                         model: Optional[str] = DEFAULT_VISION_MODEL) -> str:
     """Direct entry point used by the @tool and the Telegram photo handler."""
     raw = _read_image_bytes(path)
     if raw is None:

@@ -46,6 +46,34 @@ log = logging.getLogger("nexus.conversation_handler")
 
 HANDLER_MODEL = "qwen3:4b"
 
+# ── Progress reporting ───────────────────────────────────────────────────
+# route_message(progress=cb) installs a callable(str) in a contextvar; the
+# routing stages and lite_agent call `_progress("🔧 web_search")` etc. The
+# Telegram listener turns those into edits of its progress bubble.
+# contextvars propagate into asyncio.to_thread, so this is thread-safe.
+import contextvars  # noqa: E402
+_PROGRESS_CB: contextvars.ContextVar = contextvars.ContextVar("nexus_progress_cb", default=None)
+
+
+def _progress(text: str) -> None:
+    cb = _PROGRESS_CB.get()
+    if cb is None:
+        return
+    try:
+        cb(text)
+    except Exception:  # never let a UI hiccup break routing
+        pass
+
+
+_ROUTE_STAGE_TEXT = {
+    "lite_agent": "🔎 looking that up",
+    "task": "📋 queuing that as a task",
+    "dispatch": "🛠️ handing that to the builder",
+    "status": "📋 checking the queue",
+    "wiki": "📚 checking the wiki",
+    "quick_chat": "✍️ writing",
+}
+
 # Phase 39 — local brain transplant. The brain model (core/brain.py,
 # gpt-oss:120b) is primary for quick_chat, routing, and lite_agent.
 # DeepSeek (the Phase 32 primary) is demoted to disabled-by-default —
@@ -189,58 +217,22 @@ def load_soul() -> str:
 load_soul()
 
 
-# Output / capability rules specific to the qwen3:4b quick_chat path.
-# Personality, tone, length, and slang were moved into SOUL.md; only
-# the bits that wouldn't make sense in a global persona file stay here:
-#   - format constraints required by JSON-mode + tight num_predict,
-#   - the routing escape ("Let me dig into that properly") that's a
-#     quick_chat-specific protocol with route_message,
-#   - tool-surface awareness so the model doesn't deny capabilities.
+# Two-line output rule appended to SOUL for the chat path. Everything else
+# that used to live here (forbidden-opener lists, capability lectures) was
+# qwen3:4b scaffolding — the brain doesn't need it, and every token in the
+# prompt is re-prefilled each turn on Ornith's hybrid attention.
 _QUICK_CHAT_OUTPUT_RULES = (
-    # Strict prefix — qwen3:4b ignores 'no preamble' phrasing but obeys
-    # this when paired with format=json + low num_predict.
-    "OUTPUT ONLY THE FINAL ANSWER. Do NOT explain your reasoning. "
-    "Do NOT count sentences. Do NOT think out loud. Do NOT meta-comment. "
-    "Respond as if the user can only see your final words. If you catch "
-    "yourself starting to reason, STOP and just give the answer.\n\n"
-    # Phase 30 — qwen3:4b kept emitting untagged CoT after the SOUL.md
-    # tone fix (probably triggered by the new "Reply vocabulary" section
-    # being verbose enough to invite analysis). Generic "don't reason"
-    # rules slid off; the model honors a literal anti-pattern list.
-    "FORBIDDEN OPENERS — do NOT start the reply with these or anything "
-    "structurally like them:\n"
-    "  - 'User says ...' / 'The user is asking ...' / 'User asked ...'\n"
-    "  - 'Best reply: \"...\"' / 'Final reply: ...' / 'My reply: ...'\n"
-    "  - 'First, gotta ...' / 'First, check ...' / 'First, match his energy'\n"
-    "  - 'I must respond ...' / 'I should respond ...' / 'I need to ...'\n"
-    "  - 'Key points: ...' / 'Possible replies: ...' / 'Following the rules ...'\n"
-    "  - 'We are in a situation where ...' / 'As Nexus, I ...' / 'Classic Colton'\n"
-    "  - 'Okay, let's break this down ...' / 'Let me think about this'\n"
-    "Just emit the reply itself. No analysis sentence in front of it. No "
-    "quoted 'Best reply:' framing. No 'Why?' explanation after. The first "
-    "character of your response is the first character of the answer.\n\n"
-    "CAPABILITY RULES (critical):\n"
-    "- You DO have tools — browser_tool, web search, GitHub, file read/write, "
-    "  terminal, RAG memory, computer use, and ~85 more. Never say 'I can't "
-    "  browse the web' or 'I don't have access to GitHub' or 'I can't view "
-    "  files'. Those are wrong.\n"
-    "- If the user asks you to do something that requires real-world data or "
-    "  tool calls (browse a URL, look up live data, fetch external info, view "
-    "  files, query a database, run a command), do NOT deny capability and do "
-    "  NOT pretend to do it. Reply EXACTLY: 'Let me dig into that properly — "
-    "  one sec' (and the system will re-route to the full agent). This is "
-    "  the ONE place where 'dig into that' is allowed — never elsewhere.\n"
-    "- For 'what can you do' / 'what tools do you have' / 'do you have "
-    "  access to X', answer concretely from what you know about Nexus's tool "
-    "  surface (web/GitHub/files/code/memory/computer-use/audio/image/etc.) "
-    "  rather than reciting AI-assistant boilerplate."
+    "Output only the reply itself — no reasoning, no preamble, no meta-commentary.\n"
+    "You have tools (web, GitHub, files, shell, memory, computer use) via the "
+    "task path; never deny having them, and never claim to have checked "
+    "something you didn't."
 )
 
 
 def get_quick_chat_system_prompt() -> str:
-    """Compose the qwen3:4b quick_chat system prompt: full SOUL.md
-    (identity + tone + length + slang + uncertainty + conventions)
-    followed by quick_chat-specific output and capability rules."""
+    """The BYTE-STABLE chat system prompt: SOUL.md + the two-line output
+    rule. Nothing volatile lives here — self-facts, memory, and the clock
+    go in `_build_chat_context_block`, sent as a trailing system message."""
     soul = _SOUL_CACHE if _SOUL_CACHE is not None else load_soul()
     if soul:
         return f"{soul}\n\n---\n\n{_QUICK_CHAT_OUTPUT_RULES}"
@@ -350,11 +342,19 @@ def _recall_personal_facts(message: str) -> str:
             "that saved yet rather than guessing):\n" + block)
 
 
-def _build_chat_system_prompt(message: str) -> str:
-    """Compose the quick_chat system prompt: persona/rules + live self-facts
-    + recalled personal facts (when relevant) + wall-clock. Self-facts and
-    recall are volatile, so they go here per-call, not in any cached base."""
-    parts = [get_quick_chat_system_prompt(), self_facts.self_facts_block()]
+def _build_chat_system_prompt(message: str = "") -> str:
+    """The leading system message. Byte-identical every turn (SOUL + output
+    rule) so a prefix cache can hit when the model supports one. `message`
+    is accepted for backwards compatibility and ignored."""
+    return get_quick_chat_system_prompt()
+
+
+def _build_chat_context_block(message: str) -> str:
+    """The volatile trailing system message: live self-facts (cached 120 s
+    in core/self_facts), durable learned facts, recalled personal facts
+    (only for personal-fact questions), and the wall clock. Sent AFTER
+    history and BEFORE the user turn."""
+    parts = [self_facts.self_facts_block()]
     # G2 — durable learned facts (MEMORY.md, written by reflection.py).
     try:
         learned = nexus.load_memory_facts()
@@ -367,6 +367,17 @@ def _build_chat_system_prompt(message: str) -> str:
         parts.append(facts)
     parts.append(_datetime_context())
     return "\n\n".join(parts)
+
+
+def _chat_messages(system_prompt: str, history: list[dict] | None,
+                   context: str, message: str) -> list[dict]:
+    """[stable system] + history + [volatile system] + [user]."""
+    msgs = [{"role": "system", "content": system_prompt}]
+    msgs.extend(history or [])
+    if context:
+        msgs.append({"role": "system", "content": context})
+    msgs.append({"role": "user", "content": message})
+    return msgs
 
 
 # Phase B speed — unambiguous social messages that never need the router.
@@ -531,12 +542,6 @@ def _maybe_alert_telegram(count_24h: int) -> None:
         log.warning("denial alert bookkeeping failed: %s", exc)
 
 
-_QUICK_CHAT_JSON_HINT = (
-    '\n\nReturn ONLY this JSON object: {"reply": "<your answer>"}. '
-    "No prose outside the JSON. No reasoning inside the reply field. "
-    "No \"Okay,\" / \"Let me\" / \"The user\" preambles. Just the answer."
-)
-
 # qwen3:4b investigation (see /tmp/qwen3_4b_outputs.log) found that:
 #  - `think=False` does NOT actually disable chain-of-thought; it just
 #    hides the opening <think> tag. The model still emits raw reasoning
@@ -581,62 +586,138 @@ def _first_sentence(text: str) -> str:
     return parts[0] if parts else ""
 
 
+_DEGRADED_REPLY_SCHEMA = {"type": "object",
+                          "properties": {"reply": {"type": "string"}},
+                          "required": ["reply"]}
+_DEGRADED_OUTPUT_RULE = ('\n\nOutput rule: respond ONLY with the final reply as JSON '
+                         '{"reply": "..."} — no reasoning. Casual asks get ONE short '
+                         'sentence; no tacked-on questions.')
+
+
 def _ollama_quick_chat(model: str, message: str, system_prompt: str,
                        history: list[dict] | None = None) -> str:
-    """quick_chat against any model. JSON-mode first (suppresses qwen3:4b CoT),
-    plain-text fallback. qwen3:4b is a small reasoning model that leaks CoT
-    nondeterministically, so for it we RETRY on a leaky/long result (each roll
-    is independent → clean rate compounds) and, as a guaranteed last resort,
-    collapse to the first clean sentence (the scrubber has already dropped the
-    leak/meta sentences, so what remains is brief and leak-free)."""
-    history = history or []
-    json_messages = [{"role": "system", "content": system_prompt + _QUICK_CHAT_JSON_HINT}]
-    json_messages.extend(history)
-    json_messages.append({"role": "user", "content": message})
-    plain_messages = [{"role": "system", "content": system_prompt}]
-    plain_messages.extend(history)
-    plain_messages.append({"role": "user", "content": message})
+    """quick_chat against any model: ONE plain call, think suppressed at
+    the source (`brain.think_param` → False for the brain), scrubber as
+    backstop. `history` is the pre-built middle of the messages array —
+    prior turns plus the trailing volatile system message from
+    `_build_chat_context_block`. qwen3:4b (degraded path) leaks CoT
+    nondeterministically, so it gets a single retry on a leaky result."""
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history or [])
+    messages.append({"role": "user", "content": message})
     num_predict = _quick_chat_num_predict(model)
 
+    degraded = (model or "").startswith("qwen3:4b")
+
     def _one_attempt() -> str:
-        try:
-            resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-                model=model, messages=json_messages,
-                options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
-                         "num_predict": num_predict},
-                keep_alive=-1, think=brain.think_param(model), format="json")
-            body = (resp.get("message", {}) or {}).get("content", "").strip()
+        kwargs: dict = dict(
+            model=model, messages=messages,
+            options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
+                     "num_predict": num_predict},
+            keep_alive=-1, think=brain.think_param(model))
+        if degraded:
+            # qwen3:4b with think=False narrates its reasoning INTO content
+            # ("The examples show that Nexus is…"); think=True burns the
+            # whole budget on short asks and returns "". A JSON schema is the
+            # one mode that keeps it clean (measured 0.3 s, 0 leaks).
+            kwargs["format"] = _DEGRADED_REPLY_SCHEMA
+            kwargs["options"]["temperature"] = 0.0  # deterministic fallback
+            kwargs["messages"] = [
+                {"role": "system", "content": system_prompt + _DEGRADED_OUTPUT_RULE},
+                *messages[1:],
+            ]
+        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(**kwargs)
+        body = (resp.get("message", {}) or {}).get("content", "").strip()
+        if degraded:
             try:
                 obj = json.loads(body)
-                reply = (obj or {}).get("reply", "") if isinstance(obj, dict) else ""
-                if reply:
-                    return _clean_quick_chat(reply)
-            except json.JSONDecodeError:
+                body = (obj.get("reply") if isinstance(obj, dict) else "") or body
+            except (json.JSONDecodeError, AttributeError):
                 pass
-        except Exception as exc:
-            log.warning("quick_chat json mode failed: %s — retrying plain", exc)
-        resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-            model=model, messages=plain_messages,
-            options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
-                     "num_predict": num_predict * 2},
-            keep_alive=-1, think=brain.think_param(model))
-        body = (resp.get("message", {}) or {}).get("content", "").strip()
         return _clean_quick_chat(body)
 
-    is_qwen = (model or "").startswith("qwen3:4b")
-    attempts = 3 if is_qwen else 1
-    best = ""
-    for _ in range(attempts):
-        reply = _one_attempt()
-        if not is_qwen:
-            return reply  # brain etc. — never retried/truncated
-        sents = [x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if x.strip()]
-        if reply.strip() and not looks_like_thinking_leak(reply) and len(sents) <= 1:
-            return reply
-        if not best:
-            best = reply
+    reply = _one_attempt()
+    if not (model or "").startswith("qwen3:4b"):
+        return reply  # brain etc. — never retried/truncated
+    if reply.strip() and not looks_like_thinking_leak(reply):
+        return reply
+    retry = _one_attempt()
+    if retry.strip() and not looks_like_thinking_leak(retry):
+        return retry
     # qwen3:4b last resort — one clean sentence (leak/meta already stripped).
-    return _first_sentence(best) or best
+    return _first_sentence(reply or retry) or reply or retry
+
+
+def _ollama_quick_chat_thinking(model: str, message: str, system_prompt: str,
+                                history: list[dict] | None = None) -> tuple[str, str]:
+    """Show-your-work variant: same call with think=True. Returns
+    (content, thinking). Ornith puts reasoning in the separate
+    `message.thinking` field and keeps `content` clean (verified)."""
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history or [])
+    messages.append({"role": "user", "content": message})
+    resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
+        model=model, messages=messages,
+        options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
+                 "num_predict": _quick_chat_num_predict(model) + THINK_EXTRA_PREDICT},
+        keep_alive=-1, think=True)
+    msg = resp.get("message", {}) or {}
+    content = _clean_quick_chat((msg.get("content") or "").strip())
+    thinking = (msg.get("thinking") or "").strip()
+    return content, thinking
+
+
+# ── Show-your-work toggle (/think on|off) ───────────────────────────────
+# Per-chat preference persisted in a tiny JSON. Default off. "show your
+# work" in a message turns it on for that one turn.
+_THINK_PREFS_PATH = Path.home() / "AI_Agent" / "memory" / "think_prefs.json"
+THINK_MAX_CHARS = 1200
+THINK_EXTRA_PREDICT = 1024  # reasoning budget on top of the content budget
+_SHOW_WORK_RE = re.compile(
+    r"\bshow\s+(?:me\s+)?(?:your|the|ur)\s+(?:work|thinking|reasoning)\b",
+    re.IGNORECASE,
+)
+
+
+def _load_think_prefs() -> dict:
+    try:
+        data = json.loads(_THINK_PREFS_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def get_think_pref(chat_id: int | None) -> bool:
+    if chat_id is None:
+        return False
+    return bool(_load_think_prefs().get(str(chat_id), False))
+
+
+def set_think_pref(chat_id: int, on: bool) -> None:
+    prefs = _load_think_prefs()
+    prefs[str(chat_id)] = bool(on)
+    try:
+        _THINK_PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _THINK_PREFS_PATH.write_text(json.dumps(prefs, indent=1), encoding="utf-8")
+    except OSError as exc:
+        log.warning("think prefs write failed: %s", exc)
+
+
+def wants_thinking(message: str, chat_id: int | None = None) -> bool:
+    """True when the reply should carry a 💭 block: the chat toggle is on
+    or the message literally asks to show the work."""
+    return get_think_pref(chat_id) or bool(_SHOW_WORK_RE.search(message or ""))
+
+
+def format_thinking(thinking: str) -> str:
+    """Trim reasoning to THINK_MAX_CHARS and render it as a quoted block."""
+    t = (thinking or "").strip()
+    if not t:
+        return ""
+    if len(t) > THINK_MAX_CHARS:
+        t = t[:THINK_MAX_CHARS].rstrip() + "…"
+    quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in t.splitlines())
+    return f"💭\n{quoted}"
 
 
 # qwen3:4b reliably leaks reasoning prose like:
@@ -1113,8 +1194,13 @@ def _build_quick_chat_history(chat_id: int, system_prompt: str,
         return []
 
 
-def quick_chat(message: str, chat_id: int | None = None) -> str:
+def quick_chat(message: str, chat_id: int | None = None,
+               show_thinking: bool | None = None) -> str:
     """Inline conversational reply for CHAT and QUERY_INLINE intents.
+
+    show_thinking: None → honor the per-chat /think toggle + "show your
+    work"; True/False forces it. When on, the brain runs with think=True
+    and the reply carries a trimmed 💭 block.
 
     Phase 32 provider ladder:
       1. DeepSeek deepseek-chat (15s timeout). On any ProviderError
@@ -1141,10 +1227,11 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     import time as _time  # noqa: PLC0415
     from workers import quick_chat_providers as _qcp  # noqa: PLC0415
 
-    # SOUL.md is the single source of truth — `get_quick_chat_system_prompt`
-    # composes full SOUL + quick_chat-specific output / capability rules.
-    # _datetime_context appends real wall-clock so "what time is it" works.
+    # Stable system prompt (SOUL + output rule) leads; the volatile context
+    # block (self-facts / memory / clock) rides as a trailing system message
+    # after history so the leading bytes never change turn-to-turn.
     system_prompt = _build_chat_system_prompt(message)
+    context = _build_chat_context_block(message)
     t0 = _time.monotonic()
     # G1 — expand @file:/@diff/@git:/@url: refs for the model. recall/history
     # and logging stay on the original `message`; no-op without refs.
@@ -1152,7 +1239,21 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
     history: list[dict] = []
     if chat_id is not None:
-        history = _build_quick_chat_history(chat_id, system_prompt, message)
+        history = _build_quick_chat_history(chat_id, system_prompt + context, message)
+    history = history + [{"role": "system", "content": context}]
+
+    if show_thinking is None:
+        show_thinking = wants_thinking(message, chat_id)
+    if show_thinking:
+        try:
+            content, thinking = _ollama_quick_chat_thinking(
+                brain.get_brain_model(), msg_for_model, system_prompt, history=history)
+            _record_cleanliness(brain.get_brain_model(), _time.monotonic() - t0,
+                                clean=True, fallback_used=False)
+            block = format_thinking(thinking)
+            return f"{content}\n\n{block}" if block else content
+        except Exception as exc:
+            log.warning("think=True path failed (%s) — falling back to plain", exc)
 
     # ── Tier 1: DeepSeek ─────────────────────────────────────────
     # Honor the runtime config override too — flipping cost_limits.yaml
@@ -1228,55 +1329,74 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     return final
 
 
-def quick_chat_stream(message: str, chat_id: int | None = None):
-    """Phase 41 — streaming variant of quick_chat for Telegram live-draft
-    rendering (sendMessageDraft).
+_SENTENCE_END_RE = re.compile(r"[.!?…]\s|\n")
 
-    Yields ``{"partial": <cumulative raw text>}`` as Ollama tokens arrive,
-    then a terminal ``{"final": <cleaned reply>}``. Reuses the exact same
-    system prompt, rolling history, brain model, num_ctx, and content
-    budget as quick_chat, plus the same ``_strip_think_final`` /
-    ``_clean_quick_chat`` finalisation — so the persisted message matches
-    what quick_chat would have produced.
 
-    It deliberately SKIPS the denial/leak retry: drafts are ephemeral and
-    the cleaned ``final`` is authoritative. Raises on any Ollama error so
-    the caller can fall back to the non-streaming quick_chat path; the
-    reply is therefore never dropped.
+def quick_chat_stream(message: str, chat_id: int | None = None,
+                      show_thinking: bool | None = None):
+    """Streaming variant of quick_chat for the Telegram progress bubble.
+
+    Yields ``{"partial": <scrubbed text up to the last sentence boundary>}``
+    as Ollama tokens arrive — NEVER the raw accumulator: partials are
+    buffered to a sentence boundary and run through the think-scrubber
+    so reasoning can't reach the screen mid-stream — then a terminal
+    ``{"final": <cleaned reply>}`` (with the 💭 block appended when
+    show-your-work is on). Same system prompt, history, model, num_ctx
+    and budget as quick_chat.
+
+    Skips the denial/leak retry (the caller runs `guard_quick_chat_reply`
+    on the final). Raises on any Ollama error so the caller can fall back
+    to the blocking path; the reply is never dropped.
     """
     system_prompt = _build_chat_system_prompt(message)
+    context = _build_chat_context_block(message)
     history = (
-        _build_quick_chat_history(chat_id, system_prompt, message)
+        _build_quick_chat_history(chat_id, system_prompt + context, message)
         if chat_id is not None else []
     )
     model = brain.get_brain_model()
-    messages = [
-        {"role": "system", "content": system_prompt},
-        *history,
-        {"role": "user", "content": message},
-    ]
+    messages = _chat_messages(system_prompt, history, context, message)
+    if show_thinking is None:
+        show_thinking = wants_thinking(message, chat_id)
     client = ollama.Client(host=nexus.OLLAMA_URL)
     acc = ""
+    thinking = ""
+    last_emitted = 0
     for part in client.chat(
         model=model,
         messages=messages,
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
             "num_ctx": brain.num_ctx_for(model),
-            # Phase B — use the base per-model budget (brain=1024 ≈ ~4k chars,
-            # ample for a chat reply). The previous ×2 (=2048) risked a ~75s
-            # runaway decode; the Part-A chunker still splits long replies.
-            "num_predict": _quick_chat_num_predict(model),
+            "num_predict": _quick_chat_num_predict(model)
+            + (THINK_EXTRA_PREDICT if show_thinking else 0),
         },
         keep_alive=-1,
-        think=brain.think_param(model),
+        think=True if show_thinking else brain.think_param(model),
         stream=True,
     ):
-        tok = (part.get("message", {}) or {}).get("content", "") or ""
-        if tok:
-            acc += tok
-            yield {"partial": acc}
-    yield {"final": _strip_think_final(_clean_quick_chat(acc))}
+        msg = part.get("message", {}) or {}
+        thinking += msg.get("thinking", "") or ""
+        tok = msg.get("content", "") or ""
+        if not tok:
+            continue
+        acc += tok
+        # Emit only when a NEW sentence boundary landed past the last one.
+        boundary = None
+        for m in _SENTENCE_END_RE.finditer(acc, last_emitted):
+            boundary = m.end()
+        if boundary is None:
+            continue
+        last_emitted = boundary
+        partial = _strip_think_final(_clean_quick_chat(acc[:boundary]))
+        if partial:
+            yield {"partial": partial}
+    final = _strip_think_final(_clean_quick_chat(acc))
+    if show_thinking:
+        block = format_thinking(thinking)
+        if block:
+            final = f"{final}\n\n{block}" if final else block
+    yield {"final": final}
 
 
 # 25s total (was 15): must exceed the 15s picker budget below or the
@@ -1574,6 +1694,7 @@ def lite_agent(message: str) -> dict:
     if _budget_left() < LITE_AGENT_FORMATTER_BUDGET + 0.5:
         return {"ok": False, "reason": "timeout before tool call"}
     tool_obj = registry[tool_name]["tool"]
+    _progress(f"🔧 {tool_name}")
     try:
         tool_result = tool_obj.invoke(args)
     except Exception as exc:
@@ -1625,6 +1746,7 @@ def lite_agent(message: str) -> dict:
         }
 
     # 3c. Last resort: pay the LLM formatter to rewrite into prose.
+    _progress("✍️ writing")
     reply = _format_answer(message, tool_name, result_str)
     return {"ok": True, "tool": tool_name, "reply": reply}
 
@@ -2112,13 +2234,11 @@ def fast_handle(message: str, *, allow_llm_chat: bool = True) -> str | None:
     busy = _busy_summary()
     if busy:
         return (
-            f"I'm here. A task is in flight — {busy}. "
-            "For free-form chat without contention, wait until it finishes "
-            "or send: 'queue: <your task>' to enqueue."
+            f"Heads up — I've got one {busy}. "
+            "Chat will be slower until it lands; 'queue: <task>' still works."
         )
     return None if allow_llm_chat else (
-        "I'm here. The queue is idle. Send 'queue: <your task>' to launch one, "
-        "or '<task_id>' to check a specific task's status."
+        "Nothing running. 'queue: <task>' starts one, or send a task id for its status."
     )
 
 
@@ -2548,7 +2668,7 @@ def _route_message_inner(message: str, chat_id: int | None = None,
             return {"kind": "queue", "reply": "queue: needs a task body.", "meta": {}}
         tid = task_queue.enqueue(body)
         log.info("route: queue-prefix override -> task %s", tid)
-        return {"kind": "queue", "reply": "On it — I'll have that ready in a moment. 🔨",
+        return {"kind": "queue", "reply": "Queued. I'll ping you when it's done.",
                 "meta": {"task_id": tid}}
 
     # Phase 22 — "dispatch: <prompt>" / "force dispatch: <prompt>" hands
@@ -2639,6 +2759,7 @@ def _route_message_inner(message: str, chat_id: int | None = None,
         log.info("route: llm-router %r → %s tier=%s recon=%s%s",
                  msg[:60], route, decision.get("tier"), recon,
                  " [FALLBACK after router error]" if "router_error" in decision else "")
+    _progress(_ROUTE_STAGE_TEXT.get(route, "🧠 …"))
 
     if route == "status":
         if _is_genuine_queue_status(msg):
@@ -2690,7 +2811,7 @@ def _route_message_inner(message: str, chat_id: int | None = None,
         # Wall-clock context is injected transiently by task_worker at
         # message-build time, not baked into the queue row.
         tid = task_queue.enqueue(msg)
-        return {"kind": "task", "reply": "On it — working on that now, I'll send it over shortly. 🔨",
+        return {"kind": "task", "reply": "On it — queued as a full task. I'll ping you when it lands.",
                 "meta": {**meta, "task_id": tid}}
 
     # quick_chat (also the router-failure fallback).
@@ -2698,35 +2819,81 @@ def _route_message_inner(message: str, chat_id: int | None = None,
     # None (non-Telegram callers like the dashboard /chat) → stateless.
     reply = quick_chat(msg, chat_id=chat_id)
 
-    # Capability self-check: if the reply reads like a capability denial
-    # OR a tool-less false promise ("let me check…"), the brain misjudged
-    # — enqueue the ORIGINAL message as a task so the full agent can
-    # actually use tools, and reply with the friendly recovery line
-    # (BUG 10: "On it. task_id=…" is reserved for genuinely-routed TASK).
-    denied = _looks_like_denial(reply)
-    promised = not denied and _looks_like_false_promise(reply)
-    if denied or promised:
-        why = "denial" if denied else "false_promise"
-        log.warning(
-            "quick_chat produced %s — recovering as TASK. text=%r msg=%r",
-            why, reply[:160], msg[:120],
-        )
-        tid = task_queue.enqueue(msg)
+    recovered = guard_quick_chat_reply(msg, reply)
+    if recovered is not None:
         return {
             "kind": "chat",
-            "reply": "Let me dig into that properly — one sec.",
-            "meta": {**meta, "task_id": tid, "recovered_from": why},
+            "reply": recovered["reply"],
+            "meta": {**meta, "task_id": recovered["task_id"],
+                     "recovered_from": recovered["why"]},
         }
 
     return {"kind": "chat", "reply": reply, "meta": meta}
 
 
+# The ONE recovery line. It is only ever emitted right after a real
+# task_queue.enqueue — never as a bare promise. Both the blocking and the
+# streaming quick_chat paths go through guard_quick_chat_reply.
+RECOVERY_REPLY = "Let me dig into that properly — one sec."
+
+
+def guard_quick_chat_reply(message: str, reply: str) -> dict | None:
+    """False-promise guard. If a tool-less quick_chat reply reads like a
+    capability denial OR a promise to go do something ("let me check…"),
+    the brain misjudged — enqueue the ORIGINAL message as a task so the
+    full agent can actually act, and return the recovery line with the
+    real task_id. Returns None when the reply is fine as-is."""
+    denied = _looks_like_denial(reply)
+    promised = not denied and _looks_like_false_promise(reply)
+    if not (denied or promised):
+        return None
+    why = "denial" if denied else "false_promise"
+    log.warning("quick_chat produced %s — recovering as TASK. text=%r msg=%r",
+                why, (reply or "")[:160], (message or "")[:120])
+    tid = task_queue.enqueue(message)
+    return {"reply": RECOVERY_REPLY, "task_id": tid, "why": why}
+
+
+# ── Background reflection for Telegram quick_chat turns ─────────────────
+# Mirrors nexus._spawn_reflection (the CLI path) but rate-limited: one
+# reflection per REFLECT_EVERY_N_TURNS per chat, since every reflection
+# is another brain call competing with the next reply.
+REFLECT_EVERY_N_TURNS = 10
+_reflect_counters: dict[int, int] = {}
+
+
+def maybe_reflect(chat_id: int, user_message: str, reply: str) -> bool:
+    """Count the turn; every Nth turn spawn reflection.reflect in a
+    daemon thread. Returns True when a reflection was spawned."""
+    import threading  # noqa: PLC0415
+    n = _reflect_counters.get(chat_id, 0) + 1
+    _reflect_counters[chat_id] = n
+    if n % REFLECT_EVERY_N_TURNS != 0:
+        return False
+    clean_reply = _strip_think_final(reply or "")
+
+    def _worker() -> None:
+        try:
+            import reflection  # noqa: PLC0415  — ~/AI_Agent/reflection.py
+            reflection.reflect(user_message, clean_reply, messages=None,
+                               route="quick_chat", model=brain.get_brain_model())
+        except Exception as exc:
+            log.debug("reflection failed: %s", exc)
+
+    threading.Thread(target=_worker, name="tg-reflect", daemon=True).start()
+    return True
+
+
 def route_message(message: str, chat_id: int | None = None,
-                  decision: dict | None = None) -> dict:
+                  decision: dict | None = None,
+                  progress=None) -> dict:
     """Public router — wraps `_route_message_inner` with latency
     telemetry. Every call appends one line to
     `memory/intent_latencies.jsonl` so the dashboard's Performance tab
     can render the rolling-24h average per intent.
+
+    `progress`: optional callable(str) that receives stage text
+    ("🔎 looking that up", "🔧 web_search") as routing proceeds.
 
     Phase 38: `chat_id` (when supplied by the Telegram listener) flows
     down to quick_chat so the inline CHAT path can include rolling
@@ -2741,7 +2908,12 @@ def route_message(message: str, chat_id: int | None = None,
     """
     import time as _time
     t0 = _time.monotonic()
-    result = _route_message_inner(message, chat_id=chat_id, decision=decision)
+    token = _PROGRESS_CB.set(progress) if progress is not None else None
+    try:
+        result = _route_message_inner(message, chat_id=chat_id, decision=decision)
+    finally:
+        if token is not None:
+            _PROGRESS_CB.reset(token)
     elapsed = _time.monotonic() - t0
     if isinstance(result, dict) and isinstance(result.get("reply"), str):
         result["reply"] = _strip_think_final(result["reply"])

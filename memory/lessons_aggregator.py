@@ -17,6 +17,16 @@ from pathlib import Path
 
 import ollama
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 ROOT = Path.home() / "AI_Agent"
 RETRO_DIR = ROOT / "memory" / "retros"
 LESSONS_FILE = ROOT / "LESSONS.md"
@@ -82,7 +92,7 @@ def _digest(bullets: list[str]) -> str:
             stream=False,
             think=False,
             keep_alive=-1,
-            options={"temperature": 0.1, "num_predict": 400, "num_ctx": 8192},
+            options={"temperature": 0.1, "num_predict": 400, "num_ctx": _nctx(DIGEST_MODEL)},
         )
     except Exception:
         return "\n".join(f"- {b}" for b in bullets[:10])

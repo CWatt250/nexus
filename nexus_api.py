@@ -415,8 +415,8 @@ async def simple_chat(req: SimpleChatRequest):
                 "meta": result.get("meta", {})}
     except _asyncio.TimeoutError:
         return {"response": (
-            "Took >25s to route — Ollama may be busy. Try again, or "
-            "send 'queue: <task>' to bypass classification."
+            "Still on it — that one's taking longer than usual. "
+            "I'll send it when it lands, or say 'queue: <task>' to run it as a job."
         )}
     except Exception as e:
         return {"response": f"Error: {type(e).__name__}: {e}"}

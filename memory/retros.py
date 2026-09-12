@@ -26,6 +26,16 @@ RETRO_DIR = MEMORY_DIR / "retros"
 OLLAMA_URL = "http://localhost:11434"
 LESSONS_MODEL = "qwen3:4b"
 
+
+def _num_ctx(model: str) -> int:
+    """core.brain.num_ctx_for — the ONE num_ctx per model (a mismatched
+    literal forces an Ollama runner reload)."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
 log = logging.getLogger("nexus.retros")
 
 
@@ -82,7 +92,7 @@ def _lessons(turn: dict, tool_calls: list[dict]) -> str:
             stream=False,
             think=False,
             keep_alive=-1,
-            options={"temperature": 0.2, "num_predict": 220, "num_ctx": 4096},
+            options={"temperature": 0.2, "num_predict": 220, "num_ctx": _num_ctx(LESSONS_MODEL)},
         )
     except Exception as exc:
         log.warning("lessons generation failed: %s", exc)

@@ -13,6 +13,16 @@ from pathlib import Path
 
 import ollama
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 ROOT = Path.home() / "AI_Agent"
 MODELS_FILE = ROOT / "models.json"
 RUN_LOG = ROOT / "projects" / "nexus-core" / "run-log.jsonl"
@@ -137,7 +147,7 @@ def classify(message: str, *, log: bool = True) -> str:
             stream=False,
             think=think,
             format="json",
-            options={"temperature": 0.0, "num_predict": 64, "num_ctx": 8192},
+            options={"temperature": 0.0, "num_predict": 64, "num_ctx": _nctx(router_model)},
             keep_alive=-1,
         )
     except Exception as exc:

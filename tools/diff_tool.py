@@ -9,6 +9,16 @@ from pathlib import Path
 import ollama
 from langchain_core.tools import tool
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 OLLAMA_URL = "http://localhost:11434"
 
 
@@ -78,7 +88,7 @@ def review_diff(repo_path: str) -> str:
             ],
             stream=False,
             think=False,
-            options={"temperature": 0.2, "num_predict": 800, "num_ctx": 16_384},
+            options={"temperature": 0.2, "num_predict": 800, "num_ctx": _nctx(REVIEW_MODEL)},
         )
     except Exception as exc:
         return f"ERROR: reviewer LLM failed — {type(exc).__name__}: {exc}"

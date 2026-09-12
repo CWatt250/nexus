@@ -5,10 +5,17 @@ sees. The worker calls into this on every terminal lifecycle event
 (done / failed / cancelled / timed_out) and on heartbeats for
 long-running tasks. Formatting + chunking + retry-hint live here so the
 worker stays focused on agent execution.
+
+Voice rule: never lead with task_id=, never paste exception text — log
+it, say one plain sentence. The id shows up once, small, at the end,
+because 'cancel <id>' is how the user acts on it.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger("nexus.task_notifier")
@@ -16,6 +23,8 @@ log = logging.getLogger("nexus.task_notifier")
 # Telegram's hard limit is 4096 chars. We split bodies at 3000 to leave
 # room for the header + safety margin and to match user spec.
 CHUNK_BODY_CHARS = 3000
+
+_ACTIVE_LOG = Path.home() / "AI_Agent" / "memory" / "active_tasks.jsonl"
 
 
 def _chunks(body: str, size: int = CHUNK_BODY_CHARS) -> list[str]:
@@ -63,15 +72,80 @@ def _fmt_elapsed(seconds: float) -> str:
     return f"{h}h{m:02d}m{s:02d}s"
 
 
+def _humanize_error(error: str) -> str:
+    """One plain sentence for the phone. The raw error goes to the log."""
+    low = (error or "").lower()
+    if not low:
+        return "it died without saying why"
+    if "timeout" in low or "timed out" in low:
+        return "it ran out of time"
+    if "memory" in low or "vram" in low or "devicelost" in low:
+        return "the model choked on memory"
+    if "connection" in low or "refused" in low or "unreachable" in low:
+        return "it couldn't reach something it needed (Ollama or the network)"
+    if "load" in low and "model" in low:
+        return "that one choked loading the model"
+    if "permission" in low or "blocked" in low:
+        return "a guardrail blocked a step"
+    return "it hit an error partway through"
+
+
+def _think_on() -> bool:
+    """Show-your-work toggle for the notification chat (TELEGRAM_CHAT_ID)."""
+    try:
+        from workers.conversation_handler import get_think_pref  # noqa: PLC0415
+        cid = os.getenv("TELEGRAM_CHAT_ID", "")
+        return bool(cid) and get_think_pref(int(cid))
+    except Exception:
+        return False
+
+
+def _work_trail(task_id: str) -> str:
+    """Best-effort 'what I did and why' for the done message when /think
+    is on: last tool calls from active_tasks.jsonl + the original ask."""
+    bits: list[str] = []
+    try:
+        from core import task_queue  # noqa: PLC0415
+        row = task_queue.get_task(task_id) or {}
+        ask = (row.get("input") or "").strip().splitlines()
+        if ask:
+            bits.append(f"why: you asked — \"{ask[0][:100]}\"")
+    except Exception:
+        pass
+    try:
+        last: dict = {}
+        if _ACTIVE_LOG.exists():
+            for raw in _ACTIVE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-400:]:
+                try:
+                    entry = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("task_id") == task_id:
+                    last = entry
+        steps = last.get("steps") or last.get("tools") or []
+        if isinstance(steps, list) and steps:
+            bits.append("tools: " + " → ".join(str(s) for s in steps[-5:]))
+        elif last.get("tool_calls"):
+            step = last.get("step") or last.get("last_tool") or ""
+            bits.append(f"tools: {last['tool_calls']} call(s)"
+                        + (f", last {step}" if step else ""))
+    except Exception:
+        pass
+    return "\n".join(f"> {b}" for b in bits)
+
+
 async def notify_done(task_id: str, output: str, *, elapsed_s: float) -> None:
     """Friendly completion header, then the full output, chunked at 3000
-    chars. The raw task_id stays out of the header (it read as debug spam
-    on the phone) — the id lives in the continuation markers only, where
-    it's needed to stitch chunks together."""
+    chars. When /think is on, a short 💭 trail (last tools + why) rides
+    under the header."""
     chunks = _chunks(output or "(empty output)")
     n = len(chunks)
     suffix = "" if n == 1 else f" (1/{n})"
     header = f"✅ Done ({_fmt_elapsed(elapsed_s)}){suffix}"
+    if _think_on():
+        trail = _work_trail(task_id)
+        if trail:
+            header += f"\n💭\n{trail}"
     await _send(f"{header}\n\n{chunks[0]}")
     for i, c in enumerate(chunks[1:], start=2):
         await _send(f"…continued ({i}/{n})\n\n{c}")
@@ -79,38 +153,36 @@ async def notify_done(task_id: str, output: str, *, elapsed_s: float) -> None:
 
 async def notify_failed(task_id: str, error: str, *, elapsed_s: float,
                         output: Optional[str] = None) -> None:
-    """`❌ failed: <error>.`"""
-    msg = f"❌ That task failed after {_fmt_elapsed(elapsed_s)}: {error or 'unknown error'}"
+    """One plain sentence about what went wrong; the raw error is logged."""
+    log.warning("task %s failed after %.1fs: %s", task_id, elapsed_s, error)
+    msg = f"❌ That one didn't make it — {_humanize_error(error)} after {_fmt_elapsed(elapsed_s)}."
     if output:
-        msg += f"\n\nPartial output:\n{output[:CHUNK_BODY_CHARS]}"
-    msg += "\n\nWant me to retry?"
+        msg += f"\n\nWhat I had so far:\n{output[:CHUNK_BODY_CHARS]}"
+    msg += f"\n\nSay 'retry {task_id}' and I'll take another run at it."
     await _send(msg)
 
 
 async def notify_cancelled(task_id: str, *, elapsed_s: float, note: str = "") -> None:
-    """`🛑 task_id=XXX cancelled.`"""
-    bits = [f"🛑 task_id={task_id} cancelled after {_fmt_elapsed(elapsed_s)}."]
+    bits = [f"🛑 Stopped that one at {_fmt_elapsed(elapsed_s)}."]
     if note:
         bits.append(note)
     await _send("\n".join(bits))
 
 
 async def notify_timeout(task_id: str, *, elapsed_s: float, last_step: str = "") -> None:
-    """`⚠️ task_id=XXX timed out at <time>. Last step: <step>.`"""
-    bits = [f"⚠️ task_id={task_id} timed out after {_fmt_elapsed(elapsed_s)}."]
+    bits = [f"⚠️ Ran out of time on that one ({_fmt_elapsed(elapsed_s)})."]
     if last_step:
-        bits.append(f"Last step: {last_step}")
-    bits.append("Want me to retry with a longer timeout?")
+        bits.append(f"Last thing it was doing: {last_step}.")
+    bits.append(f"Say 'retry {task_id}' and I'll give it a longer leash.")
     await _send("\n".join(bits))
 
 
 async def notify_heartbeat(task_id: str, *, elapsed_s: float, step: str = "",
                            tool_calls: int = 0) -> None:
-    """`⏳ task_id=XXX still working. Elapsed: 4m12s.`"""
-    bits = [f"⏳ task_id={task_id} still working. Elapsed: {_fmt_elapsed(elapsed_s)}."]
+    bits = [f"⏳ Still on it — {_fmt_elapsed(elapsed_s)} in."]
     if step:
-        bits.append(f"Last step: {step}")
+        bits.append(f"Currently: {step}")
     if tool_calls:
-        bits.append(f"Tool calls so far: {tool_calls}")
-    bits.append(f"Send 'cancel {task_id}' to stop.")
+        bits.append(f"{tool_calls} tool call{'s' if tool_calls != 1 else ''} so far.")
+    bits.append(f"'cancel {task_id}' stops it.")
     await _send("\n".join(bits))

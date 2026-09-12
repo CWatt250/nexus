@@ -38,6 +38,16 @@ OLLAMA_URL = "http://localhost:11434"
 
 MODEL = "qwen3:4b"
 
+
+def _num_ctx(model: str) -> int:
+    """core.brain.num_ctx_for — the ONE num_ctx per model. A literal that
+    differs from the resident runner's ctx forces an Ollama reload."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
 # Flag to enable/disable Mem0 integration
 USE_MEM0 = True
 
@@ -190,7 +200,8 @@ def _ask_critic(user_msg: str, response: str, tool_names: list[str]) -> dict:
         stream=False,
         think=False,
         format="json",
-        options={"temperature": 0.1, "num_predict": 256, "num_ctx": 4096},
+        # Phase 1 — one num_ctx per model (mismatch forces a runner reload).
+        options={"temperature": 0.1, "num_predict": 256, "num_ctx": _num_ctx(MODEL)},
     )
     raw = resp["message"]["content"] if isinstance(resp, dict) else getattr(resp.message, "content", "")
     return _parse_json(raw)

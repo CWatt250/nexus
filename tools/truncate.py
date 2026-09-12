@@ -18,6 +18,16 @@ from typing import Iterable
 
 import ollama
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 OLLAMA_URL = "http://localhost:11434"
 SUMMARY_MODEL = "qwen3:4b"
 DEFAULT_MAX_TOKENS = 500
@@ -58,7 +68,7 @@ def _summarize(text: str, max_tokens: int) -> str:
             options={
                 "temperature": 0.0,
                 "num_predict": max_tokens + 50,
-                "num_ctx": 8192,
+                "num_ctx": _nctx(SUMMARY_MODEL),
             },
             keep_alive=-1,
         )

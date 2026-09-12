@@ -31,6 +31,16 @@ sys.path.insert(0, str(ROOT))
 
 from tools.rag_tool import add_documents  # noqa: E402
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 INTERVAL_SECONDS = 5 * 60
 MIN_TEXT_CHARS = 50
 CHRONICLE_DIR = Path.home() / "AI_Agent" / "memory" / "chronicle"
@@ -159,7 +169,7 @@ def _summarize(ocr_text: str) -> str:
             ],
             stream=False,
             think=False,
-            options={"temperature": 0.2, "num_predict": 200, "num_ctx": 8192},
+            options={"temperature": 0.2, "num_predict": 200, "num_ctx": _nctx(MODEL)},
         )
     except Exception as exc:
         log.warning("qwen3 summary failed: %s", exc)

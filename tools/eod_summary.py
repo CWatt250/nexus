@@ -30,6 +30,16 @@ def _strip_think(text: str) -> str:
 import ollama  # noqa: F401  — used inline below
 from langchain_core.tools import tool
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 ROOT = Path.home() / "AI_Agent"
 TASK_LOG = ROOT / "memory" / "task_metrics.jsonl"
 EVENT_LOG = ROOT / "memory" / "agent-events.jsonl"
@@ -174,7 +184,7 @@ def _todays_summary() -> str:
                 {"role": "user", "content": prompt},
             ],
             stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.2, "num_predict": 400, "num_ctx": 8192},
+            options={"temperature": 0.2, "num_predict": 400, "num_ctx": _nctx(SUMMARY_MODEL)},
         )
     except Exception as exc:
         return f"## EOD\n{today_one_liner}\n\n_(LLM unavailable: {exc})_"

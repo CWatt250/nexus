@@ -39,6 +39,10 @@ HOST = ("NIMO mini PC — AMD Ryzen AI Max+ 395 (Strix Halo, 16 Zen5 cores, "
 _STACK_CACHE: str | None = None
 _PS_CACHE: tuple[float, list[dict]] | None = None
 _PS_TTL_S = 15.0
+# The composed block is cached too — quick_chat asks for it every turn and
+# the answer only changes when a model loads/unloads.
+_BLOCK_CACHE: tuple[float, str] | None = None
+_BLOCK_TTL_S = 120.0
 
 
 def _detect_gpu_stack() -> str:
@@ -118,7 +122,17 @@ def _resident_models() -> list[dict]:
 def self_facts_block() -> str:
     """Compact, probed self-facts for system-prompt injection. Always
     returns a usable string (worst case: brain id from models.json +
-    host), never raises."""
+    host), never raises. Cached for _BLOCK_TTL_S."""
+    global _BLOCK_CACHE
+    now = time.monotonic()
+    if _BLOCK_CACHE is not None and now - _BLOCK_CACHE[0] < _BLOCK_TTL_S:
+        return _BLOCK_CACHE[1]
+    block = _compose_self_facts()
+    _BLOCK_CACHE = (now, block)
+    return block
+
+
+def _compose_self_facts() -> str:
     brain_model = brain.get_brain_model()
     resident = _resident_models()
     stack = _detect_gpu_stack()
@@ -142,16 +156,11 @@ def self_facts_block() -> str:
                       or brain_short in m["name"])]
 
     lines = [
-        "## Your runtime (live-probed — these are TRUE facts about yourself; "
-        "when asked what model/hardware you run on, answer from these and do "
-        "NOT say you lack visibility):",
+        "## Your runtime (live-probed, authoritative — answer model/hardware "
+        "questions from these; anything else naming a different model is stale):",
         f"- Model serving this conversation: {serving}",
         f"- Host: {HOST}",
         f"- Inference stack: {stack}",
-        "- AUTHORITATIVE: the model above is your ACTUAL model, probed live from "
-        "the running system. Any other document, note, or memory that names a "
-        "different model (e.g. 'qwen3.6') is STALE — ignore it and answer with "
-        "the model named here.",
     ]
     if others:
         lines.append(f"- Also loaded in VRAM: {', '.join(others)}")

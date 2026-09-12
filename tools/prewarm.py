@@ -72,6 +72,42 @@ def _warm(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[
     return True, time.monotonic() - started, "ok"
 
 
+# 64x64 opaque black PNG — smallest payload that exercises the multimodal
+# projector. Hard-coded so prewarm never depends on PIL.
+_TINY_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAKklEQVR4nO3BAQ0AAADCoPdPbQ8H"
+    "FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB8GiAAAAGjYcU+AAAAAElFTkSuQmCC"
+)
+
+
+def _has_vision(client: ollama.Client, model: str) -> bool:
+    """True iff `ollama show` lists the vision capability. Any failure → False."""
+    try:
+        caps = getattr(client.show(model), "capabilities", None) or []
+        return "vision" in caps
+    except Exception:
+        return False
+
+
+def _warm_vision(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[bool, float, str]:
+    """Phase 1 — send one tiny image so the multimodal projector (mmproj)
+    is loaded up front; otherwise the first real image request forces a
+    runner reload mid-turn. Same num_ctx as the text warm so nothing reloads."""
+    started = time.monotonic()
+    try:
+        client.chat(
+            model=model,
+            messages=[{"role": "user", "content": "ping", "images": [_TINY_PNG_B64]}],
+            stream=False,
+            think=_think_for(model),
+            options={"num_predict": 1, "temperature": 0.0, "num_ctx": _num_ctx(model)},
+            keep_alive=keep_alive,
+        )
+    except Exception as exc:
+        return False, time.monotonic() - started, f"{type(exc).__name__}: {exc}"
+    return True, time.monotonic() - started, "ok"
+
+
 def main() -> int:
     cfg = _models()
     router = cfg.get("router", "qwen3:4b")
@@ -94,6 +130,15 @@ def main() -> int:
         print(f"[prewarm] {model} keep_alive={keep_alive!r} {tag} {dt:.2f}s {msg}", flush=True)
         if not ok:
             failures += 1
+
+    # Vision warm for the brain — guarded on the reported capability and
+    # never counted as a prewarm failure (text warm is what matters).
+    if _has_vision(client, heavy):
+        ok, dt, msg = _warm_vision(client, heavy, keep_alive=-1)
+        tag = "ok" if ok else "skip"
+        print(f"[prewarm] {heavy} vision {tag} {dt:.2f}s {msg}", flush=True)
+    else:
+        print(f"[prewarm] {heavy} vision skip (no vision capability)", flush=True)
     return 0 if failures == 0 else 1
 
 

@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import aiosqlite
@@ -75,6 +76,7 @@ from tools.wiki_tool import WIKI_TOOLS  # noqa: E402
 from tools.script_writer import SCRIPT_WRITER_TOOLS  # noqa: E402
 from tools.content_create import CONTENT_CREATE_TOOLS  # noqa: E402
 from tools.vision_tool import VISION_TOOLS  # noqa: E402
+from tools.desktop import DESKTOP_TOOLS  # noqa: E402  — Phase 3 headless :99
 from tools.file_write import FILE_WRITE_TOOLS  # noqa: E402
 from tools.bash_local import BASH_LOCAL_TOOLS  # noqa: E402
 from tools.git_local import GIT_LOCAL_TOOLS  # noqa: E402
@@ -91,7 +93,10 @@ OLLAMA_URL = "http://localhost:11434"
 PROJECTS_DIR = Path.home() / "AI_Agent" / "projects"
 MEMORY_DIR = Path.home() / "AI_Agent" / "memory"
 CHECKPOINT_DB = MEMORY_DIR / "checkpoints.db"
-LESSONS_MAX_LINES = 60
+LESSONS_MAX_LINES = 10          # Phase 1 prompt diet (was 60)
+PROJECT_ACTIVE_DAYS = 7         # a project counts as "active" if its tasks.md
+                                # was touched this recently
+PROJECT_CONTEXT_MAX_CHARS = 2000
 
 MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +179,7 @@ TOOLS = [
     *GOALS_TOOLS,
     *SANDBOX_TOOLS,
     *CODE_INTEL_TOOLS,
+    *DESKTOP_TOOLS,
 ]
 
 # Phase 13.7 — every tool's return value passes through `truncate_tool_result`,
@@ -204,12 +210,20 @@ def extend_tools_with_mcp() -> int:
         print(f"[mcp] failed to load external tools: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 0
     TOOLS.extend(mcp_tools)
+    # Phase 1 — remember which names came from MCP so the heavy/full
+    # toolsets keep binding them (core/toolsets.py selects by name).
+    _MCP_TOOL_NAMES.update(getattr(t, "name", "") for t in mcp_tools)
     return len(mcp_tools)
+
+
+_MCP_TOOL_NAMES: set[str] = set()
 
 
 def load_project_context() -> str:
     """Return the most recently modified projects/*/wiki/tasks.md prepended
-    with its project name, or an empty string if none exist."""
+    with its project name — but only when that project is *active* (touched
+    within PROJECT_ACTIVE_DAYS). Empty string otherwise. Body is capped so
+    a sprawling tasks.md can't blow up the static prompt."""
     if not PROJECTS_DIR.exists():
         return ""
     candidates = sorted(
@@ -220,11 +234,15 @@ def load_project_context() -> str:
     if not candidates:
         return ""
     latest = candidates[0]
+    if time.time() - latest.stat().st_mtime > PROJECT_ACTIVE_DAYS * 86400:
+        return ""
     project = latest.parents[1].name
     try:
         body = latest.read_text(encoding="utf-8")
     except OSError:
         return ""
+    if len(body) > PROJECT_CONTEXT_MAX_CHARS:
+        body = body[:PROJECT_CONTEXT_MAX_CHARS] + "\n…(truncated — read the file for the rest)"
     return f"# CURRENT PROJECT: {project}\n(from {latest})\n\n{body}"
 
 
@@ -257,43 +275,23 @@ def load_memory_facts() -> str:
     bullets = [ln for ln in text.splitlines() if ln.lstrip().startswith("- ")]
     if not bullets:
         return ""
-    bullets = bullets[-40:]
+    bullets = bullets[-15:]  # Phase 1 prompt diet (was 40)
     return "## Learned facts about Colton (durable memory):\n" + "\n".join(bullets)
 
 
+# Phase 1 prompt diet: the bound tool schemas already describe every tool,
+# so this carries only guidance the schemas can't (≤ 600 chars).
 _TOOL_HINT = (
     "# TOOLS\n"
-    "You have a full tool belt. Use it proactively — don't ask permission "
-    "for read-only work, just do it.\n"
-    "- `terminal(command)`: run shell commands (30s timeout).\n"
-    "- `file_read_tool(path)`: read any file on disk (~ expands).\n"
-    "- `file_write_tool(path, content)`: create or overwrite a file.\n"
-    "- `file_edit_tool(path, old_string, new_string)`: find/replace in a file.\n"
-    "- `glob_tool(pattern, root='.')`: list files matching a glob (supports **).\n"
-    "- `grep_tool(pattern, root='.', glob='**/*')`: regex search file contents.\n"
-    "- `browser_tool(url)`: fetch a URL with headless Chromium (waits for DOMContentLoaded — fast, but JS-heavy SPAs may render empty).\n"
-    "- `browser_render(url, wait_for_selector='', timeout=30)`: same idea, but waits for networkidle so client-rendered SPAs fully paint. Use this FIRST for x.com, twitter.com, linkedin.com, instagram.com, threads.net, facebook.com, tiktok.com — `browser_tool` returns empty bodies for those. If `browser_tool` ever returns TITLE empty AND body < 200 chars, retry with `browser_render`.\n"
-    "- `memory_search(query_text, k=4)`: query long-term memory (Chroma RAG).\n"
-    "- `memory_add(text)`: save a snippet to long-term memory (Chroma RAG).\n"
-    "- `memory_seed_file(path, tag)`: seed an entire file into RAG (splits into chunks).\n"
-    "- `markitdown_tool(source)`: convert a PDF/Word/Excel/PPT/URL to markdown and stash in RAG.\n"
-    "- `mem0_add(text)`: extract durable facts from text into Mem0 (LLM-refined).\n"
-    "- `mem0_search(query, k=5)`: semantic search of Mem0 memories.\n"
-    "- `github_create_repo / github_list_repos / github_create_issue / github_list_issues / github_create_pr / github_get_file / github_commit_file`: direct GitHub actions via PyGithub (reads GITHUB_TOKEN from ~/AI_Agent/.env).\n"
-    "- `web_search(query, count)`: PREFER THIS for general web search. Picks the best backend automatically — Tavily > Brave > SearXNG (loopback Docker, free, always-on). No key needed.\n"
-    "- `searxng_search(query, count)` / `searxng_search_news(query, count)`: direct hit on the local SearXNG container (free, unlimited).\n"
-    "- `searxng_health()`: probe the local SearXNG container, returns 'ok' or a reason string.\n"
-    "- `whisper_record(max_seconds)` / `whisper_transcribe(path)`: speech-to-text via faster-whisper.\n"
-    "- `tts_speak(text, voice)` / `tts_save(text, path, voice)`: text-to-speech via Kokoro-82M.\n\n"
-    "Guidelines:\n"
-    "- Read files before editing them.\n"
-    "- Prefer `grep_tool`/`glob_tool` for codebase exploration over dumping whole files.\n"
-    "- Use `browser_tool` when the user cites a URL or you need current info the model doesn't have.\n"
-    "- After completing a task, consider `memory_add` to record anything useful for future sessions.\n"
-    "- When two tool calls are independent, issue them in the SAME assistant turn so they run in parallel. For common pairs prefer the composites: `quick_lookup` (web+memory), `repo_inspect` (file context+git log), `screen_clip` (clipboard+screenshot).\n"
+    "Use tools proactively — never ask permission for read-only work.\n"
+    "- Read a file before editing it; prefer grep_tool/glob_tool over dumping files.\n"
+    "- web_search for anything current; wiki_query before speculating about "
+    "Colton's projects or Nexus internals.\n"
+    "- browser_render (not browser_tool) for x.com/linkedin/instagram/tiktok "
+    "and whenever browser_tool returns an empty body.\n"
+    "- Independent tool calls go in the SAME turn so they run in parallel.\n"
 )
-
-_STATIC_PREFIX_CACHE: str | None = None
+assert len(_TOOL_HINT) <= 600, len(_TOOL_HINT)
 
 
 def _read_text(path: Path) -> str:
@@ -304,62 +302,29 @@ def _read_text(path: Path) -> str:
 
 
 def load_static_prefix() -> str:
-    """Return the byte-stable identity prefix: SOUL + STYLE + tool hint + NEXUS.
+    """Return the byte-stable identity prefix: SOUL + STYLE + tool hint.
 
-    This is the part of the system prompt that must hash identically across
-    requests so Ollama's prompt cache stays warm. CLAUDE.md is intentionally
+    Phase 1 prompt diet — TOOLS.md, NEXUS.md, LESSONS.md and wiki/index.md
+    are no longer injected (the bound tool schemas describe the tools; the
+    rest is reachable via wiki_query / file_read_tool on demand). SOUL and
+    STYLE are read fresh on every call so an edit lands on the next
+    startup without a stale module cache. CLAUDE.md is intentionally
     excluded — it is the autonomous-build playbook for Claude Code, not
-    Nexus's own instruction set, and dragging it in would rewrite Nexus's
-    persona at every turn.
+    Nexus's own instruction set.
     """
-    global _STATIC_PREFIX_CACHE
-    if _STATIC_PREFIX_CACHE is not None:
-        return _STATIC_PREFIX_CACHE
     soul = _read_text(ROOT / "SOUL.md")
     style = _read_text(ROOT / "STYLE.md")
-    nexus_md = _read_text(ROOT / "NEXUS.md")
-    weekly_lessons = _read_text(ROOT / "LESSONS.md")
-    tools_md = _read_text(ROOT / "TOOLS.md")
-    wiki_index = _read_text(ROOT / "wiki" / "index.md")
     sections = [f"# SOUL\n{soul}", f"# STYLE\n{style}", _TOOL_HINT]
-    # Phase 25 — knowledge garden hint. Inject the wiki index so the agent
-    # knows what curated pages exist and can reach for wiki_query before
-    # speculating about Colton's projects, Nexus internals, or past decisions.
-    if wiki_index:
-        sections.append(
-            "# KNOWLEDGE WIKI (~/AI_Agent/wiki/)\n"
-            "You maintain a knowledge wiki at ~/AI_Agent/wiki/. "
-            "Query it via `wiki_query` before answering questions about "
-            "Colton, his projects (BidWatt, SubWatt, Argus), Nexus "
-            "internals, or past decisions. Ingest new context via "
-            "`wiki_ingest`. Index of curated pages:\n\n"
-            + wiki_index
-        )
-    # TOOLS.md is the canonical, auto-refreshed inventory. Inject it so any
-    # agent path (worker, CLI, voice) knows the full tool surface and stops
-    # hallucinating "I can't browse the web" when it has browser_tool +
-    # web_fetch + brave_search etc.
-    if tools_md:
-        sections.append(tools_md)
-    if nexus_md:
-        sections.append(f"# REPO MAP (NEXUS.md)\n{nexus_md}")
-    if weekly_lessons:
-        sections.append(f"# WEEKLY LESSONS (from LESSONS.md)\n{weekly_lessons}")
-    _STATIC_PREFIX_CACHE = "\n\n".join(sections)
-    return _STATIC_PREFIX_CACHE
+    return "\n\n".join(sections)
 
 
 def load_dynamic_suffix() -> str:
-    """Return the volatile tail: live self-facts + lessons + current-project
-    context. Empty if none. Self-facts live here (not the cached static
-    prefix) so the model always knows its real model/host/stack without
-    busting Ollama's prompt-cache hash on the identity block."""
+    """Return the slow-changing tail: recent lessons + durable memory facts
+    + current-project context (only while a project is active). Empty if
+    none. Live self-facts and the wall clock are NOT here — they ride in
+    the per-turn message list (`turn_context_message`) so this prefix stays
+    byte-stable between turns."""
     parts: list[str] = []
-    try:
-        from core import self_facts  # noqa: PLC0415
-        parts.append(self_facts.self_facts_block())
-    except Exception as exc:  # never let a probe break prompt assembly
-        print(f"[prompt] self_facts skipped: {exc}", file=sys.stderr)
     lessons = load_lessons()
     if lessons:
         parts.append(lessons)
@@ -388,11 +353,19 @@ def load_system_prompt() -> str:
     return composed
 
 
-# Agent cache is keyed by (model, is_async) so sync and async variants
-# coexist — they share the same checkpoints.db file but talk to it via
-# different saver objects so each variant sees only the methods it can
-# call safely.
-_AGENT_CACHE: dict[tuple[str, bool], object] = {}
+# Agent cache is keyed by (model, toolset, is_async) so sync and async
+# variants coexist — they share the same checkpoints.db file but talk to it
+# via different saver objects so each variant sees only the methods it can
+# call safely. Phase 1: toolset ("lite" / "heavy" / "full", see
+# core/toolsets.py) decides which subset of TOOLS the LLM is bound to.
+_AGENT_CACHE: dict[tuple[str, str, bool], object] = {}
+
+
+def tools_for(toolset: str | None = None) -> list:
+    """Resolve a toolset name to the concrete subset of TOOLS (MCP tools
+    included for heavy/full). None → $NEXUS_TOOLSET or 'heavy'."""
+    from core import toolsets  # noqa: PLC0415
+    return toolsets.select(TOOLS, toolset, extra_names=_MCP_TOOL_NAMES)
 _SYSTEM_PROMPT = ""
 _ASYNC_CHECKPOINTER: AsyncSqliteSaver | None = None
 
@@ -412,19 +385,23 @@ def _make_llm(model: str) -> ChatOllama:
                       num_ctx=_b.num_ctx_for(model))
 
 
-def build_agent(model: str | None = None):
+def build_agent(model: str | None = None, toolset: str | None = None):
     """Build (and cache) a SYNC LangGraph agent for the given Ollama model.
     Use this from CLI / voice / any code path that calls `.invoke` or
     `.get_state` directly. For FastAPI's async handlers, call
     `build_agent_async` instead so checkpoint reads/writes don't go
-    through LangGraph's `asyncio.to_thread` fallback on every turn."""
+    through LangGraph's `asyncio.to_thread` fallback on every turn.
+
+    `toolset` — "lite" / "heavy" (default, or $NEXUS_TOOLSET) / "full"."""
+    from core import toolsets  # noqa: PLC0415
     model = model or router.model_for("heavy")
-    key = (model, False)
+    toolset = toolsets.resolve_name(toolset)
+    key = (model, toolset, False)
     if key not in _AGENT_CACHE:
         _AGENT_CACHE[key] = create_react_agent(
             _make_llm(model),
-            TOOLS,
-            prompt=_SYSTEM_PROMPT or None,
+            tools_for(toolset),
+            prompt=_agent_prompt,
             checkpointer=_CHECKPOINTER,
         )
     return _AGENT_CACHE[key]
@@ -455,28 +432,30 @@ async def _get_async_checkpointer() -> AsyncSqliteSaver:
     return _ASYNC_CHECKPOINTER
 
 
-async def build_agent_async(model: str | None = None):
+async def build_agent_async(model: str | None = None, toolset: str | None = None):
     """Build (and cache) an ASYNC LangGraph agent backed by AsyncSqliteSaver
     on the same checkpoints.db. Use this from async contexts so state
     reads/writes don't block the event loop (or bounce through the thread
-    pool on every turn)."""
+    pool on every turn). `toolset` as in `build_agent` (default heavy)."""
+    from core import toolsets  # noqa: PLC0415
     model = model or router.model_for("heavy")
-    key = (model, True)
+    toolset = toolsets.resolve_name(toolset)
+    key = (model, toolset, True)
     if key not in _AGENT_CACHE:
         saver = await _get_async_checkpointer()
         _AGENT_CACHE[key] = create_react_agent(
             _make_llm(model),
-            TOOLS,
-            prompt=_SYSTEM_PROMPT or None,
+            tools_for(toolset),
+            prompt=_agent_prompt,
             checkpointer=saver,
         )
     return _AGENT_CACHE[key]
 
 
-def agent_for_message(message: str) -> tuple[object, str, str]:
+def agent_for_message(message: str, toolset: str | None = None) -> tuple[object, str, str]:
     """Classify the message, pick the right model, return (agent, route, model)."""
     route, model = router.classify_and_model(message)
-    return build_agent(model), route, model
+    return build_agent(model, toolset), route, model
 
 
 FAST_MODE_INSTRUCTION = (
@@ -490,13 +469,58 @@ def is_fast_route(route: str) -> bool:
     return route == "fast"
 
 
+_DT_MARKER = "[Current date and time:"
+
+
+def turn_context_message(user_text: str = "") -> SystemMessage:
+    """Phase 1 — the volatile per-turn context (live self-facts + wall
+    clock) as ONE SystemMessage, placed right after the static prefix by
+    `_agent_prompt` on every step. It used to live in the system prompt,
+    which made the static prefix change between turns. The date line is
+    skipped when the caller already folded one into `user_text`
+    (workers/task_worker.py does)."""
+    parts: list[str] = []
+    try:
+        from core import self_facts  # noqa: PLC0415
+        parts.append(self_facts.self_facts_block())
+    except Exception as exc:  # never let a probe break a turn
+        print(f"[prompt] self_facts skipped: {exc}", file=sys.stderr)
+    if _DT_MARKER not in user_text:
+        now = datetime.now().astimezone()
+        parts.append(
+            f"{_DT_MARKER} {now.isoformat(timespec='seconds')} "
+            f"({now.strftime('%A')}). Use ONLY this for any time/date/day question.]"
+        )
+    return SystemMessage(content="\n\n".join(parts))
+
+
+def _agent_prompt(state) -> list:
+    """Per-step prompt builder handed to create_react_agent.
+
+    Emits [static system prompt][turn context][…thread messages]. The
+    static prefix (`_SYSTEM_PROMPT`) is byte-stable; the volatile bits
+    (self-facts + wall clock) are a separate SystemMessage rebuilt on every
+    step, so they never get baked into the prefix and — unlike appending
+    them to the per-turn message list — never accumulate in the checkpoint
+    history of long threads."""
+    history = list(state["messages"])
+    last_human = next(
+        (m.content for m in reversed(history) if isinstance(m, HumanMessage)), "")
+    out: list = []
+    if _SYSTEM_PROMPT:
+        out.append(SystemMessage(content=_SYSTEM_PROMPT))
+    out.append(turn_context_message(last_human if isinstance(last_human, str) else ""))
+    return out + history
+
+
 def fast_mode_messages(user_text: str, *, route: str | None = None, override: bool | None = None) -> list:
     """Return the message list to feed into the agent for one turn.
 
     Prepends a SystemMessage with the FAST_MODE_INSTRUCTION when fast mode is
     on. Caller decides whether fast mode applies (`override`) or lets the
     router decide via the route name. Returns plain LangChain messages so
-    both sync and async agent paths can use it.
+    both sync and async agent paths can use it. (Self-facts + datetime are
+    injected per step by `_agent_prompt`, not here.)
     """
     fast = override if override is not None else (route is not None and is_fast_route(route))
     msgs: list = []

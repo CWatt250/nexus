@@ -187,8 +187,11 @@ def test_quick_chat_with_chat_id_none_is_stateless(monkeypatch, tmp_path) -> Non
     out = ch.quick_chat("hello")
     assert out == "stub reply"
     assert calls == []  # builder never invoked
-    # DeepSeek receives no history (None or absent).
-    assert not captured[0]["kwargs"].get("history")
+    # DeepSeek receives no prior TURNS — only the trailing volatile
+    # system context block (self-facts / clock) rides in `history`.
+    turns = [m for m in (captured[0]["kwargs"].get("history") or [])
+             if m.get("role") != "system"]
+    assert not turns
 
 
 def test_quick_chat_with_chat_id_passes_history_to_deepseek(monkeypatch, tmp_path) -> None:
@@ -213,7 +216,10 @@ def test_quick_chat_with_chat_id_passes_history_to_deepseek(monkeypatch, tmp_pat
 
     out = ch.quick_chat("what's my favorite color?", chat_id=555)
     assert out == "stub reply"
-    history = captured[0]["kwargs"].get("history")
+    # Prior turns come first; the trailing volatile system context block
+    # (self-facts / clock) is appended after them — strip it for the check.
+    history = [m for m in captured[0]["kwargs"].get("history")
+               if m.get("role") != "system"]
     assert history == [
         {"role": "user", "content": "my favorite color is blue"},
         {"role": "assistant", "content": "got it — blue"},

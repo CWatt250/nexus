@@ -22,6 +22,16 @@ from typing import Any
 
 from langchain_core.messages import RemoveMessage, SystemMessage
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 STATE_FILE = Path.home() / "AI_Agent" / "memory" / "compression-state.json"
 LOG_FILE = Path.home() / "AI_Agent" / "memory" / "compression-log.md"
 OLLAMA_URL = "http://localhost:11434"
@@ -106,7 +116,7 @@ def _summarize(history_text: str) -> str:
             ],
             stream=False,
             think=False,
-            options={"temperature": 0.2, "num_predict": TARGET_TOKENS + 100, "num_ctx": 16_384},
+            options={"temperature": 0.2, "num_predict": TARGET_TOKENS + 100, "num_ctx": _nctx(MODEL)},
         )
     except Exception as exc:
         log.warning("summary call failed: %s", exc)

@@ -25,6 +25,16 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from ollama import AsyncClient
 from pydantic import BaseModel
 
+def _nctx(model: str) -> int:
+    """One num_ctx per model (core.brain.num_ctx_for) — mismatches force
+    Ollama runner reloads."""
+    try:
+        from core.brain import num_ctx_for  # noqa: PLC0415
+        return num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 HOST = "0.0.0.0"
 PORT = 11436
 OLLAMA_URL = "http://localhost:11434"
@@ -713,7 +723,7 @@ async def api_tweaks(req: TweaksRequest):
             stream=False,
             think=False,
             format="json",
-            options={"temperature": 0.2, "num_ctx": 16384, "num_predict": 2048},
+            options={"temperature": 0.2, "num_ctx": _nctx(MODEL), "num_predict": 2048},
         )
     except Exception as exc:
         raise HTTPException(502, f"ollama: {type(exc).__name__}: {exc}")

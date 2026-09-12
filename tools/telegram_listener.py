@@ -42,8 +42,10 @@ def is_authorized(update: Update) -> bool:
 import threading  # noqa: E402
 
 CHUNK_SEND_DELAY_S = 0.4   # spacing between sequential message chunks
-DRAFT_THROTTLE_S = 1.0     # min seconds between sendMessageDraft pushes
-DRAFT_MAX_CHARS = 4000     # cap on draft preview text
+# Route wall clock. 60 s (was 25): the brain re-prefills the whole prompt
+# every turn, and a lite_agent tool + formatter can legitimately take
+# 30-40 s. On timeout we say so and STILL deliver when the thread lands.
+ROUTE_TIMEOUT_S = 60
 
 
 async def _reply_chunked(update: Update, text: str) -> None:
@@ -60,20 +62,20 @@ async def _reply_chunked(update: Update, text: str) -> None:
 
 
 async def _stream_quick_chat_reply(update: Update, message: str,
-                                   chat_id: int) -> str:
-    """Live-draft a quick_chat reply (Bot API 9.5 sendMessageDraft).
+                                   chat_id: int, bubble=None) -> str:
+    """Stream a quick_chat reply INTO the progress bubble.
 
-    As Ollama tokens arrive, push the growing partial text to an ephemeral
-    "drafting" bubble (throttled). On completion, finalize with a real,
-    chunked sendMessage — the draft is NOT persisted and vanishes after
-    ~30s, so finalisation is mandatory. Returns the finalized reply text.
+    `quick_chat_stream` yields scrubbed, sentence-buffered partials (never
+    the raw accumulator); each one edits the bubble (throttled inside
+    ProgressBubble). The final runs through the false-promise guard, then
+    replaces the bubble. Returns the finalized reply text.
 
     Raises on a generation error so the caller falls back to the blocking
-    path (reply never dropped). sendMessageDraft itself is best-effort:
-    any draft error (library/account API-version gap) degrades silently to
-    typing-indicator + final message."""
+    path (reply never dropped) — the bubble is left in place for it."""
     from workers import conversation_handler as _ch  # noqa: PLC0415
-    bot = update.get_bot()
+    from tools.telegram_progress import ProgressBubble  # noqa: PLC0415
+    if bubble is None:
+        bubble = await ProgressBubble(update).start()
     loop = asyncio.get_running_loop()
     q: asyncio.Queue = asyncio.Queue()
 
@@ -87,12 +89,8 @@ async def _stream_quick_chat_reply(update: Update, message: str,
 
     threading.Thread(target=_producer, daemon=True).start()
 
-    draft_id = update.message.message_id  # stable id for this draft
     final_text: str | None = None
     err: Exception | None = None
-    last_push = 0.0
-    draft_ok = True
-
     while True:
         ev = await q.get()
         if "_error" in ev:
@@ -104,39 +102,37 @@ async def _stream_quick_chat_reply(update: Update, message: str,
             final_text = ev["final"]
             continue
         partial = ev.get("partial", "")
-        if draft_ok and partial.strip():
-            now = loop.time()
-            if now - last_push >= DRAFT_THROTTLE_S:
-                last_push = now
-                try:
-                    # Phase 42: the draft mechanism is chosen ONCE per
-                    # message (rich xor plain) — never mixed within a
-                    # lifecycle. On any failure we stop drafting entirely
-                    # rather than switch modes; the final send (rich-aware)
-                    # is what persists.
-                    if TELEGRAM_RICH_DRAFTS:
-                        await _send_rich_draft(
-                            chat_id, draft_id, partial[:DRAFT_MAX_CHARS])
-                    else:
-                        await bot.send_message_draft(
-                            chat_id=chat_id, draft_id=draft_id,
-                            text=partial[:DRAFT_MAX_CHARS],
-                        )
-                except Exception as exc:  # noqa: BLE001
-                    draft_ok = False  # stop drafting, keep accumulating
-                    logger.info("%s draft failed (%s) — degrading to final "
-                                "message only",
-                                "rich" if TELEGRAM_RICH_DRAFTS else "plain", exc)
+        if partial.strip():
+            await bubble.stage(partial)
 
     if err is not None:
         raise err
     if not final_text:
-        final_text = "(handler returned no text — try again)"
-    # Draft is ephemeral — the real message is what persists. Phase 42:
-    # finalize through the rich-aware path so tables/headings render
-    # natively (degrades to plain chunked on any rich failure).
-    await _reply_smart(update, final_text)
+        final_text = "Came back empty — say that again?"
+    # False-promise guard (same one the blocking path uses): a tool-less
+    # "let me check…" becomes a real queued task + the recovery line.
+    try:
+        rec = _ch.guard_quick_chat_reply(message, final_text)
+        if rec is not None:
+            final_text = rec["reply"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stream guard failed: %s", exc)
+    await _finish_bubble(update, bubble, final_text)
     return final_text
+
+
+async def _finish_bubble(update: Update, bubble, text: str) -> None:
+    """Final delivery: rich markdown (tables/headings) replaces the bubble
+    with a native rich message; everything else edits the bubble in
+    place, chunked if long."""
+    if _has_rich_constructs(text) and len(text) <= TELEGRAM_RICH_LIMIT:
+        try:
+            await bubble.replace_with(
+                lambda md: _send_rich_message(update.effective_chat.id, md), text)
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.info("rich send failed (%s) — editing bubble instead", exc)
+    await bubble.finish(text)
 
 
 # ── Phase 42 — Telegram Rich Messages (Bot API 10.1) ────────────────────
@@ -148,10 +144,6 @@ import re  # noqa: E402
 # `#`/`|`/``` characters. PTB 22.7 has no typed support, so these go
 # through a raw HTTP POST. rich_message is a JSON object: {"markdown": ...}.
 TELEGRAM_RICH_LIMIT = 32768
-# Part B is OFF by default — rich draft streaming has client-side render
-# glitches on some desktop apps. Flip TELEGRAM_RICH_DRAFTS=true to enable.
-TELEGRAM_RICH_DRAFTS = os.getenv("TELEGRAM_RICH_DRAFTS", "false").lower() in (
-    "1", "true", "yes", "on")
 
 # Markdown constructs worth rendering natively: headings, table rows, code
 # fences, bullet/numbered lists. A reply with none of these is plain prose
@@ -188,23 +180,6 @@ async def _send_rich_message(chat_id: int, markdown_text: str) -> None:
         raise RuntimeError(f"sendRichMessage rejected: {body.get('description')}")
 
 
-async def _send_rich_draft(chat_id: int, draft_id: int,
-                           markdown_text: str) -> None:
-    """Stream a partial rich message via the raw sendRichMessageDraft
-    endpoint. Same JSON shape as _send_rich_message. Raises on rejection."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendRichMessageDraft"
-    payload = {
-        "chat_id": chat_id,
-        "draft_id": draft_id,
-        "rich_message": json.dumps({"markdown": markdown_text}),
-    }
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(url, data=payload)
-    body = resp.json()
-    if not body.get("ok"):
-        raise RuntimeError(f"sendRichMessageDraft rejected: {body.get('description')}")
-
-
 async def _reply_smart(update: Update, text: str) -> None:
     """Reply with a native rich message when the text has formatting worth
     preserving (tables/headings/code/lists) and fits the 32k rich limit;
@@ -220,17 +195,44 @@ async def _reply_smart(update: Update, text: str) -> None:
     await _reply_chunked(update, text)
 
 
+def _help_text() -> str:
+    """Built from conversation_handler.SLASH_COMMANDS so the ladder can't
+    drift from what the parser actually accepts."""
+    from workers.conversation_handler import SLASH_COMMANDS  # noqa: PLC0415
+    ladder = []
+    for cmd, spec in SLASH_COMMANDS.items():
+        if spec.get("deprecated_alias_for"):
+            continue  # /real: still works, no longer advertised
+        star = "  ★ default for builds" if cmd == "/local" else ""
+        ladder.append(f"  {cmd} <prompt> — {spec['blurb']}{star}")
+    return (
+        "Nexus commands\n\n"
+        "Just talk — plain messages get routed (chat, lookup, task, build).\n\n"
+        "Builds (explicit tier — cloud tiers only fire when you name them):\n"
+        + "\n".join(ladder) + "\n\n"
+        "Me:\n"
+        "  /think on|off — show my reasoning under each reply (💭). "
+        "\"show your work\" in a message does it once.\n"
+        "  /creds [service] — credential status, or setup steps for one service\n"
+        "  /computer <task> — drive the :99 browser (caps: 30 min, $5; --unsafe skips stops)\n"
+        "  /image [flux|qwen|sdxl|sd15] <prompt> — local image gen\n"
+        "  /screenshot, /desktop — see the desktop (if the desktop bridge is loaded)\n"
+        "  /status — is Nexus up\n"
+        "  /tasks — recent task queue\n\n"
+        "Text shortcuts:\n"
+        "  wiki <query> · ingest <text|url> · queue: <task> · queue\n"
+        "  dispatch: <prompt> · go cc_xxx · cancel cc_xxx · retry cc_xxx · extend cc_xxx <min>\n"
+        "  restart nexus-* · script <topic> · create video <topic>"
+    )
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command."""
     if not is_authorized(update):
         return
     await update.message.reply_text(
-        "Hey Colton! Sparky here.\n\n"
-        "Send me any message and I'll route it to Nexus.\n\n"
-        "Commands:\n"
-        "/status - Check Nexus status\n"
-        "/tasks - List current tasks\n"
-        "/stop - Stop current task\n"
+        "Nexus here. Say what you need — I'll chat, look things up, or build it.\n\n"
+        "/help lists the commands."
     )
 
 
@@ -243,11 +245,51 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             response = await client.get(f"{NEXUS_API_URL}/health", timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                await update.message.reply_text(f"Nexus Status: {data.get('status', 'unknown')}")
+                status = data.get("status", "unknown")
+                await update.message.reply_text(
+                    "Up and healthy." if status == "ok" else f"API says: {status}.")
             else:
-                await update.message.reply_text(f"Nexus returned {response.status_code}")
+                await update.message.reply_text(
+                    f"The API answered but not happily (HTTP {response.status_code}).")
     except Exception as e:
-        await update.message.reply_text(f"Could not reach Nexus API: {e}")
+        logger.warning("status_command: %s", e)
+        await update.message.reply_text(
+            "Can't reach the Nexus API right now — the service may be down or restarting.")
+
+
+async def think_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/think on|off — per-chat show-your-work toggle."""
+    if not is_authorized(update):
+        return
+    from workers import conversation_handler as ch  # noqa: PLC0415
+    chat_id = update.effective_chat.id
+    arg = (context.args[0].lower() if context.args else "").strip()
+    if arg in ("on", "off"):
+        ch.set_think_pref(chat_id, arg == "on")
+        await update.message.reply_text(
+            "Showing my work from here on — 💭 under each reply." if arg == "on"
+            else "Back to answers only.")
+        return
+    state = "on" if ch.get_think_pref(chat_id) else "off"
+    await update.message.reply_text(f"Show-your-work is {state}. /think on | /think off")
+
+
+async def creds_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/creds → status table; /creds <service> → setup steps for that service."""
+    if not is_authorized(update):
+        return
+    from tools import credentials_helper as _cred  # noqa: PLC0415
+    service = (context.args[0].lower() if context.args else "").strip()
+    try:
+        text = _cred.telegram_instructions(service) if service else _cred.telegram_status()
+    except Exception as e:
+        logger.warning("creds_command: %s", e)
+        await update.message.reply_text("Couldn't read the credentials registry — check the log.")
+        return
+    try:
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception:
+        await _reply_chunked(update, text)
 
 
 async def tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -267,7 +309,7 @@ async def tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Recent tasks:\n" + "\n".join(lines))
     except Exception as e:
         logger.exception("tasks_command failed: %s", e)
-        await update.message.reply_text(f"Error: {type(e).__name__}: {e}")
+        await update.message.reply_text("Couldn't read the queue just now — check the log.")
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -476,7 +518,9 @@ async def _handle_slash_dispatch(update: Update, tier: str, prompt: str) -> None
         from workers import conversation_handler as ch  # noqa: PLC0415
         result = await asyncio.to_thread(ch._enqueue_tiered_dispatch, prompt, tier)
     except Exception as exc:
-        await update.message.reply_text(f"⚠️ slash dispatch error: {type(exc).__name__}: {exc}")
+        logger.exception("slash dispatch failed: %s", exc)
+        await update.message.reply_text(
+            "Couldn't hand that to the dispatcher — it's logged. Try once more?")
         return
     await _reply_chunked(update, result.get("reply", "(no reply)"))
 
@@ -550,10 +594,12 @@ async def quick_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             asyncio.to_thread(ch.quick_chat, prompt), timeout=30,
         )
     except asyncio.TimeoutError:
-        await update.message.reply_text("/quick took >30s — try /local or rephrase.")
+        await update.message.reply_text(
+            "That took over 30 s — the brain's busy. Send it again as a plain message.")
         return
     except Exception as exc:
-        await update.message.reply_text(f"/quick error: {type(exc).__name__}: {exc}")
+        logger.exception("/quick failed: %s", exc)
+        await update.message.reply_text("That one tripped on the way out — it's logged. Try again?")
         return
     if not reply:
         reply = "(no reply)"
@@ -585,10 +631,12 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         res = await asyncio.wait_for(
             asyncio.to_thread(generate_image_core, prompt, model=model), timeout=wait_s)
     except asyncio.TimeoutError:
-        await update.message.reply_text(f"/image timed out (>{wait_s}s).")
+        await update.message.reply_text(
+            f"The image run blew past {wait_s // 60} min — the GPU's probably busy. Try again in a bit.")
         return
     except Exception as exc:
-        await update.message.reply_text(f"/image error: {type(exc).__name__}: {exc}")
+        logger.exception("/image failed: %s", exc)
+        await update.message.reply_text("Image gen fell over — it's logged. Try again?")
         return
     if not res.get("ok"):
         await update.message.reply_text(f"/image failed: {res.get('error')}")
@@ -695,43 +743,10 @@ async def _run_computer_in_background(update: Update, task: str, unsafe: bool) -
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/help — list every command Sparky responds to."""
+    """/help — every command, generated from SLASH_COMMANDS + the real ladder."""
     if not is_authorized(update):
         return
-    await update.message.reply_text(
-        "Sparky commands:\n\n"
-        "Coding router (Phase 29 ladder, cheapest first):\n"
-        "  /max <prompt>   — Claude Sonnet 4.6 via Max plan ($0 marginal) ★ default\n"
-        "  /code <prompt>  — DeepSeek V4-Flash (~$0.005, saves Max quota)\n"
-        "  /pro <prompt>   — DeepSeek V4-Pro (~$0.05)\n"
-        "  /api <prompt>   — Sonnet 4.6 via API key (~$0.10–1.00, fallback)\n"
-        "  /real <prompt>  — DEPRECATED alias for /api\n"
-        "  /local <prompt> — qwen3-coder:30b local (free, offline)\n"
-        "  /quick <prompt> — qwen3:4b quick chat (free)\n\n"
-        "Computer Use (Phase 36):\n"
-        "  /computer <task> — drives the :99 browser to do dashboard tasks\n"
-        "                     hard caps: 30min wall clock, $5 spend\n"
-        "                     append --unsafe to skip destructive-action stops\n\n"
-        "Wiki:\n"
-        "  wiki <query>     — search the Knowledge Garden\n"
-        "  ingest <text|url> — add to the Knowledge Garden\n\n"
-        "Dispatch (legacy):\n"
-        "  dispatch: <prompt>       — Anthropic Sonnet via cc_dispatcher\n"
-        "  force dispatch: <prompt> — bypass monthly budget cap\n"
-        "  go cc_xxx                — release a held risky prompt\n"
-        "  cancel cc_xxx            — drop a queued prompt\n"
-        "  queue                    — show current queue + budget\n"
-        "  retry cc_xxx             — re-run an archived dispatch\n"
-        "  extend cc_xxx <minutes>  — re-dispatch with bigger budget\n"
-        "  restart cc_xxx | nexus-* — bounce services\n\n"
-        "Other:\n"
-        "  /status   — Nexus health\n"
-        "  /tasks    — recent tasks\n"
-        "  /stop     — stop current task\n"
-        "  build me X / make X / create X / code X — auto-routes to /max\n"
-        "  make a quick/simple X                   — auto-routes to /local\n"
-        "  script <topic> | create video <topic>   — Phase 21 content stack"
-    )
+    await update.message.reply_text(_help_text())
 
 
 async def _handle_content_command(update: Update, text: str) -> bool:
@@ -1066,13 +1081,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning("telegram_chats user-write failed: %s", e)
 
     from workers import conversation_handler
+    from tools.telegram_progress import ProgressBubble  # noqa: PLC0415
 
-    # Phase 41: live-draft streaming for pure chat turns. classify_intent
-    # is the cheap deterministic gate (queue:/status/cancel/list bypass
-    # it); the LLM router then confirms the turn is quick_chat (not a
-    # build/task) before we stream tokens to a drafting bubble. Any failure
-    # falls through to the blocking router path so the reply is never
-    # dropped or delayed.
+    # ONE bubble per message, sent immediately; every stage edits it and
+    # the final reply replaces it.
+    bubble = await ProgressBubble(update).start()
+    loop = asyncio.get_running_loop()
+
+    def _progress_cb(text: str) -> None:  # called from the worker thread
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(bubble.stage(text)))
+
+    # Streaming for pure chat turns. classify_intent is the cheap
+    # deterministic gate (queue:/status/cancel/list bypass it); the LLM
+    # router then confirms quick_chat (not a build/task) before we stream
+    # sentences into the bubble. Any failure falls through to the blocking
+    # router path so the reply is never dropped or delayed.
     streamed_reply: str | None = None
     decision: dict | None = None  # router result, reused below (route ONCE)
     try:
@@ -1082,61 +1105,83 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 decision = {"route": "quick_chat", "tier": None,
                             "recon_mode": False, "router_skipped": True}
             else:
+                await bubble.stage("🧭 routing")
                 from workers import llm_router
                 decision = await asyncio.to_thread(llm_router.route_llm, user_message)
             if decision.get("route") == "quick_chat":
+                await bubble.stage("✍️ writing")
                 streamed_reply = await _stream_quick_chat_reply(
-                    update, user_message, chat_id)
+                    update, user_message, chat_id, bubble)
     except Exception as e:
         logger.warning("stream path failed (%s) — falling back to router", e)
         streamed_reply = None
 
     if streamed_reply is not None:
         logger.info("route kind=chat chat_id=%s (streamed)", chat_id)
-        try:
-            from core import telegram_chats as _tcs
-            _tcs.write_turn(chat_id, "assistant", streamed_reply)
-        except Exception as e:
-            logger.warning("telegram_chats assistant-write failed: %s", e)
+        _after_chat_turn(chat_id, user_message, streamed_reply)
         return
 
+    # Blocking router off the event loop. The thread can't be cancelled,
+    # so on timeout we say so, free this handler, and deliver when it lands.
+    fut = asyncio.ensure_future(asyncio.to_thread(
+        conversation_handler.route_message, user_message, chat_id, decision,
+        _progress_cb))
     try:
-        # New 4-way LLM router: CHAT/QUERY -> brain inline reply,
-        # TASK -> enqueue, STATUS -> task lookup. "queue: <text>" remains
-        # a power-user prefix that bypasses classification. Run the
-        # blocking router off the event loop so the bot stays responsive.
-        # Phase 38: pass chat_id so quick_chat can prepend rolling history.
-        result = await asyncio.wait_for(
-            asyncio.to_thread(conversation_handler.route_message,
-                              user_message, chat_id, decision),
-            timeout=25,
-        )
-        reply = result.get("reply", "")
-        logger.info("route kind=%s chat_id=%s", result.get("kind"), chat_id)
+        result = await asyncio.wait_for(asyncio.shield(fut), timeout=ROUTE_TIMEOUT_S)
     except asyncio.TimeoutError:
-        await update.message.reply_text(
-            "Took >25s to route — Ollama may be busy. Try again, or send "
-            "'queue: <task>' to bypass classification."
-        )
+        logger.warning("route_message >%ss for chat_id=%s — delivering late",
+                       ROUTE_TIMEOUT_S, chat_id)
+        await bubble.stage(
+            "⏳ still on it — this one's taking longer than a minute. "
+            "I'll drop the answer here when it lands.")
+        asyncio.create_task(_deliver_late(update, bubble, fut, chat_id, user_message))
         return
     except Exception as e:
         logger.exception("conversation handler error: %s", e)
-        await update.message.reply_text(f"handler error: {type(e).__name__}: {e}")
+        await bubble.finish("That one tripped on the way out — it's logged. Try again?")
         return
 
-    if not reply:
-        reply = "(handler returned no text — try again)"
+    await _deliver_result(update, bubble, result, chat_id, user_message)
 
-    # Phase 38: log the assistant reply before sending. Phase 41: full reply
-    # chunked, not truncated. Phase 42: sent rich-first (native tables/
-    # headings), degrading to the plain chunked path on any rich failure.
+
+async def _deliver_late(update: Update, bubble, fut: "asyncio.Future",
+                        chat_id: int, user_message: str) -> None:
+    try:
+        result = await fut
+    except Exception as e:
+        logger.exception("late route_message failed: %s", e)
+        await bubble.finish("That one died on the way back — it's logged. Try again?")
+        return
+    await _deliver_result(update, bubble, result, chat_id, user_message)
+
+
+async def _deliver_result(update: Update, bubble, result: dict,
+                          chat_id: int, user_message: str) -> None:
+    reply = result.get("reply", "") or "Came back empty — say that again?"
+    logger.info("route kind=%s chat_id=%s", result.get("kind"), chat_id)
+    if result.get("kind") == "chat":
+        _after_chat_turn(chat_id, user_message, reply)
+    else:
+        try:
+            from core import telegram_chats as _tcs
+            _tcs.write_turn(chat_id, "assistant", reply)
+        except Exception as e:
+            logger.warning("telegram_chats assistant-write failed: %s", e)
+    await _finish_bubble(update, bubble, reply)
+
+
+def _after_chat_turn(chat_id: int, user_message: str, reply: str) -> None:
+    """Persist the assistant turn + rate-limited background reflection."""
     try:
         from core import telegram_chats as _tcs
         _tcs.write_turn(chat_id, "assistant", reply)
     except Exception as e:
         logger.warning("telegram_chats assistant-write failed: %s", e)
-
-    await _reply_smart(update, reply)
+    try:
+        from workers import conversation_handler
+        conversation_handler.maybe_reflect(chat_id, user_message, reply)
+    except Exception as e:
+        logger.debug("reflection spawn failed: %s", e)
 
 
 def main() -> None:
@@ -1176,10 +1221,18 @@ def main() -> None:
     # Phase 36 — Computer Use agent (Anthropic native, drives :99 browser).
     application.add_handler(CommandHandler("computer", computer_command))
     application.add_handler(CommandHandler("image", image_command))  # local SD gen
+    application.add_handler(CommandHandler("think", think_command))  # show-your-work toggle
+    application.add_handler(CommandHandler("creds", creds_command))  # Phase 33 helper
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     # Phase E — vision intake: photos + image documents → local VLM describe.
     application.add_handler(
         MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
+    # /screenshot + /desktop live in tools/telegram_desktop (owned elsewhere).
+    try:
+        from tools import telegram_desktop  # noqa: PLC0415
+        telegram_desktop.register(application)
+    except Exception as e:
+        logger.warning("telegram_desktop not registered: %s", e)
 
     # Start the bot
     logger.info("Starting Telegram listener...")

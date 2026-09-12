@@ -33,7 +33,6 @@ class FakeUpdate:
 @pytest.fixture(autouse=True)
 def _fast(monkeypatch):
     monkeypatch.setattr(tl, "CHUNK_SEND_DELAY_S", 0.0)
-    monkeypatch.setattr(tl, "DRAFT_THROTTLE_S", 0.0)
 
 
 # ── construct detection ──────────────────────────────────────────────
@@ -124,67 +123,67 @@ def test_send_rich_message_raises_on_api_error(monkeypatch):
         asyncio.run(tl._send_rich_message(1, "## h"))
 
 
-# ── Part B — rich drafts never mix with plain within one lifecycle ───
-def test_rich_drafts_never_fall_back_to_plain_draft(monkeypatch):
-    monkeypatch.setattr(tl, "TELEGRAM_RICH_DRAFTS", True)
+# ── Part B — streamed finals go rich when they carry markdown ────────
+class _FakeChat:
+    id = 555
 
-    async def rich_draft_boom(chat_id, draft_id, md):
-        raise RuntimeError("rich draft client glitch")
-    monkeypatch.setattr(tl, "_send_rich_draft", rich_draft_boom)
+    async def send_action(self, action):
+        pass
 
+
+class _Bubble:
+    """Minimal stand-in for tools.telegram_progress.ProgressBubble."""
+    def __init__(self):
+        self.finished: list[str] = []
+        self.deleted = False
+        self.stages: list[str] = []
+
+    async def stage(self, text):
+        self.stages.append(text)
+
+    async def finish(self, text):
+        self.finished.append(text)
+
+    async def replace_with(self, sender, text):
+        await sender(text)
+        self.deleted = True
+
+
+def test_rich_final_replaces_bubble_via_rich_send(monkeypatch):
     captured = []
 
     async def fake_rich_final(chat_id, md):
-        captured.append(md)
+        captured.append((chat_id, md))
     monkeypatch.setattr(tl, "_send_rich_message", fake_rich_final)
+    monkeypatch.setattr(ch, "guard_quick_chat_reply", lambda m, r: None)
 
     def fake_stream(message, chat_id):
         yield {"partial": "## par"}
-        yield {"partial": "## partial | a |"}
         yield {"final": "## Done\n\n| a | b |\n|---|---|\n| 1 | 2 |"}
     monkeypatch.setattr(ch, "quick_chat_stream", fake_stream)
 
-    class Bot:
-        def __init__(self):
-            self.plain_draft_called = False
+    bubble = _Bubble()
+    out = asyncio.run(tl._stream_quick_chat_reply(FakeUpdate(bot=None), "hi", 9, bubble))
 
-        async def send_message_draft(self, **kwargs):
-            self.plain_draft_called = True
-
-    bot = Bot()
-    upd = FakeUpdate(bot=bot)
-    out = asyncio.run(tl._stream_quick_chat_reply(upd, "hi", 9))
-
-    # Core Part B guarantee: in rich-draft mode we NEVER call the plain
-    # draft method — no mixed rich/plain within one message lifecycle.
-    assert bot.plain_draft_called is False
     assert out.startswith("## Done")
-    assert captured                              # finalized via rich send
+    assert captured and captured[0][0] == 555        # finalized via rich send
+    assert bubble.deleted is True                     # bubble removed
+    assert bubble.finished == []                      # NOT also edited plain
+    assert bubble.stages == ["## par"]                # partial streamed into bubble
 
 
-def test_plain_drafts_used_when_toggle_off(monkeypatch):
-    monkeypatch.setattr(tl, "TELEGRAM_RICH_DRAFTS", False)
-
-    async def rich_draft_must_not(chat_id, draft_id, md):
-        raise AssertionError("must not use rich draft when toggle off")
-    monkeypatch.setattr(tl, "_send_rich_draft", rich_draft_must_not)
-
-    async def fake_rich_final(chat_id, md):
-        pass
-    monkeypatch.setattr(tl, "_send_rich_message", fake_rich_final)
+def test_plain_final_edits_bubble_when_rich_fails(monkeypatch):
+    async def rich_boom(chat_id, md):
+        raise RuntimeError("rich rejected")
+    monkeypatch.setattr(tl, "_send_rich_message", rich_boom)
+    monkeypatch.setattr(ch, "guard_quick_chat_reply", lambda m, r: None)
 
     def fake_stream(message, chat_id):
         yield {"partial": "hello"}
         yield {"final": "## Done\n\n| a | b |\n|---|---|\n| 1 | 2 |"}
     monkeypatch.setattr(ch, "quick_chat_stream", fake_stream)
 
-    class Bot:
-        def __init__(self):
-            self.plain_draft_called = False
-
-        async def send_message_draft(self, **kwargs):
-            self.plain_draft_called = True
-
-    bot = Bot()
-    asyncio.run(tl._stream_quick_chat_reply(FakeUpdate(bot=bot), "hi", 9))
-    assert bot.plain_draft_called is True        # plain draft path used
+    bubble = _Bubble()
+    asyncio.run(tl._stream_quick_chat_reply(FakeUpdate(bot=None), "hi", 9, bubble))
+    assert bubble.deleted is False
+    assert bubble.finished and bubble.finished[0].startswith("## Done")   # edited in place
