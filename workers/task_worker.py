@@ -186,17 +186,19 @@ async def _run_one(row: dict) -> None:
     # Wall-clock context is injected here, transiently, so the agent
     # still can't hallucinate "today" from training data.
     now = datetime.now().astimezone()
-    dt_msg = SystemMessage(content=(
-        f"Current date and time: {now.isoformat(timespec='seconds')}. "
-        f"Current day of week: {now.strftime('%A')}. "
-        "When asked about the current time, date, or day, use ONLY the "
-        "datetime above. Never guess or use training data."
-    ))
+    # Folded into the human turn, NOT a second SystemMessage: strict chat
+    # templates (Ornith-1.0) rejected a system message at index 1 with
+    # "System message must be at the beginning" — every real task Jul–Sep
+    # 2026 died on it before the model ran.
+    dt_line = (
+        f"[Current date and time: {now.isoformat(timespec='seconds')} "
+        f"({now.strftime('%A')}). Use ONLY this for any time/date/day question.]"
+    )
     # G1 — expand @file:/@diff/@git:/@url: refs into the agent input (routing
     # + logging stay on the original user_text above; unchanged when no refs).
     from core import context_refs  # noqa: PLC0415
-    agent_text = context_refs.expand_refs(user_text)
-    lc_msgs = [dt_msg] + nexus.fast_mode_messages(agent_text, route=route)
+    agent_text = f"{dt_line}\n\n{context_refs.expand_refs(user_text)}"
+    lc_msgs = nexus.fast_mode_messages(agent_text, route=route)
 
     heartbeat_task = asyncio.create_task(
         _heartbeat_loop(task_id, started, tool_state)

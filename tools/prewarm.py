@@ -21,6 +21,16 @@ MODELS_FILE = ROOT / "models.json"
 OLLAMA_URL = "http://localhost:11434"
 
 
+def _num_ctx(model: str) -> int:
+    """Single per-model context size (core.brain.num_ctx_for) — mismatched
+    num_ctx values force Ollama runner reloads."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 def _models() -> dict:
     if MODELS_FILE.exists():
         try:
@@ -52,7 +62,9 @@ def _warm(client: ollama.Client, model: str, *, keep_alive: int | str) -> tuple[
             messages=[{"role": "user", "content": "ping"}],
             stream=False,
             think=_think_for(model),
-            options={"num_predict": 1, "temperature": 0.0, "num_ctx": 256},
+            # Warm at the SAME num_ctx real callers use, or the first real
+            # call reloads the runner (the old 256 guaranteed a second load).
+            options={"num_predict": 1, "temperature": 0.0, "num_ctx": _num_ctx(model)},
             keep_alive=keep_alive,
         )
     except Exception as exc:

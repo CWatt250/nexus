@@ -251,6 +251,23 @@ def _spawn_claude(prompt_body: str, log_path: Path,
     return proc
 
 
+def _local_tier_model() -> str:
+    """Local coding tier = models.json "code" (the resident brain, $0, no
+    extra VRAM). Override with LOCAL_TIER_MODEL=qwen3.5:122b-a10b to use the
+    81 GB model on demand (never resident alongside the brain)."""
+    import os  # noqa: PLC0415
+    env = os.environ.get("LOCAL_TIER_MODEL")
+    if env:
+        return env
+    try:
+        import json  # noqa: PLC0415
+        from core import brain  # noqa: PLC0415
+        data = json.loads(brain.MODELS_FILE.read_text(encoding="utf-8"))
+        return data.get("code") or brain.get_brain_model()
+    except Exception:
+        return "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M"
+
+
 def _run_local_qwen(prompt_body: str, log_path: Path,
                     budget_seconds: float, stop_event_check) -> tuple[int, bool, bool]:
     """Phase 28 — tier='local'. Calls the local coding model via Ollama
@@ -276,7 +293,7 @@ def _run_local_qwen(prompt_body: str, log_path: Path,
     try:
         client = ollama.Client(host="http://localhost:11434")
         stream = client.chat(
-            model="qwen3.5:122b-a10b",
+            model=_local_tier_model(),
             messages=[
                 {"role": "system", "content": (
                     "You are a senior software engineer. Output complete, working code "

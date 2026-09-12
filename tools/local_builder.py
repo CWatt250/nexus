@@ -27,6 +27,16 @@ log = logging.getLogger("nexus.local_builder")
 OLLAMA_HOST = "http://localhost:11434"
 
 
+def _num_ctx(model: str) -> int:
+    """Single per-model context size (core.brain.num_ctx_for) — mismatched
+    num_ctx values force Ollama runner reloads."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
+
 def _live_model(key: str = "code", default: str = "qwen3-coder:30b") -> str:
     """Resolve from models.json (was hardcoded qwen3.6, which pinned 23GB
     resident via keep_alive=-1). models.json `code` is the resident brain → 0 extra VRAM."""
@@ -157,7 +167,7 @@ def _generate_via_ollama(description: str, tech: str,
             keep_alive=-1,
             options={
                 "temperature": 0.4,
-                "num_ctx": 8192,
+                "num_ctx": _num_ctx(model),
                 "num_predict": 4096,
             },
         )

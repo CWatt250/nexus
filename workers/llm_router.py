@@ -230,7 +230,7 @@ def route_llm(message: str) -> dict:
             # failure, so worst case is identical to before.
             model=brain.get_router_model(),
             fmt=ROUTER_SCHEMA,
-            options={"temperature": 0.0, "num_ctx": 8192, "num_predict": 200},
+            options={"temperature": 0.0, "num_predict": 200},
             timeout=30.0,
         )
     except Exception as exc:

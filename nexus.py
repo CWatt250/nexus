@@ -405,7 +405,11 @@ def set_system_prompt(prompt: str) -> None:
 
 
 def _make_llm(model: str) -> ChatOllama:
-    return ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=False)
+    # num_ctx MUST be pinned — unset means the GGUF max (262144), which
+    # allocated a 36.9 GB KV cache on qwen3:4b and crashed the GPU nightly.
+    from core import brain as _b  # noqa: PLC0415
+    return ChatOllama(model=model, base_url=OLLAMA_URL, reasoning=False,
+                      num_ctx=_b.num_ctx_for(model))
 
 
 def build_agent(model: str | None = None):
@@ -582,7 +586,7 @@ def extract_clean_answer(text: str, *, model: str | None = None) -> str:
                 {"role": "user", "content": text[:6000]},
             ],
             stream=False, think=_brain.think_param(model), keep_alive=-1,
-            options={"temperature": 0.1, "num_predict": 400, "num_ctx": 8192},
+            options={"temperature": 0.1, "num_predict": 400, "num_ctx": _brain.num_ctx_for(model)},
         )
     except Exception:
         return text

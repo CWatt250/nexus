@@ -20,6 +20,16 @@ from pathlib import Path
 import ollama
 from langchain_core.tools import tool
 
+
+def _num_ctx(model: str) -> int:
+    """Single per-model context size (core.brain.num_ctx_for) — mismatched
+    num_ctx values force Ollama runner reloads."""
+    try:
+        from core import brain  # noqa: PLC0415
+        return brain.num_ctx_for(model)
+    except Exception:
+        return 16384
+
 ROOT = Path.home() / "AI_Agent"
 LOG_PATH = ROOT / "memory" / "reminders.jsonl"
 OLLAMA_URL = "http://localhost:11434"
@@ -103,7 +113,7 @@ def _llm_extract(message: str) -> dict | None:
             model=EXTRACTOR_MODEL,
             messages=[{"role": "user", "content": prompt}],
             stream=False, think=False, keep_alive=-1,
-            options={"temperature": 0.0, "num_predict": 120, "num_ctx": 4096, "format": "json"},
+            options={"temperature": 0.0, "num_predict": 120, "num_ctx": _num_ctx(EXTRACTOR_MODEL), "format": "json"},
         )
     except Exception:
         return None

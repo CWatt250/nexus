@@ -43,6 +43,22 @@ DEGRADED_MODEL = "qwen3:4b"
 # models.json "router" key overrides. (Phase B speed hardening.)
 DEFAULT_ROUTER_MODEL = "qwen3:4b"
 
+# ONE context size per model, everywhere. Ollama reloads the runner whenever
+# a request's num_ctx differs from the resident one (5–34 s each; 57
+# reloads/week were measured 2026-09-12 across 256/4096/8192/16384/unset).
+# An unset num_ctx means the GGUF max (262144) — which gave qwen3:4b a
+# 36.9 GB KV cache and crashed the GPU (vk ErrorDeviceLost) every night.
+BRAIN_NUM_CTX = 32768   # Ornith-1.5 hybrid attention: KV is cheap at 32K
+SMALL_NUM_CTX = 16384   # qwen3:4b and other small/degraded models
+
+
+def num_ctx_for(model: str | None = None) -> int:
+    """The single num_ctx every caller must use for `model`."""
+    m = (model or get_brain_model()).lower()
+    if m == DEGRADED_MODEL or ":4b" in m or ":8b" in m or "embed" in m:
+        return SMALL_NUM_CTX
+    return BRAIN_NUM_CTX
+
 
 def get_brain_model() -> str:
     """Brain model id — models.json `brain` key, else the default."""
@@ -109,8 +125,8 @@ def _call(model: str, messages: list[dict], *, fmt, options, timeout) -> str:
         "stream": False,
         "keep_alive": -1,
         "think": think_param(model),
-        "options": options or {"temperature": 0.2, "num_ctx": 8192,
-                               "num_predict": 512},
+        "options": {"temperature": 0.2, "num_predict": 512,
+                    **(options or {}), "num_ctx": num_ctx_for(model)},
     }
     if fmt is not None:
         kwargs["format"] = fmt

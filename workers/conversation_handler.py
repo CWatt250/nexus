@@ -54,7 +54,7 @@ HANDLER_MODEL = "qwen3:4b"
 # offline/degraded fallback only (big model evicted, Ollama restart).
 QUICK_CHAT_PROVIDER = "ollama"
 QUICK_CHAT_FALLBACK_PROVIDER = "ollama"
-QUICK_CHAT_OLLAMA_MODEL = brain.get_brain_model()
+QUICK_CHAT_OLLAMA_MODEL = brain.get_brain_model()  # legacy alias — call sites resolve live
 QUICK_CHAT_DENIAL_FALLBACK_MODEL = brain.DEGRADED_MODEL
 
 CLASSIFIER_PROVIDER = "ollama"
@@ -64,8 +64,8 @@ CLASSIFIER_OLLAMA_MODEL = brain.get_brain_model()
 # Backwards-compat aliases — older comments, tests, and other modules
 # still import these names. They now name the *Ollama-fallback* model
 # in each path, which is consistent with the role they used to play.
-QUICK_CHAT_MODEL = QUICK_CHAT_OLLAMA_MODEL
-CLASSIFIER_MODEL = CLASSIFIER_OLLAMA_MODEL
+QUICK_CHAT_MODEL = brain.get_brain_model()
+CLASSIFIER_MODEL = brain.get_brain_model()
 
 INTENT_SYSTEM_PROMPT = """Classify the user's message into exactly one label:
 CHAT, QUERY_INLINE, QUERY_TOOL, TASK, or STATUS.
@@ -381,7 +381,7 @@ _OBVIOUS_CHAT_RE = re.compile(
     r"appreciate\s?(?:it|you|that)|"
     r"o?k(?:ay)?|cool|nice|sweet|awesome|lol+|haha+|"
     r"got\s?it|sounds?\s?good|np|no\s?worries|"
-    r"how(?:'?s| are)?\s?(?:it\s?going|you|ya|things)|what'?s\s?up"
+    r"how(?:[’']?s| are)?\s?(?:it\s?going|you|ya|things)|what[’']?s\s?up"
     r")[\s!.,?—-]*$",
     re.IGNORECASE,
 )
@@ -602,7 +602,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
         try:
             resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
                 model=model, messages=json_messages,
-                options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": 8192,
+                options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
                          "num_predict": num_predict},
                 keep_alive=-1, think=brain.think_param(model), format="json")
             body = (resp.get("message", {}) or {}).get("content", "").strip()
@@ -617,7 +617,7 @@ def _ollama_quick_chat(model: str, message: str, system_prompt: str,
             log.warning("quick_chat json mode failed: %s — retrying plain", exc)
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
             model=model, messages=plain_messages,
-            options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": 8192,
+            options={"temperature": QUICK_CHAT_TEMPERATURE, "num_ctx": brain.num_ctx_for(model),
                      "num_predict": num_predict * 2},
             keep_alive=-1, think=brain.think_param(model))
         body = (resp.get("message", {}) or {}).get("content", "").strip()
@@ -1178,11 +1178,11 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
     # ── Tier 2: Ollama qwen3:4b ──────────────────────────────────
     try:
-        primary = _ollama_quick_chat(QUICK_CHAT_OLLAMA_MODEL, msg_for_model,
+        primary = _ollama_quick_chat(brain.get_brain_model(), msg_for_model,
                                      system_prompt, history=history or None)
     except Exception as exc:
         elapsed = _time.monotonic() - t0
-        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
+        _record_cleanliness(brain.get_brain_model(), elapsed,
                             clean=False, fallback_used=False, leak_kind="error")
         return f"(quick_chat error: {type(exc).__name__}: {exc})"
 
@@ -1194,14 +1194,14 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
 
     if leak_kind is None:
         elapsed = _time.monotonic() - t0
-        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
+        _record_cleanliness(brain.get_brain_model(), elapsed,
                             clean=True, fallback_used=False)
         return primary
 
     log.info("quick_chat %s leak (%s) — retrying on %s. preview=%r msg=%r",
-             QUICK_CHAT_OLLAMA_MODEL, leak_kind, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
+             brain.get_brain_model(), leak_kind, QUICK_CHAT_DENIAL_FALLBACK_MODEL,
              primary[:120], message[:120])
-    _record_denial(message, QUICK_CHAT_OLLAMA_MODEL, kind=leak_kind)
+    _record_denial(message, brain.get_brain_model(), kind=leak_kind)
     _maybe_alert_telegram(_denials_in_last_24h())
 
     try:
@@ -1212,7 +1212,7 @@ def quick_chat(message: str, chat_id: int | None = None) -> str:
     except Exception as exc:
         elapsed = _time.monotonic() - t0
         log.warning("quick_chat fallback failed: %s — returning primary reply", exc)
-        _record_cleanliness(QUICK_CHAT_OLLAMA_MODEL, elapsed,
+        _record_cleanliness(brain.get_brain_model(), elapsed,
                             clean=False, fallback_used=True, leak_kind=leak_kind)
         return primary
 
@@ -1249,7 +1249,7 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
         _build_quick_chat_history(chat_id, system_prompt, message)
         if chat_id is not None else []
     )
-    model = QUICK_CHAT_OLLAMA_MODEL
+    model = brain.get_brain_model()
     messages = [
         {"role": "system", "content": system_prompt},
         *history,
@@ -1262,7 +1262,7 @@ def quick_chat_stream(message: str, chat_id: int | None = None):
         messages=messages,
         options={
             "temperature": QUICK_CHAT_TEMPERATURE,
-            "num_ctx": 8192,
+            "num_ctx": brain.num_ctx_for(model),
             # Phase B — use the base per-model budget (brain=1024 ≈ ~4k chars,
             # ample for a chat reply). The previous ×2 (=2048) risked a ~75s
             # runaway decode; the Part-A chunker still splits long replies.
@@ -1343,16 +1343,16 @@ def _ollama_chat(messages: list[dict], *, timeout: float, num_predict: int = 250
     text content (already think-stripped) or raises on timeout/error."""
     client = ollama.Client(host=nexus.OLLAMA_URL, timeout=timeout)
     kwargs: dict = {
-        "model": LITE_AGENT_MODEL,
+        "model": brain.get_brain_model(),
         "messages": messages,
         "stream": False,
-        "think": brain.think_param(LITE_AGENT_MODEL),
+        "think": brain.think_param(brain.get_brain_model()),
         "keep_alive": -1,
         # 8192 num_ctx leaves headroom for SOUL.md (~2700 tokens) plus
         # tool result payloads (up to ~1500 tokens after truncation) plus
         # the formatter output budget. The previous 4096 limit fit the
         # old hardcoded constants but is too tight once SOUL is the base.
-        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 8192},
+        "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": brain.num_ctx_for(brain.get_brain_model())},
     }
     if fmt:
         kwargs["format"] = fmt
@@ -1676,14 +1676,14 @@ def classify_intent_llm(message: str) -> Intent:
 
     try:
         resp = ollama.Client(host=nexus.OLLAMA_URL).chat(
-            model=CLASSIFIER_OLLAMA_MODEL,
+            model=brain.get_brain_model(),
             messages=[
                 {"role": "system", "content": INTENT_SYSTEM_PROMPT},
                 {"role": "user", "content": msg},
             ],
-            options={"temperature": 0, "num_ctx": 8192, "num_predict": 50},
+            options={"temperature": 0, "num_ctx": brain.num_ctx_for(brain.get_brain_model()), "num_predict": 50},
             keep_alive=-1,
-            think=brain.think_param(CLASSIFIER_OLLAMA_MODEL),
+            think=brain.think_param(brain.get_brain_model()),
         )
     except Exception as exc:
         log.warning("classify_intent_llm failed (%s); defaulting to CHAT", exc)
@@ -2161,7 +2161,7 @@ def _wiki_grounded_reply(message: str) -> dict:
                     f"WIKI EXCERPT:\n{hits[:4000]}\n\n"
                     f"USER QUESTION: {message}")},
             ],
-            options={"temperature": 0.2, "num_ctx": 8192, "num_predict": 220},
+            options={"temperature": 0.2, "num_predict": 220},
             timeout=20.0,
         )
         reply = _strip_think_final(reply)
@@ -2231,8 +2231,8 @@ SLASH_COMMANDS: dict[str, dict] = {
     "/real":  {"tool": "claude_code", "tier": "api",
                "blurb": "[DEPRECATED] alias for /api",
                "deprecated_alias_for": "/api"},
-    "/local": {"tool": "local_builder", "model": "qwen3-coder:30b",
-               "blurb": "qwen3-coder:30b local build (free)"},
+    "/local": {"tool": "local_builder", "model": None,  # models.json "code" (resident brain)
+               "blurb": "local build on the resident brain (free)"},
     "/quick": {"tool": "quick_chat", "model": "qwen3:4b",
                "blurb": "qwen3:4b quick answer (no thinking, no tools)"},
 }
@@ -2352,7 +2352,7 @@ def _enqueue_tiered_dispatch(prompt: str, tier: str, *,
 
 
 def _slash_local_build(prompt: str) -> dict:
-    """Phase 28 /local — qwen3-coder:30b local build via local_builder."""
+    """Phase 28 /local — local build via local_builder on models.json "code"."""
     if not prompt.strip():
         return {"kind": "build", "reply": "/local: needs a description.", "meta": {}}
     from tools import local_builder  # noqa: PLC0415
@@ -2368,7 +2368,7 @@ def _slash_local_build(prompt: str) -> dict:
         tech = "shell"
     try:
         result = local_builder.build_thing_core(
-            description, target_path, tech, model="qwen3-coder:30b",
+            description, target_path, tech, model=local_builder._live_model("code"),
         )
     except RuntimeError as exc:
         return {
@@ -2505,7 +2505,8 @@ def _record_intent_latency(intent: str, elapsed_s: float, *, fast_format: str | 
         log.warning("intent latency log append failed: %s", exc)
 
 
-def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
+def _route_message_inner(message: str, chat_id: int | None = None,
+                         decision: dict | None = None) -> dict:
     """Top-level Telegram/API router (Phase 39 LLM-router rewrite).
 
     Returns {kind, reply, meta}:
@@ -2626,8 +2627,9 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
                            "recon_mode": False}, "router_skipped": True}
         log.info("route: fast-path (router skipped) %r → quick_chat", msg[:60])
     else:
-        from workers import llm_router as _lr  # noqa: PLC0415
-        decision = _lr.route_llm(msg)
+        if decision is None:
+            from workers import llm_router as _lr  # noqa: PLC0415
+            decision = _lr.route_llm(msg)
         route = decision["route"]
         recon = bool(decision.get("recon_mode"))
         meta: dict = {"router": {"route": route, "tier": decision.get("tier"),
@@ -2655,8 +2657,11 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
         if tier == "quick":
             route = "quick_chat"  # router quirk — quick isn't a dispatch tier
         elif tier == "local":
-            local = _slash_local_build(msg)
-            return {**local, "meta": {**meta, **local.get("meta", {})}}
+            # Never build inside the request: this used to call
+            # _slash_local_build synchronously, blow the listener's 25 s cap,
+            # and discard the finished artifact. Enqueue + ack instead.
+            result = _enqueue_tiered_dispatch(msg, "local", recon_mode=recon)
+            return {**result, "meta": {**meta, **result.get("meta", {})}}
         else:
             tier = {"code": "flash", "real": "api"}.get(tier, tier)
             result = _enqueue_tiered_dispatch(msg, tier, recon_mode=recon)
@@ -2716,7 +2721,8 @@ def _route_message_inner(message: str, chat_id: int | None = None) -> dict:
     return {"kind": "chat", "reply": reply, "meta": meta}
 
 
-def route_message(message: str, chat_id: int | None = None) -> dict:
+def route_message(message: str, chat_id: int | None = None,
+                  decision: dict | None = None) -> dict:
     """Public router — wraps `_route_message_inner` with latency
     telemetry. Every call appends one line to
     `memory/intent_latencies.jsonl` so the dashboard's Performance tab
@@ -2735,7 +2741,7 @@ def route_message(message: str, chat_id: int | None = None) -> dict:
     """
     import time as _time
     t0 = _time.monotonic()
-    result = _route_message_inner(message, chat_id=chat_id)
+    result = _route_message_inner(message, chat_id=chat_id, decision=decision)
     elapsed = _time.monotonic() - t0
     if isinstance(result, dict) and isinstance(result.get("reply"), str):
         result["reply"] = _strip_think_final(result["reply"])

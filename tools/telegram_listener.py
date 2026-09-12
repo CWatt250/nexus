@@ -514,7 +514,7 @@ async def real_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def local_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/local <prompt> — qwen3-coder:30b local build, no API cost."""
+    """/local <prompt> — local build on models.json "code", no API cost."""
     if not is_authorized(update):
         return
     prompt = " ".join(context.args).strip() if context.args else ""
@@ -523,13 +523,15 @@ async def local_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     description, target_path, tech = _extract_build_args(prompt)
     short_desc = description if len(description) < 80 else description[:77] + "…"
+    from tools.local_builder import _live_model  # noqa: PLC0415
+    model = _live_model("code")
     await update.message.reply_text(
         f"🛠️ /local Building: {short_desc}\n"
         f"  tech: {tech} | target: {target_path}\n"
-        f"  qwen3-coder:30b — typically 30-90s. I'll ping when done."
+        f"  on the resident brain — typically 30-90s. I'll ping when done."
     )
     asyncio.create_task(
-        _build_in_background(update, description, target_path, tech, model="qwen3-coder:30b")
+        _build_in_background(update, description, target_path, tech, model=model)
     )
 
 
@@ -1072,12 +1074,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # falls through to the blocking router path so the reply is never
     # dropped or delayed.
     streamed_reply: str | None = None
+    decision: dict | None = None  # router result, reused below (route ONCE)
     try:
         intent = conversation_handler.classify_intent(user_message)
         if intent.get("kind") == "chat":
-            from workers import llm_router
-            route = await asyncio.to_thread(llm_router.route_llm, user_message)
-            if route.get("route") == "quick_chat":
+            if conversation_handler._is_obvious_chat(user_message):
+                decision = {"route": "quick_chat", "tier": None,
+                            "recon_mode": False, "router_skipped": True}
+            else:
+                from workers import llm_router
+                decision = await asyncio.to_thread(llm_router.route_llm, user_message)
+            if decision.get("route") == "quick_chat":
                 streamed_reply = await _stream_quick_chat_reply(
                     update, user_message, chat_id)
     except Exception as e:
@@ -1101,7 +1108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Phase 38: pass chat_id so quick_chat can prepend rolling history.
         result = await asyncio.wait_for(
             asyncio.to_thread(conversation_handler.route_message,
-                              user_message, chat_id),
+                              user_message, chat_id, decision),
             timeout=25,
         )
         reply = result.get("reply", "")

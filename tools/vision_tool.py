@@ -52,14 +52,10 @@ def _vision_chat(prompt: str, image_b64: str, *,
             model=model,
             messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
             stream=False,
-            # num_gpu=0 pins the VL model to CPU so it can never evict the
-            # resident brain from the VRAM carve. (The brain is now Ornith
-            # ~21GB, not gpt-oss:120b, so there IS headroom to put the VL
-            # model on GPU — but the CPU pin is kept for safety; CPU decode
-            # on Strix Halo unified memory runs ~30 t/s, fine for the short
-            # describe/ask calls here. Revisit if VL latency matters.)
+            # GPU-resident (the old num_gpu=0 CPU pin measured 1.76 tok/s —
+            # a 64 GB-carve-era workaround; GTT is 115 GB now).
             options={"temperature": 0.2, "num_ctx": num_ctx,
-                     "num_predict": num_predict, "num_gpu": 0},
+                     "num_predict": num_predict},
             keep_alive=300,  # keep VL model warm for ~5min between calls
         )
     except Exception as exc:
