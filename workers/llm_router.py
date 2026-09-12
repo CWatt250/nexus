@@ -170,7 +170,11 @@ quick_chat — greetings, small talk, thanks, opinions, quick factual
 
 lite_agent — quick factual question needing exactly ONE tool call NOW:
   weather lookups, one web search ("search for X", "look up X",
-  "google X"), github auth status, list my repos, search my notes,
+  "google X"), ANY question whose answer lives on the live web — a
+  price/cost ("how much does X cost"), a link ("where do I buy X",
+  "link to X"), the latest/current version/news/release of something,
+  a score, a stock — the chat brain has no tools and CANNOT answer
+  these; github auth status, list my repos, search my notes,
   and Nexus's OWN host/runtime health ("are you healthy", "what model
   is loaded", "show the process list", "how's memory/disk/GPU",
   "what's running", "is ollama up") — these hit the system_status tool.
@@ -211,11 +215,38 @@ Examples:
 "add caching to the wiki path" → {"route":"dispatch","tier":"local","recon_mode":false}
 "build a flappy bird clone in one html file" → {"route":"dispatch","tier":"local","recon_mode":false}
 "what's the weather in Pasco" → {"route":"lite_agent","tier":null,"recon_mode":false}
+"how much does a nvidia dgx spark cost? link to buy it" → {"route":"lite_agent","tier":null,"recon_mode":false}
+"what's the latest ollama version" → {"route":"lite_agent","tier":null,"recon_mode":false}
+"research the three best open-source vision models and give me a table" → {"route":"task","tier":null,"recon_mode":false}
 
 Respond with ONLY the JSON object. No prose."""
 
 
 _FALLBACK = {"route": "quick_chat", "tier": None, "recon_mode": False}
+
+
+# Questions whose answer lives on the live web (price, link, latest,
+# current). The tool-less chat brain can't answer these — it guesses or
+# promises. qwen3:4b (the router) keeps classifying them quick_chat even
+# with examples (2026-09-12), so this gate is deterministic.
+LOOKUP_RE = re.compile(
+    r"\b(?:how much|price|cost|costs|pricing|link to|where (?:can i|to) buy|"
+    r"buy it|latest|newest|current(?:ly)?|right now|today'?s|this week|"
+    r"news|release date|when (?:does|did|is|was) .{0,40}(?:release|launch|come out)|"
+    r"who won|score|stock)\b",
+    re.IGNORECASE,
+)
+_QUESTION_RE = re.compile(r"^\s*(?:how|what|when|where|who|which|is|are|does|do|can|did)\b|\?\s*$",
+                          re.IGNORECASE)
+
+
+def _lookup_override(message: str, decision: dict) -> dict:
+    """quick_chat → lite_agent when the message is a live-web lookup."""
+    if decision.get("route") == "quick_chat" and LOOKUP_RE.search(message or "") \
+            and _QUESTION_RE.search(message or ""):
+        log.info("router: lookup override quick_chat → lite_agent for %r", (message or "")[:60])
+        return {**decision, "route": "lite_agent", "tier": None, "lookup_override": True}
+    return decision
 
 
 def route_llm(message: str) -> dict:
@@ -314,10 +345,11 @@ def route_llm(message: str) -> dict:
         route = "lite_agent"
         tier = None
 
-    return {
+    decision = {
         "route": route,
         "tier": tier,
         # OR with deterministic keyword detection — the LLM can widen
         # recon, never narrow it.
         "recon_mode": bool(obj.get("recon_mode")) or is_recon(msg),
     }
+    return _lookup_override(message, decision)

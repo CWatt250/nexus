@@ -164,4 +164,12 @@ def _compose_self_facts() -> str:
     ]
     if others:
         lines.append(f"- Also loaded in VRAM: {', '.join(others)}")
+    lines.append(
+        "- Capabilities you DO have (via Telegram): voice notes in (Whisper) "
+        "and voice replies out (/voice on); your own headless desktop with "
+        "Chrome (/screenshot, /open <url>, /desktop <task>, watchable live "
+        "over VNC via /watch); web search + browser; image generation "
+        "(/image); git/GitHub; a task queue for multi-step work; "
+        "/think on shows your reasoning. You have no microphone or "
+        "speakers on the host — voice is Telegram voice notes only.")
     return "\n".join(lines)

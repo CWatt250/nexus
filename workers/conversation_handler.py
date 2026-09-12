@@ -279,7 +279,12 @@ _FALSE_PROMISE_RE = re.compile(
     r"confirm|investigate|look into|look up|pull up|query)|"
     r"give me (?:a|one) (?:sec|second|moment) while i|"
     r"(?:one|hang on|hold on)[, ]+(?:sec|second|moment)?\s*while i|"
-    r"checking (?:on )?(?:that|it|now)|let me dig into"
+    r"checking (?:on )?(?:that|it|now)|let me dig into|"
+    # The chat brain mimicking the task-ack it saw earlier in history
+    # ("On it — queued as a full task. I'll ping you when it lands.")
+    # with NO task behind it (observed 2026-09-12, DGX Spark price ask).
+    r"queued as a (?:full )?task|ping you when|send it over|"
+    r"working on (?:that|it) now|i'?ll (?:have|get) (?:that|it) (?:to|for) you"
     r")\b",
     re.IGNORECASE,
 )
@@ -1409,7 +1414,7 @@ LITE_AGENT_TIMEOUT_S = 25.0
 # picker out before the model had even finished loading.
 LITE_AGENT_PICKER_BUDGET = 15.0
 LITE_AGENT_TOOL_BUDGET = 6.0
-LITE_AGENT_FORMATTER_BUDGET = 4.0
+LITE_AGENT_FORMATTER_BUDGET = 8.0
 # Phase 39 — qwen3.6 retired as resident; the brain owns lite_agent.
 LITE_AGENT_MODEL = brain.get_brain_model()
 
@@ -1435,6 +1440,9 @@ _PICKER_SYSTEM = (
 _FORMATTER_OUTPUT_RULES = (
     "Write a 2-3 sentence answer to the user's question using the tool "
     "result below. Plain prose. No preamble. No reasoning. No <think> tags. "
+    "If they asked a price/cost, lead with the number(s) found. If they "
+    "asked for a link/source/where to buy, include the best matching URL "
+    "from the results verbatim. "
     "If the tool returned an error, say so plainly and suggest an alternative "
     "in 1 sentence. Never echo the raw tool output verbatim."
 )
@@ -1654,6 +1662,28 @@ def _format_answer(message: str, tool_name: str, tool_result: str) -> str:
     return body or f"({tool_name} returned no output)"
 
 
+_QUERY_NOISE_RE = re.compile(
+    r"\b(?:buy|purchase|link|links|source|sources|provide|please|where to|"
+    r"official|site|website|url)\b", re.IGNORECASE)
+
+
+def _shape_lookup_query(message: str, query: str) -> str:
+    """Search engines answer "X price" well and "X price buy link source"
+    badly (measured: the latter returns Nvidia's homepage; the former
+    returns $3,999/$4,699 hits). For price/link questions keep the noun
+    phrase + the one intent word."""
+    if not _lookup_re().search(message or ""):
+        return query
+    q = _QUERY_NOISE_RE.sub(" ", query)
+    q = re.sub(r"\s+", " ", q).strip(" ?.,")
+    lowered = (message or "").lower()
+    if re.search(r"\b(?:how much|price|cost|costs|pricing)\b", lowered) and "price" not in q.lower():
+        q += " price"
+    elif re.search(r"\b(?:latest|newest|current)\b", lowered) and "latest" not in q.lower():
+        q += " latest"
+    return q or query
+
+
 def lite_agent(message: str) -> dict:
     """Two-LLM-call + one-tool-call fast path.
 
@@ -1694,6 +1724,8 @@ def lite_agent(message: str) -> dict:
     if _budget_left() < LITE_AGENT_FORMATTER_BUDGET + 0.5:
         return {"ok": False, "reason": "timeout before tool call"}
     tool_obj = registry[tool_name]["tool"]
+    if tool_name in _FORMATTABLE_SEARCH_TOOLS and isinstance(args.get("query"), str):
+        args = {**args, "query": _shape_lookup_query(message, args["query"])}
     _progress(f"🔧 {tool_name}")
     try:
         tool_result = tool_obj.invoke(args)
@@ -1714,8 +1746,11 @@ def lite_agent(message: str) -> dict:
     # clean-output shortcut — those paste the raw snippet. Force the
     # LLM formatter so the model condenses across all results in the
     # shape the user requested.
-    if tool_name in _FORMATTABLE_SEARCH_TOOLS and _wants_synthesis(message):
-        log.info("lite_agent: synthesis requested — skipping fast-format paths")
+    if tool_name in _FORMATTABLE_SEARCH_TOOLS and (
+            _wants_synthesis(message) or _lookup_re().search(message or "")):
+        # A price/link/latest question needs an ANSWER synthesized across
+        # results, not the top hit's title ("Nvidia - Official Site…").
+        log.info("lite_agent: synthesis/lookup — skipping fast-format paths")
     else:
         if tool_name in _FORMATTABLE_SEARCH_TOOLS:
             sx = _searxng_top_hit(result_str)
@@ -2848,10 +2883,25 @@ def guard_quick_chat_reply(message: str, reply: str) -> dict | None:
     if not (denied or promised):
         return None
     why = "denial" if denied else "false_promise"
-    log.warning("quick_chat produced %s — recovering as TASK. text=%r msg=%r",
+    log.warning("quick_chat produced %s — recovering. text=%r msg=%r",
                 why, (reply or "")[:160], (message or "")[:120])
+    # A price / link / current-fact question needs ONE tool call, not an
+    # 80 s full task. Try the lite agent first; fall back to a real task.
+    if _lookup_re().search(message or ""):
+        try:
+            result = lite_agent(message)
+            if result.get("ok") and (result.get("reply") or "").strip():
+                return {"reply": result["reply"], "task_id": None,
+                        "why": f"{why}->lite_agent:{result.get('tool', '')}"}
+        except Exception as exc:  # never let the recovery path crash a reply
+            log.warning("lite_agent recovery failed: %s", exc)
     tid = task_queue.enqueue(message)
     return {"reply": RECOVERY_REPLY, "task_id": tid, "why": why}
+
+
+def _lookup_re():
+    from workers.llm_router import LOOKUP_RE  # noqa: PLC0415  — single source
+    return LOOKUP_RE
 
 
 # ── Background reflection for Telegram quick_chat turns ─────────────────
