@@ -39,17 +39,17 @@ Do not include any text before or after the JSON. No reasoning, no commentary.""
 
 
 def load_models() -> dict:
-    # Phase 39 — brain transplant: hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M owns heavy/code/design
+    # Phase 39 — brain transplant: hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M owns heavy/code/design
     # and the route classifier; qwen3:4b stays as the fast tier.
     if not MODELS_FILE.exists():
         return {
-            "brain": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
-            "router": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
+            "brain": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+            "router": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
             "fast": "qwen3:4b",
             "mid": "qwen3:8b",
-            "heavy": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
-            "code": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
-            "design": "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M",
+            "heavy": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+            "code": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+            "design": "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
         }
     try:
         return json.loads(MODELS_FILE.read_text())
@@ -60,11 +60,11 @@ def load_models() -> dict:
 def model_for(route: str) -> str:
     """Resolve a route name to an Ollama model id. Falls back to the brain."""
     models = load_models()
-    return models.get(route) or models.get("heavy") or "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M"
+    return models.get(route) or models.get("heavy") or "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M"
 
 
 def _router_model() -> str:
-    return load_models().get("router", "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M")
+    return load_models().get("router", "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M")
 
 
 def _log_routing(message: str, route: str, model: str, extra: dict | None = None) -> None:

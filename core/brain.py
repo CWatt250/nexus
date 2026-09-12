@@ -28,14 +28,13 @@ ROOT = Path.home() / "AI_Agent"
 MODELS_FILE = ROOT / "models.json"
 OLLAMA_URL = "http://localhost:11434"
 
-# Live brain (commit 0c8debe): Ornith-1.0-35B Q4 (~21 GB VRAM, fully on
-# GPU — leaves ample headroom, so the Phase-39 "60 GB in a 64 GB carve"
-# squeeze is obsolete). models.json "brain" key is authoritative and
-# overrides this; the constant is only the fallback when models.json is
-# unreadable. Keep it pointed at the real resident model so the fallback
-# never lies about identity. NOTE: gpt-oss think-suppression rules below
-# still apply if a gpt-oss model is ever configured again.
-DEFAULT_BRAIN_MODEL = "hf.co/deepreinforce-ai/Ornith-1.0-35B-GGUF:Q4_K_M"
+# Live brain (2026-09-12): Ornith-1.5-35B-A3B Q4 (~22 GB VRAM, fully on
+# GPU). models.json "brain" key is authoritative and overrides this; the
+# constant is only the fallback when models.json is unreadable. Keep it
+# pointed at the real resident model so the fallback never lies about
+# identity. NOTE: gpt-oss think-suppression rules below still apply if a
+# gpt-oss model is ever configured again.
+DEFAULT_BRAIN_MODEL = "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M"
 # Explicit offline/degraded fallback ONLY (big model evicted, Ollama
 # mid-restart). Not a quality tier — a liveness tier.
 DEGRADED_MODEL = "qwen3:4b"
