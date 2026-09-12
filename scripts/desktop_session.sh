@@ -125,7 +125,7 @@ launch_chrome() {
     --remote-debugging-port=9222 \
     --window-size=1920,1040 --window-position=0,0 \
     --no-first-run --no-default-browser-check \
-    --disable-gpu-sandbox --force-renderer-accessibility \
+    --force-renderer-accessibility \
     --password-store=basic --disable-features=TranslateUI \
     --disable-session-crashed-bubble --hide-crash-restore-bubble \
     "$START_URL" >/dev/null 2>&1 &
