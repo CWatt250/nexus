@@ -24,7 +24,7 @@ After completing a task in any project, append one JSON line to that project's `
 - Machine: WattBott (hardware is a "NIMO" mini PC — AMD Ryzen AI Max+ 395 / Strix Halo, gfx1151)
 - OS: Ubuntu 24.04
 - GPU stack: Vulkan / Mesa RADV (verified 2026-06-30 — the ollama unit sets `HIP_VISIBLE_DEVICES=""`, disabling ROCm/HIP; models load to VRAM via Vulkan). ROCm is installed but is NOT the inference path. SOUL.md was correct; the old "ROCm" line here was stale.
-- Local inference: Ollama (brain = Ornith-1.0-35B Q4, ~21 GB VRAM — NOT gpt-oss:120b; models.json is authoritative)
+- Local inference: Ollama (brain = **Ornith-1.5-35B-A3B Q4** `hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`, ~21 GB VRAM @32K ctx, 67 tok/s, native tools + vision; models.json is authoritative). One `num_ctx` per model via `core.brain.num_ctx_for()` — never a literal.
 
 Prefer local tools (Ollama) over cloud services when a local option exists.
 
@@ -53,8 +53,10 @@ Every tool is registered in both `nexus.TOOLS` and `mcp/server.py`. Total tool c
 ## Phases 28 + 29 — Coding Router (slash-command tier ladder)
 When you (or an automated path) need to dispatch coding work, prefer
 the slash commands over the legacy `dispatch:` prefix. **All-local
-(2026-07-12): every router-inferred dispatch runs on the local tier**
-(qwen3.5:122b-a10b via Ollama, 100% GPU after the 1G UMA carve).
+(2026-07-12): every router-inferred dispatch runs on the local tier.**
+Since 2026-09-12 the local tier = models.json `code` (the resident
+brain, 0 extra VRAM). Set `LOCAL_TIER_MODEL=qwen3.5:122b-a10b` on the
+dispatcher to use the 81 GB model on demand instead.
 Cloud tiers still exist but fire ONLY on an explicit slash command —
 the router never infers them.
 
@@ -62,7 +64,7 @@ Tier ladder (cheapest marginal cost first):
 
 | Slash | Backend | Marginal cost | When to use |
 |-------|---------|---------------|-------------|
-| `/local` | qwen3.5:122b-a10b via Ollama | $0 | **Default for ALL builds.** ~28 tok/s, 262K ctx, passed the flappy-bird build gate 2026-07-12. |
+| `/local` | models.json `code` (resident brain, Ornith-1.5) | $0 | **Default for ALL builds.** Router-inferred builds are enqueued (never run inline in the Telegram request). `LOCAL_TIER_MODEL` env overrides. |
 | `/quick` | qwen3:4b chat | $0 | One-shot Q&A, no thinking trace, no tools. Not for code. |
 | `/max` | Claude Sonnet 4.6 via Max plan | $0 | Explicit-only cloud escape hatch. Note: dispatcher passes no --model, so the CLI inherits ~/.claude/settings.json ("fable") which headless runs can't use — broken until fixed. |
 | `/code` | DeepSeek V4-Flash | ~$0.005 | Explicit-only. |
@@ -72,8 +74,9 @@ Tier ladder (cheapest marginal cost first):
 
 Routing without an explicit slash:
 - Casual chat → `/quick` (qwen3:4b, fast no-thinking)
-- Any build/create/fix/refactor request → `/local` (qwen3.5:122b-a10b)
+- Any build/create/fix/refactor request → `/local` (resident brain)
   (All-local 2026-07-12 — was `/max` in Phase 29, `/code` in Phase 28)
+- Opinions/statements ("we should use X") → `/quick`, never dispatch
 
 Cost guardrails live in `config/cost_limits.yaml` with tier-specific
 ceilings (`max`/`local`/`quick` are uncapped). Daily ceiling applies
@@ -145,7 +148,7 @@ result_reporter:
 
 ## Phase 39 — Brain + Guardrails Overhaul
 
-- **Brain:** `core/brain.py` — gpt-oss:120b (local, $0) is the brain for
+- **Brain:** `core/brain.py` — the models.json `brain` (Ornith-1.5 since 2026-09-12; was gpt-oss:120b at Phase 39) is the brain for
   quick_chat, routing, and lite_agent. qwen3:4b is the explicit
   offline/degraded fallback only. qwen3.6 is retired as resident.
   DeepSeek quick_chat/classifier path is wired but disabled by default
