@@ -357,12 +357,62 @@ def _build_chat_system_prompt(message: str = "") -> str:
     return get_quick_chat_system_prompt()
 
 
+_RECENT_CACHE: dict = {"ts": 0.0, "text": ""}
+
+
+def _recent_activity_block() -> str:
+    """What Nexus actually did lately — so 'what's up' can be answered
+    like a friend instead of a queue report. Last few finished/failed
+    tasks from tasks.db within 24 h; cached 60 s."""
+    import time as _t  # noqa: PLC0415
+    if _t.monotonic() - _RECENT_CACHE["ts"] < 60:
+        return _RECENT_CACHE["text"]
+    text = ""
+    try:
+        import sqlite3  # noqa: PLC0415
+        from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+        db = nexus.ROOT / "memory" / "tasks.db" if hasattr(nexus, "ROOT") else Path.home() / "AI_Agent" / "memory" / "tasks.db"
+        con = sqlite3.connect(str(db)); con.row_factory = sqlite3.Row
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        rows = con.execute(
+            "select input, status, finished_at from tasks where kind='agent' and "
+            "status in ('done','failed','timeout') and finished_at > ? and "
+            "input not like 'handler-iso%' and input not like 'isolation %' "
+            "order by finished_at desc limit 3", (since,)).fetchall()
+        con.close()
+        lines = []
+        now = datetime.now(timezone.utc)
+        for r in rows:
+            try:
+                ago = now - datetime.fromisoformat(r["finished_at"])
+                mins = int(ago.total_seconds() // 60)
+                when = f"{mins} min ago" if mins < 90 else f"{mins // 60} h ago"
+            except Exception:
+                when = "earlier"
+            lines.append(f"- {when}: {r['status']} — {(r['input'] or '')[:70]}")
+        if lines:
+            text = ("## What you actually did recently — the ONLY work you may mention on a "
+                    "check-in like 'what's up'. Invent nothing beyond this list; if it's "
+                    "empty or old, say it's been quiet. Not a status report — one line, "
+                    "like a friend:\n" + "\n".join(lines))
+        else:
+            text = ("## Recent work: nothing in the last 24 h. On a check-in, say it's been "
+                    "quiet — do NOT invent tasks, bugs, or builds.")
+    except Exception as exc:
+        log.debug("recent activity block failed: %s", exc)
+    _RECENT_CACHE.update(ts=_t.monotonic(), text=text)
+    return text
+
+
 def _build_chat_context_block(message: str) -> str:
     """The volatile trailing system message: live self-facts (cached 120 s
     in core/self_facts), durable learned facts, recalled personal facts
     (only for personal-fact questions), and the wall clock. Sent AFTER
     history and BEFORE the user turn."""
     parts = [self_facts.self_facts_block()]
+    recent = _recent_activity_block()
+    if recent:
+        parts.append(recent)
     # G2 — durable learned facts (MEMORY.md, written by reflection.py).
     try:
         learned = nexus.load_memory_facts()
