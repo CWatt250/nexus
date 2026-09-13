@@ -1230,6 +1230,27 @@ def _trim_history_to_budget(system_prompt: str, history: list[dict],
     return trimmed
 
 
+# Old canned replies the brain would otherwise imitate from its own history
+# ("All clear — nothing in the queue", "No mic or speakers…"). Dropping them
+# from the context is how a fixed habit actually stays fixed.
+_STALE_CANNED_RE = re.compile(
+    r"nothing (?:in the )?queue|all systems green|all clear|sitting (?:pretty|idle)|"
+    r"queued as a (?:full )?task|ping you when it lands|no mic|text-in, text-out|"
+    r"took >\d+s to route|ollama may be busy",
+    re.IGNORECASE)
+
+
+def _history_hygiene(turns: list[dict]) -> list[dict]:
+    """Drop assistant turns that match retired canned phrasing (keeps the
+    user turns so the thread still reads coherently)."""
+    out = []
+    for t in turns or []:
+        if t.get("role") == "assistant" and _STALE_CANNED_RE.search(t.get("content") or ""):
+            continue
+        out.append(t)
+    return out
+
+
 def _build_quick_chat_history(chat_id: int, system_prompt: str,
                               message: str) -> list[dict]:
     """Fetch history from the SQLite store, trim to budget, return ready
@@ -1244,6 +1265,7 @@ def _build_quick_chat_history(chat_id: int, system_prompt: str,
             max_age_hours=float(cfg["max_age_hours"]),
             db_path=cfg.get("db_path"),
         )
+        raw = _history_hygiene(raw)
         if not raw:
             return []
         return _trim_history_to_budget(

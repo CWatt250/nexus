@@ -155,6 +155,19 @@ def fetch_recent_turns(chat_id: int, *,
     return [{"role": role, "content": content} for role, content in reversed(rows)]
 
 
+def clear_chat(chat_id: int, *, db_path: Optional[Path | str] = None) -> int:
+    """/new — wipe the rolling history for one chat so a fresh conversation
+    isn't steered by old replies. Returns rows deleted; never raises."""
+    try:
+        with _connect(db_path) as con:
+            cur = con.execute("DELETE FROM chats WHERE chat_id = ?", (int(chat_id),))
+            con.commit()
+            return int(cur.rowcount or 0)
+    except Exception as exc:  # best-effort, like write_turn
+        log.warning("clear_chat failed for %s: %s", chat_id, exc)
+        return 0
+
+
 def delete_older_than(days: int, *, db_path: Optional[Path | str] = None) -> int:
     """Retention helper — delete rows older than `days`. Returns row count.
     Not wired into a cron yet; called manually or by a future Phase 38.1

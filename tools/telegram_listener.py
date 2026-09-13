@@ -215,6 +215,7 @@ def _help_text() -> str:
         + "\n".join(ladder) + "\n\n"
         "Me:\n"
         "  /think on|off — show my reasoning under each reply (💭). "
+        "  /new — fresh conversation (forgets the recent thread).\n"
         "\"show your work\" in a message does it once.\n"
         "  /voice on|off — reply with a voice note too (🎙️). "
         "Voice notes you send are transcribed and always answered in voice.\n"
@@ -260,6 +261,15 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning("status_command: %s", e)
         await update.message.reply_text(
             "Can't reach the Nexus API right now — the service may be down or restarting.")
+
+
+async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/new — fresh conversation: wipe this chat's rolling history."""
+    if not is_authorized(update):
+        return
+    from core import telegram_chats as _tcs  # noqa: PLC0415
+    n = _tcs.clear_chat(update.effective_chat.id)
+    await update.message.reply_text("Clean slate." if n else "Already a clean slate.")
 
 
 async def think_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1257,6 +1267,7 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("watch", "VNC connect string to watch the desktop live"),
     ("local", "Build it on the resident brain (default for builds)"),
     ("quick", "One-shot fast answer, no tools"),
+    ("new", "Fresh conversation — forget the recent thread"),
     ("think", "on|off — show my reasoning under replies"),
     ("voice", "on|off — reply with a voice note too"),
     ("status", "Queue + system status"),
@@ -1323,6 +1334,7 @@ def main() -> None:
     application.add_handler(CommandHandler("computer", computer_command))
     application.add_handler(CommandHandler("image", image_command))  # local SD gen
     application.add_handler(CommandHandler("think", think_command))  # show-your-work toggle
+    application.add_handler(CommandHandler("new", new_command))  # fresh conversation
     application.add_handler(CommandHandler("creds", creds_command))  # Phase 33 helper
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     # Phase E — vision intake: photos + image documents → local VLM describe.
