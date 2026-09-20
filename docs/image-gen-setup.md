@@ -37,13 +37,32 @@ LD_LIBRARY_PATH=. ./sd-cli -m models/sd15.safetensors \
 
 ## Models
 
-The tool (`tools/image_gen_tool.py`) supports three local models via `model=`:
+The tool (`tools/image_gen_tool.py`) supports these local models via `model=`:
 
 | model | quality | size | speed | notes |
 |-------|---------|------|-------|-------|
-| `flux` (**default**) | best — real in-image **text**, strong prompt adherence | 1024 | ~37s | FLUX.1-schnell Q4, 12B |
+| `flux` (**default**) | best all-round — real in-image **text** | 1024 | ~40s | FLUX.1-schnell Q4, 12B |
+| `qwen21` | **quality tier** — best prompt adherence on busy scenes | 1024 | ~120s | Qwen-Image-2.1 on ComfyUI, *not* sd.cpp |
 | `sdxl` | detailed | 1024 | ~21s | SDXL-Turbo |
 | `sd15` | soft/cute, fastest | 512 | ~10s | SD1.5 |
+| `qwen` | superseded by `qwen21` (4-5x slower, older) | 1024 | ~340s | Qwen-Image-2512 Q4, 20B |
+
+### The `qwen21` quality tier
+
+`tools/comfy_qwen.py` drives **ComfyUI** (`~/Dev/ComfyUI`) rather than sd.cpp.
+Measured head-to-head on a 6-element flat-lay prompt: FLUX dropped three of the
+six specified items, Qwen-2.1 got all six. On single subjects the two tie, so
+the extra ~80s is only worth it when the prompt names several things that must
+all appear, or a specific layout.
+
+ComfyUI is a server holding ~30-42 GB resident, so it is **started on demand
+and torn down** when the request finishes — zero standing memory cost, which
+matters because the brain already holds ~21 GB. If the server is already up
+(you ran `launch.sh` yourself) it is reused and left running.
+
+`launch.sh` **must** pass `--disable-mmap` or weight loading never finishes on
+this box — mmap-backed H2D copies run at 0.19 GB/s vs 17 GB/s resident. See
+`memory/lessons.md` 2026-09-20.
 
 ### Provision FLUX.1-schnell (the default — Apache-2.0, free)
 
@@ -82,7 +101,7 @@ which is why 2512 is the newest local option.
 
 ## Usage
 
-- **Tool:** `generate_image(prompt, model="flux"|"qwen"|"sdxl"|"sd15", ...)`
+- **Tool:** `generate_image(prompt, model="flux"|"qwen21"|"sdxl"|"sd15", ...)`
   (heavy agent) → saves to `output/images/`.
 - **Telegram:** `/image <prompt>` (FLUX) or `/image sd15 <prompt>` (fast) or
-  `/image qwen <prompt>` (slow, best in-image text).
+  `/image qwen21 <prompt>` (~2 min, best on busy multi-element scenes).

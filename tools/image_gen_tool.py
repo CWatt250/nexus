@@ -106,10 +106,19 @@ def generate_image_core(
     filename: Optional[str] = None,
 ) -> dict:
     """Generate one image locally. Returns {ok, path, seconds, seed, model, error}."""
-    if not SD_BIN.exists():
-        return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}", "path": None}
     if not (prompt or "").strip():
         return {"ok": False, "error": "empty prompt", "path": None}
+
+    # Quality tier: Qwen-Image-2.1 runs on ComfyUI, not sd.cpp. Better prompt
+    # adherence on complex scenes (~120s incl. on-demand server start) vs
+    # flux's ~40s. Explicit only -- the default stays flux.
+    if (model or "").strip().lower() in ("qwen21", "qwen2.1", "qwen-image-2.1"):
+        from tools.comfy_qwen import generate as _qwen21  # noqa: PLC0415
+        return _qwen21(prompt, steps=steps, seed=seed,
+                       width=width, height=height, filename=filename)
+
+    if not SD_BIN.exists():
+        return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}", "path": None}
 
     name = _resolve_model(model)
     cfg = MODELS[name]
@@ -167,8 +176,12 @@ def generate_image(
     Args:
         prompt: Description of the image. Be specific; FLUX follows detailed
             prompts well and can render readable text (logos, signs).
-        model: "flux" (default, best quality + text, ~37s), "sdxl" (detailed,
-            ~21s), or "sd15" (soft/cute, fastest ~10s).
+        model: "flux" (default, best all-round + text, ~40s), "sdxl" (detailed,
+            ~21s), "sd15" (soft/cute, fastest ~10s), or "qwen21" (Qwen-Image-2.1
+            via ComfyUI — the quality tier, ~120s). Reach for "qwen21" when the
+            prompt names several specific things that must all appear, or an
+            exact layout; FLUX drops elements from busy scenes. Not worth the
+            extra 80s for a single subject or a simple scene.
         size: "WxH" override (else the model's native size — 1024 for
             flux/sdxl, 512 for sd15).
         style: Optional style hint appended to the prompt.
