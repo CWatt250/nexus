@@ -45,7 +45,6 @@ The tool (`tools/image_gen_tool.py`) supports these local models via `model=`:
 | `qwen21` | **quality tier** — best prompt adherence on busy scenes | 1024 | ~120s | Qwen-Image-2.1 on ComfyUI, *not* sd.cpp |
 | `sdxl` | detailed | 1024 | ~21s | SDXL-Turbo |
 | `sd15` | soft/cute, fastest | 512 | ~10s | SD1.5 |
-| `qwen` | superseded by `qwen21` (4-5x slower, older) | 1024 | ~340s | Qwen-Image-2512 Q4, 20B |
 
 ### The `qwen21` quality tier
 
@@ -86,18 +85,14 @@ curl -sL -o ~/AI_Agent/models/sdcpp/models/sdxl-turbo.safetensors \
   https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors
 ```
 
-### Provision Qwen-Image-2512 (optional, best text/layout quality)
-20B model — ~17.4 GB of assets, ~6 min per 1024px image (20 steps @ ~16 s/it).
-Installed 2026-07-22, verified working (chalkboard-sign text test passed).
-```bash
-mkdir -p ~/AI_Agent/models/sdcpp/qwen && cd ~/AI_Agent/models/sdcpp/qwen
-wget -c https://huggingface.co/unsloth/Qwen-Image-2512-GGUF/resolve/main/qwen-image-2512-Q4_K_M.gguf                     # 12.6 GB
-wget -c https://huggingface.co/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf  # 4.6 GB
-wget -c https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors     # 243 MB
-```
-Settings live in `MODELS["qwen"]`: euler / 20 steps / cfg 2.5 / flow-shift 3,
-900 s timeout. Note: Qwen-Image-**3.0** (July 2026) is API-only — no weights —
-which is why 2512 is the newest local option.
+### Qwen-Image-2512 on sd.cpp — REMOVED 2026-09-20
+
+The old `model="qwen"` (Qwen-Image-2512 Q4, 20B, ~17.4 GB, ~340 s/image) was
+deleted. `qwen21` above is the same family, newer, and 4-5x faster, so 2512 was
+pure disk cost. Its `MODELS` entry is gone — nothing silently falls back.
+
+Note: Qwen-Image-**3.0** (July 2026) is API-only — no weights — so
+Qwen-Image-2.1 via ComfyUI is the newest local option.
 
 ## Usage
 

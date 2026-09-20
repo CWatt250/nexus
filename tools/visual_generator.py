@@ -1,8 +1,8 @@
 """Phase 21.3 + Phase 21 Part 2.5 — visual generator for content_create.
 
-Tries the existing image_gen_tool (ERNIE) first; falls back to a PIL
-gradient card with the scene description rendered as overlay text when
-the API key is missing or the call fails.
+Tries image_gen_tool (LOCAL sd.cpp on the Vulkan iGPU) first; falls back
+to a PIL gradient card with the scene description rendered as overlay
+text when generation fails.
 
 Output is always 1080x1920 vertical PNG so the rest of the pipeline
 (ffmpeg assembly) can pin to a single canvas size.
@@ -270,16 +270,19 @@ def visual_generate(
 
     if prefer_real:
         try:
-            from tools.image_gen_tool import generate_image  # noqa: PLC0415
-            result = generate_image.invoke({
-                "prompt": scene_description,
-                "size": "1024x1024",
-                "style": "realistic",
-            })
-            if isinstance(result, str) and result.startswith("Error"):
-                error_str = result.splitlines()[0][:200]
-            elif isinstance(result, str) and result.startswith("Image saved:"):
-                src = Path(result.replace("Image saved:", "").strip())
+            # Use the dict API, not the @tool's prose string. The old code
+            # matched "Image saved:" against a string that actually reads
+            # "Image saved to <path> (model=...)", so the real generator never
+            # matched and every scene silently fell through to PIL.
+            from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
+            res = generate_image_core(
+                f"{scene_description}, realistic",
+                width=1024, height=1024,
+            )
+            if not res.get("ok"):
+                error_str = str(res.get("error"))[:200]
+            else:
+                src = Path(res["path"])
                 if src.exists():
                     img = Image.open(src).convert("RGB")
                     img = img.resize((CANVAS_W, CANVAS_H), Image.LANCZOS)
@@ -287,9 +290,10 @@ def visual_generate(
                     return {
                         "image_path": str(out),
                         "was_fallback": False,
-                        "generator": "image_gen_tool/ernie",
+                        "generator": f"image_gen_tool/{res['model']}",
                         "error": None,
                     }
+                error_str = f"generator reported {src} but it is missing"
         except Exception as exc:  # noqa: BLE001 — fall back on any error
             error_str = f"image_gen_tool failed: {type(exc).__name__}: {exc}"
 

@@ -628,7 +628,7 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     args = list(context.args or [])
     model = "flux"  # default — best quality + real text (~40s)
-    if args and args[0].lower() in ("flux", "qwen21", "qwen", "sdxl", "sd15"):
+    if args and args[0].lower() in ("flux", "qwen21", "sdxl", "sd15"):
         model = args.pop(0).lower()
     prompt = " ".join(args).strip()
     if not prompt:
@@ -640,9 +640,8 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             "                                                busy scenes)")
         return
     await update.message.chat.send_action("upload_photo")
-    # qwen21 starts ComfyUI on demand (~2 min all-in); the old sd.cpp qwen is a
-    # full 20-step CFG run of a 20B model (~6 min). Both need headroom.
-    wait_s = 960 if model == "qwen" else 420 if model == "qwen21" else 300
+    # qwen21 starts ComfyUI on demand, so it pays a weight load (~2 min all-in).
+    wait_s = 420 if model == "qwen21" else 300
     try:
         from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
         res = await asyncio.wait_for(

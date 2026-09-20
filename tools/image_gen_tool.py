@@ -4,13 +4,13 @@ Replaces the old dead ERNIE cloud stub. Generation runs entirely on
 WattBott's Radeon 8060S iGPU (gfx1151) via the prebuilt sd.cpp Vulkan
 binary — $0, offline.
 
-Four local models (pick via `model=`):
-  flux  — FLUX.1-schnell Q4 (DEFAULT). Best quality, real in-image TEXT,
-          strong prompt adherence. 1024px, ~37s (12B model).
-  qwen  — Qwen-Image-2512 Q4 (20B). Best for complex layouts and small
-          legible text; slowest (full 20-step CFG run).
-  sdxl  — SDXL-Turbo. Detailed, 1024px, ~21s.
-  sd15  — SD1.5. Soft/cute, 512px, ~10s — fastest.
+Local models (pick via `model=`):
+  flux   — FLUX.1-schnell Q4 (DEFAULT). Best all-round, real in-image TEXT,
+           strong prompt adherence. 1024px, ~40s (12B model).
+  sdxl   — SDXL-Turbo. Detailed, 1024px, ~21s.
+  sd15   — SD1.5. Soft/cute, 512px, ~10s — fastest.
+  qwen21 — Qwen-Image-2.1 via ComfyUI (tools/comfy_qwen.py), NOT sd.cpp.
+           Quality tier for busy multi-element scenes, ~120s.
 
 Backend assets are gitignored (large) — see docs/image-gen-setup.md to
 re-provision: models/sdcpp/{sd-cli,*.so}, models/sdcpp/models/*.safetensors,
@@ -36,7 +36,6 @@ SDCPP_DIR = ROOT / "models" / "sdcpp"
 SD_BIN = SDCPP_DIR / "sd-cli"
 MODELS_DIR = SDCPP_DIR / "models"
 FLUX_DIR = SDCPP_DIR / "flux"
-QWEN_DIR = SDCPP_DIR / "qwen"
 OUTPUT_DIR = ROOT / "output" / "images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -60,17 +59,6 @@ MODELS: dict[str, dict] = {
         "steps": 4, "cfg": 1.0, "sampler": "euler", "dim": 1024,
         "vae_tiling": True, "uses_negative": False,
     },
-    "qwen": {
-        "check": QWEN_DIR / "qwen-image-2512-Q4_K_M.gguf",
-        "model_args": [
-            "--diffusion-model", str(QWEN_DIR / "qwen-image-2512-Q4_K_M.gguf"),
-            "--vae", str(QWEN_DIR / "qwen_image_vae.safetensors"),
-            "--llm", str(QWEN_DIR / "Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf"),
-            "--diffusion-fa", "--flow-shift", "3",
-        ],
-        "steps": 20, "cfg": 2.5, "sampler": "euler", "dim": 1024,
-        "vae_tiling": True, "uses_negative": True, "timeout": 900,
-    },
     "sdxl": {
         "check": MODELS_DIR / "sdxl-turbo.safetensors",
         "model_args": ["-m", str(MODELS_DIR / "sdxl-turbo.safetensors")],
@@ -92,7 +80,7 @@ def _resolve_model(model: str) -> str:
     if m in MODELS and MODELS[m]["check"].exists():
         return m
     # Fall back to the best model whose assets are actually present.
-    for cand in ("flux", "qwen", "sdxl", "sd15"):
+    for cand in ("flux", "sdxl", "sd15"):
         if MODELS[cand]["check"].exists():
             return cand
     return DEFAULT_MODEL
