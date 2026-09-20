@@ -132,3 +132,5 @@ memory/quick_chat_circuit.json
 # Phase 3 — headless desktop runtime (Chrome profile holds cookies)
 desktop/
 memory/think_prefs.json
+memory/model-watcher-seen.json
+*.bak-*

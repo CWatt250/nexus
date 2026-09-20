@@ -1,5 +1,76 @@
 # Nexus Lessons (weekly digest)
 
+## Week of 2026-09-14 (3 retros, 3 unique lessons)
+
+- The agent mentions that PPC results are noise (with an example of SearXNG matching "qwen" to Japanese legal code) but then states that the signal it needs is clear and consistent across multiple independent sources: UI-TARS-2, Qwen2.5-VL 72B, and Qwen3-VL.
+- The wall time is 81.638s, the route is "heavy", the model used is "hf.co/ornith-ai/Orn:1.5-35B-A3B-GGUF:Q4_K_M", and there were 6 tool calls but no tools were actually used (Tools used: none).
+- The success is True.
+
+---
+
+## Week of 2026-09-07 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-08-31 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-08-24 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-08-17 (2 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-08-10 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-08-03 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-07-27 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-07-20 (0 retros, 0 unique lessons)
+
+_(no actionable lessons captured this week)_
+
+---
+
+## Week of 2026-07-13 (2 retros, 3 unique lessons)
+
+- "do X next time"
+- "avoid Y"
+- "prefer Z"
+
+---
+
+## Week of 2026-07-06 (7 retros, 2 unique lessons)
+
+- Do not answer weather-related questions without using a weather tool (since the agent has no tools available for this).
+- Avoid giving vague responses like
+
+---
+
 ## Week of 2026-06-29 (0 retros, 0 unique lessons)
 
 _(no actionable lessons captured this week)_
