@@ -221,7 +221,7 @@ def _help_text() -> str:
         "Voice notes you send are transcribed and always answered in voice.\n"
         "  /creds [service] — credential status, or setup steps for one service\n"
         "  /computer <task> — drive the :99 browser (caps: 30 min, $5; --unsafe skips stops)\n"
-        "  /image [flux|qwen21|sdxl|sd15] <prompt> — local image gen\n"
+        "  /image [flux|qwenturbo|qwen21|sdxl|sd15] <prompt> — local image gen\n"
         "  /screenshot, /desktop — see the desktop (if the desktop bridge is loaded)\n"
         "  /status — is Nexus up\n"
         "  /tasks — recent task queue\n\n"
@@ -628,20 +628,21 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     args = list(context.args or [])
     model = "flux"  # default — best quality + real text (~40s)
-    if args and args[0].lower() in ("flux", "qwen21", "sdxl", "sd15"):
+    if args and args[0].lower() in ("flux", "qwenturbo", "qwen21", "sdxl", "sd15"):
         model = args.pop(0).lower()
     prompt = " ".join(args).strip()
     if not prompt:
         await update.message.reply_text(
-            "/image [flux|qwen21|sdxl|sd15] <prompt>\n"
+            "/image [flux|qwenturbo|qwen21|sdxl|sd15] <prompt>\n"
             "e.g. /image a husky in a santa hat, watercolor  (flux, default)\n"
             "     /image sd15 a quick doodle of a fox        (faster)\n"
+            "     /image qwenturbo a sign that says OPEN      (~30s, clean text)\n"
             "     /image qwen21 a desk with 6 specific items (~2min, best at\n"
             "                                                busy scenes)")
         return
     await update.message.chat.send_action("upload_photo")
     # qwen21 starts ComfyUI on demand, so it pays a weight load (~2 min all-in).
-    wait_s = 420 if model == "qwen21" else 300
+    wait_s = 420 if model in ("qwen21", "qwenturbo") else 300
     try:
         from tools.image_gen_tool import generate_image_core  # noqa: PLC0415
         res = await asyncio.wait_for(

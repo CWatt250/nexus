@@ -42,6 +42,7 @@ The tool (`tools/image_gen_tool.py`) supports these local models via `model=`:
 | model | quality | size | speed | notes |
 |-------|---------|------|-------|-------|
 | `flux` (**default**) | best all-round — real in-image **text** | 1024 | ~40s | FLUX.1-schnell Q4, 12B |
+| `qwenturbo` | Qwen-2.1 adherence + clean text, 4 steps | 1024 | ~30s cold / ~18s warm | Viggle Turbo transformer on ComfyUI |
 | `qwen21` | **quality tier** — best prompt adherence on busy scenes | 1024 | ~120s | Qwen-Image-2.1 on ComfyUI, *not* sd.cpp |
 | `sdxl` | detailed | 1024 | ~21s | SDXL-Turbo |
 | `sd15` | soft/cute, fastest | 512 | ~10s | SD1.5 |
@@ -58,6 +59,24 @@ ComfyUI is a server holding ~30-42 GB resident, so it is **started on demand
 and torn down** when the request finishes — zero standing memory cost, which
 matters because the brain already holds ~21 GB. If the server is already up
 (you ran `launch.sh` yourself) it is reused and left running.
+
+### The `qwenturbo` tier
+
+Same ComfyUI path, with the base UNET swapped for Viggle's 4-step
+DMD-distilled Qwen-Image-2.1 transformer (no CFG). Measured 2026-09-23 on a
+dusk-desk prompt: 4 steps at ~2.7 s/step, 18s per image with ComfyUI warm,
+30s from a cold start; text rendered cleanly on 2/3 seeds. Slightly less
+fine detail than 25-step `qwen21`. **License: Qwen RESEARCH — non-commercial
+only**; fine for personal Nexus, not for BrainBox without a commercial license.
+
+```bash
+cd ~/Dev/ComfyUI/models/diffusion_models
+curl -L -o qwen_image_2.1_viggle_turbo_bf16.safetensors \
+  https://huggingface.co/Viggle/Qwen-Image-2.1-viggle-turbo/resolve/main/transformer/diffusion_pytorch_model.safetensors
+```
+
+The file is diffusers-keyed (split `gate_layer`/`proj` MLP); ComfyUI loads it
+as-is — no conversion needed.
 
 `launch.sh` **must** pass `--disable-mmap` or weight loading never finishes on
 this box — mmap-backed H2D copies run at 0.19 GB/s vs 17 GB/s resident. See
@@ -96,7 +115,8 @@ Qwen-Image-2.1 via ComfyUI is the newest local option.
 
 ## Usage
 
-- **Tool:** `generate_image(prompt, model="flux"|"qwen21"|"sdxl"|"sd15", ...)`
+- **Tool:** `generate_image(prompt, model="flux"|"qwenturbo"|"qwen21"|"sdxl"|"sd15", ...)`
   (heavy agent) → saves to `output/images/`.
 - **Telegram:** `/image <prompt>` (FLUX) or `/image sd15 <prompt>` (fast) or
+  `/image qwenturbo <prompt>` (~30s, clean text) or
   `/image qwen21 <prompt>` (~2 min, best on busy multi-element scenes).

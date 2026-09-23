@@ -37,6 +37,11 @@ OUTPUT_DIR = Path.home() / "AI_Agent" / "output" / "images"
 BOOT_TIMEOUT = 180      # server up and answering
 RUN_TIMEOUT = 900       # queue -> PNG, incl. first-time weight load
 DEFAULT_STEPS = 25
+# Viggle Turbo: a 4-step DMD-distilled Qwen-Image-2.1 transformer, no CFG.
+# Drop-in for the base UNET; same text encoder/VAE. ~18s warm vs ~85s.
+# License is Qwen RESEARCH (non-commercial) -- personal Nexus only.
+TURBO_UNET = "qwen_image_2.1_viggle_turbo_bf16.safetensors"
+TURBO_STEPS = 4
 
 
 def _up(timeout: float = 2.0) -> bool:
@@ -83,7 +88,7 @@ def _kill(proc: subprocess.Popen) -> None:
 
 
 def _patch(wf: dict, prompt: str, steps: int, seed: int,
-           width: Optional[int], height: Optional[int]) -> None:
+           width: Optional[int], height: Optional[int], unet: Optional[str] = None) -> None:
     """Fill the workflow by class_type, not by node id -- ids move."""
     for node in wf.values():
         ct = node.get("class_type")
@@ -93,6 +98,8 @@ def _patch(wf: dict, prompt: str, steps: int, seed: int,
         elif ct == "KSampler":
             inp["seed"] = seed
             inp["steps"] = steps
+        elif ct == "UNETLoader" and unet:
+            inp["unet_name"] = unet
         elif ct == "EmptyLatentImage" and width and height:
             # replaces the ResolutionSelector links with literals
             inp["width"] = int(width)
@@ -134,8 +141,10 @@ def _await(pid: str) -> tuple[Optional[str], Optional[str]]:
 
 def generate(prompt: str, *, steps: Optional[int] = None, seed: int = -1,
              width: Optional[int] = None, height: Optional[int] = None,
-             filename: Optional[str] = None) -> dict:
-    """Generate one image. Same return shape as image_gen_tool.generate_image_core."""
+             filename: Optional[str] = None, turbo: bool = False) -> dict:
+    """Generate one image. Same return shape as image_gen_tool.generate_image_core.
+
+    turbo=True swaps in the Viggle 4-step transformer (model "qwenturbo")."""
     if not WORKFLOW.exists():
         return {"ok": False, "error": f"workflow missing at {WORKFLOW}", "path": None}
     if not (prompt or "").strip():
@@ -143,7 +152,8 @@ def generate(prompt: str, *, steps: Optional[int] = None, seed: int = -1,
 
     if seed is None or seed < 0:
         seed = random.randint(1, 2_147_483_646)
-    steps = steps or DEFAULT_STEPS
+    steps = steps or (TURBO_STEPS if turbo else DEFAULT_STEPS)
+    name = "qwenturbo" if turbo else "qwen21"
 
     owned = None
     if not _up():
@@ -155,7 +165,8 @@ def generate(prompt: str, *, steps: Optional[int] = None, seed: int = -1,
     t0 = time.monotonic()
     try:
         wf = json.load(open(WORKFLOW))
-        _patch(wf, prompt.strip(), steps, seed, width, height)
+        _patch(wf, prompt.strip(), steps, seed, width, height,
+               TURBO_UNET if turbo else None)
         try:
             pid = _submit(wf)
         except urllib.error.HTTPError as e:
@@ -169,11 +180,11 @@ def generate(prompt: str, *, steps: Optional[int] = None, seed: int = -1,
         if not src.exists():
             return {"ok": False, "error": f"output missing at {src}", "path": None}
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        base = filename or f"img-{time.strftime('%Y%m%d-%H%M%S')}-qwen21-{seed}"
+        base = filename or f"img-{time.strftime('%Y%m%d-%H%M%S')}-{name}-{seed}"
         dst = OUTPUT_DIR / f"{base}.png"
         shutil.copy2(src, dst)          # keep every generator's output in one place
         return {"ok": True, "path": str(dst), "seconds": round(time.monotonic() - t0, 1),
-                "seed": seed, "model": "qwen21", "error": None}
+                "seed": seed, "model": name, "error": None}
     finally:
         if owned is not None:
             _kill(owned)

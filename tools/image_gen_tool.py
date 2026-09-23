@@ -11,6 +11,8 @@ Local models (pick via `model=`):
   sd15   — SD1.5. Soft/cute, 512px, ~10s — fastest.
   qwen21 — Qwen-Image-2.1 via ComfyUI (tools/comfy_qwen.py), NOT sd.cpp.
            Quality tier for busy multi-element scenes, ~120s.
+  qwenturbo — Qwen-Image-2.1 + Viggle 4-step transformer, same ComfyUI
+           path. Near-qwen21 adherence and clean text, ~30s cold / ~18s warm.
 
 Backend assets are gitignored (large) — see docs/image-gen-setup.md to
 re-provision: models/sdcpp/{sd-cli,*.so}, models/sdcpp/models/*.safetensors,
@@ -104,6 +106,10 @@ def generate_image_core(
         from tools.comfy_qwen import generate as _qwen21  # noqa: PLC0415
         return _qwen21(prompt, steps=steps, seed=seed,
                        width=width, height=height, filename=filename)
+    if (model or "").strip().lower() in ("qwenturbo", "qwen-turbo", "turbo"):
+        from tools.comfy_qwen import generate as _qwen21  # noqa: PLC0415
+        return _qwen21(prompt, steps=steps, seed=seed, width=width,
+                       height=height, filename=filename, turbo=True)
 
     if not SD_BIN.exists():
         return {"ok": False, "error": f"sd.cpp binary missing at {SD_BIN}", "path": None}
@@ -165,11 +171,13 @@ def generate_image(
         prompt: Description of the image. Be specific; FLUX follows detailed
             prompts well and can render readable text (logos, signs).
         model: "flux" (default, best all-round + text, ~40s), "sdxl" (detailed,
-            ~21s), "sd15" (soft/cute, fastest ~10s), or "qwen21" (Qwen-Image-2.1
-            via ComfyUI — the quality tier, ~120s). Reach for "qwen21" when the
+            ~21s), "sd15" (soft/cute, fastest ~10s), "qwenturbo", or "qwen21"
+            (Qwen-Image-2.1 via ComfyUI — the quality tier, ~120s). Reach for "qwen21" when the
             prompt names several specific things that must all appear, or an
             exact layout; FLUX drops elements from busy scenes. Not worth the
-            extra 80s for a single subject or a simple scene.
+            extra 80s for a single subject or a simple scene. "qwenturbo" is
+            the same model distilled to 4 steps (~30s): clean readable text,
+            slightly less detail than qwen21.
         size: "WxH" override (else the model's native size — 1024 for
             flux/sdxl, 512 for sd15).
         style: Optional style hint appended to the prompt.
