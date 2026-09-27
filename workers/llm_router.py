@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
+from pathlib import Path
 
 from core import brain
 
@@ -366,4 +369,26 @@ def route_llm(message: str) -> dict:
         # recon, never narrow it.
         "recon_mode": bool(obj.get("recon_mode")) or is_recon(msg),
     }
-    return _lookup_override(message, decision)
+    decision = _lookup_override(message, decision)
+    _log_decision(msg, obj, decision)
+    return decision
+
+
+_DECISIONS = Path.home() / "AI_Agent" / "memory" / "feedback" / "router_decisions.jsonl"
+
+
+def _log_decision(msg: str, raw: dict, decision: dict) -> None:
+    """Keep the message + both the model's raw pick and the guarded result:
+    real traffic for the next router fine-tune (training/). Best-effort.
+    Test/eval harnesses set NEXUS_NO_DECISION_LOG so they don't pollute it."""
+    if os.environ.get("NEXUS_NO_DECISION_LOG"):
+        return
+    try:
+        _DECISIONS.parent.mkdir(parents=True, exist_ok=True)
+        with open(_DECISIONS, "a") as fh:
+            fh.write(json.dumps({"ts": time.time(), "text": msg, "raw": raw.get("route"),
+                                 "route": decision["route"],
+                                 "recon_mode": decision["recon_mode"]},
+                                ensure_ascii=False) + "\n")
+    except Exception:
+        pass

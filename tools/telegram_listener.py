@@ -1355,6 +1355,12 @@ def main() -> None:
         telegram_voice.register(application)
     except Exception as e:
         logger.warning("telegram_voice not registered: %s", e)
+    # 👍/👎 reactions on replies → memory/feedback/ (brain training data).
+    try:
+        from tools import telegram_feedback  # noqa: PLC0415
+        telegram_feedback.register(application)
+    except Exception as e:
+        logger.warning("telegram_feedback not registered: %s", e)
 
     # Start the bot
     logger.info("Starting Telegram listener...")

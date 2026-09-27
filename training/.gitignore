@@ -1,0 +1,5 @@
+venv/
+runs/
+# Colton's real messages + his ratings: local only
+data/router_test_real.jsonl
+data/brain_kto.jsonl

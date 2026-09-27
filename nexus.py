@@ -84,6 +84,7 @@ from tools.local_builder import LOCAL_BUILDER_TOOLS  # noqa: E402
 from tools.system_probe import system_status  # noqa: E402
 from tools.html_mockup import HTML_MOCKUP_TOOLS  # noqa: E402
 from tools.goals_tool import GOALS_TOOLS  # noqa: E402
+from tools.skills_tool import SKILLS_TOOLS  # noqa: E402
 from tools.sandbox_tool import SANDBOX_TOOLS  # noqa: E402
 from tools.code_intel import CODE_INTEL_TOOLS  # noqa: E402
 from memory import metrics as agent_metrics  # noqa: E402
@@ -177,6 +178,7 @@ TOOLS = [
     system_status,
     *HTML_MOCKUP_TOOLS,
     *GOALS_TOOLS,
+    *SKILLS_TOOLS,
     *SANDBOX_TOOLS,
     *CODE_INTEL_TOOLS,
     *DESKTOP_TOOLS,
@@ -331,6 +333,13 @@ def load_dynamic_suffix() -> str:
     facts = load_memory_facts()
     if facts:
         parts.append(facts)
+    try:  # step 4 — saved procedures, pulled with skill_read
+        from core import skills  # noqa: PLC0415
+        block = skills.prompt_block()
+        if block:
+            parts.append(block)
+    except Exception:
+        pass
     ctx = load_project_context()
     if ctx:
         parts.append(ctx)

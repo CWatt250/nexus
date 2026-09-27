@@ -15,6 +15,8 @@ Run:
 """
 from __future__ import annotations
 
+import os
+os.environ.setdefault("NEXUS_NO_DECISION_LOG", "1")  # keep router traffic log real-only
 import json
 import logging
 import sys

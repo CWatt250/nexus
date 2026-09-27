@@ -45,6 +45,7 @@ LITE: list[str] = [
     "describe_image",
     "desktop_screenshot",
     "system_status",
+    "skill_save",
 ]
 
 # ~44 tools / ~6K schema tokens. Fat, rarely-needed schemas (wiki_update,
@@ -85,8 +86,10 @@ HEAVY: list[str] = [
     "desktop_open_url",
     "desktop_find",
     "desktop_task",
-    # task queue / goals
+    # task queue / goals / skills
     "goal_add",
+    "skill_read",
+    "skill_list",
     # computer use + vision
     "mouse_move",
     "mouse_click",

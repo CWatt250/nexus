@@ -1,0 +1,42 @@
+model: qwen3:4b
+[real] n=117  raw=71.8%  final=69.2%  (1.08s/msg incl. 2 calls)
+  confusions (want→got): {('lite_agent', 'dispatch'): 6, ('lite_agent', 'quick_chat'): 5, ('quick_chat', 'lite_agent'): 5, ('task', 'lite_agent'): 5, ('status', 'quick_chat'): 4, ('task', 'quick_chat'): 3, ('status', 'lite_agent'): 2, ('lite_agent', 'task'): 2}
+  want lite_agent got quick_chat 'Add my favorite color too'
+  want status     got task       'Add this note to task 7cb9e61160724169: keep it under 150 words'
+  want quick_chat got lite_agent 'Can this new model fit and run on my computer?'
+  want task       got lite_agent 'Can we switch our current model to deepseek right now? I think I alrea'
+  want task       got lite_agent 'Can you connect toy Claude monthly plan? I’m paying $200 a month for i'
+  want lite_agent got quick_chat 'Can you enter this in terminal to get Hermes running, \ncat ~/.hermes/.'
+  want task       got quick_chat 'Can you see if we can use this? And what would we replace and have to '
+  want task       got lite_agent 'Can you see what’s on my desktop right now? Go to brave browser and op'
+  want lite_agent got quick_chat 'Change that to Kennewick, Wa. I work in Pasco. Put that to memory'
+  want lite_agent got dispatch   'Commit it. Message: feat(rag): switch to Ollama nomic-embed-text + add'
+  want status     got lite_agent 'Did you check?'
+  want status     got quick_chat 'Did you finish?'
+  want wiki       got quick_chat 'Do you know where we are at for the Nexus Roadmap? Like what’s next on'
+  want quick_chat got lite_agent 'Do you think this would help you? \n\nhttps://github.com/firecrawl/firec'
+  want task       got lite_agent 'Find me 3 articles for Stripe Connect for marketplaces'
+  want lite_agent got dispatch   'Go ahead and remove this cron job. It is pointless'
+  want quick_chat got lite_agent 'I am an amazon influencer and create videos. I use CapCut all the time'
+  want status     got quick_chat 'Let me know when you are finished'
+  want task       got quick_chat 'Let’s connect to deepseek flash'
+  want task       got lite_agent 'My computer screen won’t turn on. Can you check to see what’s going on'
+  want task       got quick_chat 'My deepseek balance says I’m at $22. Why did you say connect to deepse'
+  want status     got lite_agent 'Provide an update please'
+  want status     got quick_chat 'Report back when completed or if you need anything.'
+  want lite_agent got dispatch   'Run this prompt in the terminal -\nhermes gateway start'
+  want lite_agent got dispatch   'Send it to me on telegram so I can play it'
+  want lite_agent got task       'Show me the README from my cwatt-homelab repo'
+  want lite_agent got task       'Use the file_read_tool to show me the first line of /home/cwatt250/AI_'
+  want status     got quick_chat 'What did you find out'
+  want lite_agent got quick_chat "What's today's date and the current weather in Pasco, WA? One line."
+  want quick_chat got task       'Write 5 distinct architectural tradeoffs (one paragraph each) between '
+  want quick_chat got task       'Write a short essay (~200 words) on the architectural tradeoffs betwee'
+  want quick_chat got lite_agent 'Yes check'
+  want lite_agent got dispatch   'Yes. Let’s make a GitHub repo for it too.'
+  want lite_agent got quick_chat 'can you take a screenshot of my desktop'
+  want lite_agent got dispatch   'send the file ~/AI_Agent/games/clock.html to telegram'
+  want quick_chat got lite_agent 'write a one-line haiku about debugging'
+[evals] n=11  raw=90.9%  final=100.0%  (0.99s/msg incl. 2 calls)
+  confusions (want→got): {}
+

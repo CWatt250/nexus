@@ -22,6 +22,7 @@ TRACKED_PATHS = [
     "memory/lessons.md",
     "memory/improvements.md",
     "memory/patterns.md",
+    "skills",
 ]
 
 AUTHOR_NAME = "nexus"

@@ -271,6 +271,19 @@ def _resolve_timeout(user_text: str) -> tuple[int, str]:
     return DEFAULT_TIMEOUT_S, user_text
 
 
+def _tool_trace(msgs: list) -> list[str]:
+    """`tool(args) → result` per call, in order — what the skills review reads."""
+    results = {getattr(m, "tool_call_id", None): str(getattr(m, "content", ""))
+               for m in msgs if m.__class__.__name__ == "ToolMessage"}
+    trace = []
+    for m in msgs:
+        for tc in getattr(m, "tool_calls", None) or []:
+            args = json.dumps(tc.get("args", {}), ensure_ascii=False, default=str)[:200]
+            out = results.get(tc.get("id"), "")[:150].replace("\n", " ")
+            trace.append(f"{tc.get('name')}({args}) → {out}")
+    return trace
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -438,6 +451,13 @@ async def _run_one(row: dict) -> None:
                                 task_id=task_id, success=ok, result=reply[:500])
     except Exception:
         pass
+
+    if ok and tool_calls:  # step 4 — maybe turn this task into a saved skill
+        try:
+            from core import skills  # noqa: PLC0415
+            skills.review_task_async(user_text, reply, _tool_trace(msgs))
+        except Exception as exc:
+            log.warning("skills review not started: %s", exc)
 
     if ok:
         task_queue.update_status(task_id, "done", output=reply)

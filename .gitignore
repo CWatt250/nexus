@@ -134,3 +134,6 @@ desktop/
 memory/think_prefs.json
 memory/model-watcher-seen.json
 *.bak-*
+
+# 👍/👎 ratings, reply log, router traffic — training data, local only
+memory/feedback/
