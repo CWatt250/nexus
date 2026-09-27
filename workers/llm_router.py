@@ -266,6 +266,10 @@ def _lookup_override(message: str, decision: dict) -> dict:
     return decision
 
 
+def _trained_router() -> bool:
+    return brain.get_router_model().startswith("nexus-router")
+
+
 def route_llm(message: str) -> dict:
     """Classify `message` → {route, tier, recon_mode}. Never raises.
 
@@ -324,43 +328,48 @@ def route_llm(message: str) -> dict:
     if route == "dispatch":
         tier = resolve_dispatch_tier(msg, tier)
 
-    # Host-health guard: force lite_agent when the small router misfiled a
-    # system-health question as status/quick_chat. Never overrides an
-    # action route (task/dispatch/wiki).
-    if route in ("status", "quick_chat") and is_system_health(msg):
-        route = "lite_agent"
-        tier = None
+    # The guards below patch the stock qwen3:4b's known misroutes. The
+    # fine-tuned router (training/train_router.py) learned those cases and
+    # the guards cost it 7 points on real traffic (85.5% raw vs 78.6%), so
+    # they only run for an untrained router.
+    if not _trained_router():
+        # Host-health guard: force lite_agent when the small router misfiled a
+        # system-health question as status/quick_chat. Never overrides an
+        # action route (task/dispatch/wiki).
+        if route in ("status", "quick_chat") and is_system_health(msg):
+            route = "lite_agent"
+            tier = None
 
-    # Chatty guard: a short question/greeting with no action verb gets an instant
-    # quick_chat reply — never a heavy task/dispatch. (Fixes "what model are you
-    # running?" being escalated to a background task with a raw task_id.)
-    if route in ("task", "dispatch") and is_chatty(msg) and not is_system_health(msg):
-        route = "quick_chat"
-        tier = None
+        # Chatty guard: a short question/greeting with no action verb gets an instant
+        # quick_chat reply — never a heavy task/dispatch. (Fixes "what model are you
+        # running?" being escalated to a background task with a raw task_id.)
+        if route in ("task", "dispatch") and is_chatty(msg) and not is_system_health(msg):
+            route = "quick_chat"
+            tier = None
 
-    # Action guard (inverse of the chatty guard): when the small router files a
-    # real "can you restart/run/check X?" request as chat, the no-tools path
-    # then denies having shell access. A clear action verb deterministically
-    # upgrades chat → lite_agent (has tools), mirroring the host-health guard.
-    if route in ("quick_chat", "status") and _ACTION_RE.search(msg):
-        route = "lite_agent"
-        tier = None
+        # Action guard (inverse of the chatty guard): when the small router files a
+        # real "can you restart/run/check X?" request as chat, the no-tools path
+        # then denies having shell access. A clear action verb deterministically
+        # upgrades chat → lite_agent (has tools), mirroring the host-health guard.
+        if route in ("quick_chat", "status") and _ACTION_RE.search(msg):
+            route = "lite_agent"
+            tier = None
 
-    # Game-link guard: "send me the link to play it" is ONE game_links
-    # tool call. Without this the router filed it as a task and a
-    # no-tools qwen3:4b hallucinated a path for 4 minutes (2026-07-12).
-    # Never overrides dispatch ("build a game" stays a build).
-    if route in ("task", "quick_chat", "status") and _GAME_LINK_RE.search(msg):
-        route = "lite_agent"
-        tier = None
+        # Game-link guard: "send me the link to play it" is ONE game_links
+        # tool call. Without this the router filed it as a task and a
+        # no-tools qwen3:4b hallucinated a path for 4 minutes (2026-07-12).
+        # Never overrides dispatch ("build a game" stays a build).
+        if route in ("task", "quick_chat", "status") and _GAME_LINK_RE.search(msg):
+            route = "lite_agent"
+            tier = None
 
-    # Service-op guard: "restart the hermes gateway" is ONE systemctl call —
-    # lite_agent's restart_service tool does it in seconds. Without this the
-    # router escalated it to a full Claude Code dispatch (tier=max).
-    if (route in ("task", "dispatch") and len(msg.split()) <= 12
-            and _SERVICE_OP_RE.search(msg)):
-        route = "lite_agent"
-        tier = None
+        # Service-op guard: "restart the hermes gateway" is ONE systemctl call —
+        # lite_agent's restart_service tool does it in seconds. Without this the
+        # router escalated it to a full Claude Code dispatch (tier=max).
+        if (route in ("task", "dispatch") and len(msg.split()) <= 12
+                and _SERVICE_OP_RE.search(msg)):
+            route = "lite_agent"
+            tier = None
 
     decision = {
         "route": route,
@@ -369,7 +378,8 @@ def route_llm(message: str) -> dict:
         # recon, never narrow it.
         "recon_mode": bool(obj.get("recon_mode")) or is_recon(msg),
     }
-    decision = _lookup_override(message, decision)
+    if not _trained_router():
+        decision = _lookup_override(message, decision)
     _log_decision(msg, obj, decision)
     return decision
 

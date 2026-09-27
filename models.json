@@ -1,6 +1,6 @@
 {
   "brain":  "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
-  "router": "qwen3:4b",
+  "router": "nexus-router",
   "fast":   "qwen3:4b",
   "mid":    "qwen3:8b",
   "heavy":  "hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",

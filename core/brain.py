@@ -55,7 +55,8 @@ SMALL_NUM_CTX = 16384   # qwen3:4b and other small/degraded models
 def num_ctx_for(model: str | None = None) -> int:
     """The single num_ctx every caller must use for `model`."""
     m = (model or get_brain_model()).lower()
-    if m == DEGRADED_MODEL or ":4b" in m or ":8b" in m or "embed" in m:
+    if m == DEGRADED_MODEL or ":4b" in m or ":8b" in m or "embed" in m \
+            or m.startswith("nexus-router"):  # fine-tuned qwen3:4b (training/)
         return SMALL_NUM_CTX
     return BRAIN_NUM_CTX
 

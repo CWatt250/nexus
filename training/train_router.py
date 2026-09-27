@@ -60,7 +60,7 @@ def train(epochs: float) -> Path:
     cfg = SFTConfig(
         output_dir=str(OUT / "ckpt"), num_train_epochs=epochs,
         per_device_train_batch_size=4, gradient_accumulation_steps=4,
-        learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.05,
+        learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=8,
         logging_steps=10, save_strategy="no", bf16=True, report_to=[],
         completion_only_loss=True, max_length=2048, gradient_checkpointing=True,
         model_init_kwargs={"dtype": torch.bfloat16},

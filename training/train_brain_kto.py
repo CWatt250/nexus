@@ -67,15 +67,30 @@ def train(base: str, data: Path, out: Path, epochs: float) -> Path:
     return out / "merged"
 
 
-def export(merged: Path, out: Path, name: str, template_from: str) -> None:
+def export(merged: Path, out: Path, name: str, template_from: str,
+           keep_projector: bool = True) -> None:
     f16, q4 = out / "brain-f16.gguf", out / "brain-Q4_K_M.gguf"
     subprocess.run([sys.executable, str(LLAMA / "convert_hf_to_gguf.py"), str(merged),
-                    "--outtype", "bf16", "--outfile", str(f16)], check=True)
+                    "--outtype", "bf16", "--outfile", str(f16),
+                    # training saves only the main layers, not the MTP draft
+                    # head; without this the GGUF expects a layer it lacks.
+                    "--no-mtp"], check=True)
     subprocess.run([str(LLAMA / "build/bin/llama-quantize"), str(f16), str(q4), "Q4_K_M"],
                    check=True)
     mf = subprocess.run(["ollama", "show", "--modelfile", template_from],
                         capture_output=True, text=True, check=True).stdout
-    mf = "\n".join(f"FROM {q4}" if l.startswith("FROM ") else l for l in mf.splitlines())
+    # First FROM = the text model → ours. Later FROMs are Ornith's vision
+    # projector: keep it (LoRA never touches the vision tower) unless the
+    # base has no vision (e.g. the 0.8B pipeline test).
+    lines, seen = [], False
+    for line in mf.splitlines():
+        if line.startswith("FROM "):
+            if not seen:
+                line, seen = f"FROM {q4}", True
+            elif not keep_projector:
+                continue
+        lines.append(line)
+    mf = "\n".join(lines)
     (out / "Modelfile").write_text(mf)
     subprocess.run(["ollama", "create", name, "-f", str(out / "Modelfile")], check=True)
     f16.unlink()
@@ -92,6 +107,8 @@ if __name__ == "__main__":
     ap.add_argument("--export", action="store_true")
     ap.add_argument("--name", default="nexus-brain")
     ap.add_argument("--template-from", default="hf.co/ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M")
+    ap.add_argument("--no-projector", action="store_true",
+                    help="drop the template's vision projector (text-only base)")
     a = ap.parse_args()
     n = len(load(a.data)) if a.data.exists() else 0
     if n < a.min_rows:
@@ -99,4 +116,4 @@ if __name__ == "__main__":
                  f"Keep reacting 👍/👎 in Telegram; run export_feedback.py again later.")
     m = train(a.base, a.data, a.out, a.epochs)
     if a.export:
-        export(m, a.out, a.name, a.template_from)
+        export(m, a.out, a.name, a.template_from, keep_projector=not a.no_projector)
