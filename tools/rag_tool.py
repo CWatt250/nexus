@@ -50,9 +50,11 @@ class OllamaEmbeddingFunction:
     def __call__(self, input: list[str]) -> list[list[float]]:
         return _ollama_embed(list(input))
 
-    def embed_query(self, input: str) -> list[list[float]]:
-        """Single-query embedding — Chroma calls this for query_texts."""
-        return _ollama_embed([input])
+    def embed_query(self, input: str | list[str]) -> list[list[float]]:
+        """Chroma calls this for query_texts — with a LIST in chroma 1.x.
+        Wrapping that list again sent [[...]] to Ollama, which failed into
+        the zero-vector fallback: every query_texts search matched garbage."""
+        return _ollama_embed([input] if isinstance(input, str) else list(input))
 
     def embed_queries(self, queries: list[str]) -> list[list[float]]:
         return self(queries)
