@@ -108,13 +108,14 @@ class DispatchMeta:
     @classmethod
     def new(cls, label: str, time_budget_minutes: int, *,
             requesting_user: str = "colton", risky_match: str = "",
-            tier: str = "api", recon_mode: bool = False) -> "DispatchMeta":
+            tier: str = "local", recon_mode: bool = False) -> "DispatchMeta":
         # Phase 29 — coerce legacy "real" → "api" so on-disk metas
-        # always carry the canonical tier name. Unknown tiers fall
-        # back to "api" (API key, paid Sonnet) as the safest default.
+        # always carry the canonical tier name. All-local (2026-07-12):
+        # no tier / unknown tier → "local" ($0); cloud tiers only when
+        # a caller passes one explicitly (slash command).
         canonical = normalize_tier(tier)
         if canonical not in TIER_PRICING:
-            canonical = "api"
+            canonical = "local"
         return cls(
             dispatch_id=new_dispatch_id(),
             label=label or "(unlabeled)",

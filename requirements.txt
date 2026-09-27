@@ -250,7 +250,7 @@ xlrd==2.0.2
 xlsxwriter==3.2.9
 xxhash==3.6.0
 yarl==1.23.0
-youtube-transcript-api==1.0.3
+youtube-transcript-api==1.2.4
 yt-dlp==2026.3.17
 zipp==3.23.1
 zstandard==0.25.0

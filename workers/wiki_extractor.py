@@ -100,6 +100,9 @@ def _dispatch_extraction(source_path: Path) -> str | None:
     meta = cc_dispatch.DispatchMeta.new(
         label=label,
         time_budget_minutes=EXTRACT_BUDGET_MIN,
+        # Needs file edits + a commit, which the local tier can't do —
+        # pinned to its pre-all-local tier.
+        tier="api",
     )
     body = _build_extraction_prompt(source_path)
     cc_dispatch.write_prompt(meta, body, pending=False)

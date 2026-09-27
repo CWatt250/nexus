@@ -22,7 +22,7 @@ from pathlib import Path
 from langchain_core.tools import tool
 
 from tools import rag_tool
-from tools.brave_search_tool import brave_search
+from tools.search_router import web_search
 from tools.codebase_tool import get_file_context
 
 _POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="parallel-tool")
@@ -51,12 +51,12 @@ def quick_lookup(query: str, count: int = 5) -> str:
 
     Use when you need both fresh web hits and prior-session context for
     the same topic — saves a sequential round-trip vs calling
-    brave_search and memory_search separately."""
+    web_search and memory_search separately."""
     web, mem = _run_two(
-        lambda: _safe(brave_search.invoke, {"query": query, "count": count}),
+        lambda: _safe(web_search.invoke, {"query": query, "count": count}),
         lambda: _safe(rag_tool.memory_search.invoke, {"query_text": query, "k": count}),
     )
-    return "\n\n".join([_label("WEB (brave)", web), _label("MEMORY (chroma)", mem)])
+    return "\n\n".join([_label("WEB", web), _label("MEMORY (chroma)", mem)])
 
 
 def _git_log(repo_path: str, n: int = 10) -> str:

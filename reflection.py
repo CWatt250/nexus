@@ -130,7 +130,9 @@ def _store_in_mem0(entry: dict) -> None:
             mem_text += f" Tools: {', '.join(tools)}."
 
         mem = _get_memory()
-        mem.add(mem_text, user_id=DEFAULT_USER, metadata={
+        # infer=False: the qwen3:4b extractor returns [] for these, so
+        # infer=True silently stored nothing (same as mem0_add).
+        mem.add(mem_text, user_id=DEFAULT_USER, infer=False, metadata={
             "type": "reflection",
             "quality": entry.get("quality", 0),
             "ts": entry.get("ts", ""),

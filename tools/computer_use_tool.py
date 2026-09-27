@@ -252,11 +252,16 @@ def find_on_screen(image_path: str) -> str:
         return f"Error: Image file not found: {image_path}"
 
     try:
+        import pyscreeze  # noqa: PLC0415
         _hay = _grab_pil()
         try:
-            location = _get_pyautogui().locateCenter(str(path), _hay, confidence=0.8)
-        except Exception:
-            location = _get_pyautogui().locateCenter(str(path), _hay)
+            try:
+                box = pyscreeze.locate(str(path), _hay, confidence=0.8)
+            except NotImplementedError:  # confidence needs opencv
+                box = pyscreeze.locate(str(path), _hay)
+        except pyscreeze.ImageNotFoundException:
+            box = None
+        location = pyscreeze.center(box) if box else None
         if location:
             return f"Found at coordinates: ({location.x}, {location.y})"
         else:

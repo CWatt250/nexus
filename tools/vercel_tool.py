@@ -16,6 +16,16 @@ load_dotenv(Path.home() / "AI_Agent" / ".env")
 VERCEL_TOKEN = os.getenv("VERCEL_TOKEN", "")
 
 
+def _token_args() -> list[str]:
+    """--token only when one is configured; otherwise rely on the CLI's
+    own login (`vercel login`)."""
+    return ["--token", VERCEL_TOKEN] if VERCEL_TOKEN else []
+
+
+def _env() -> dict:
+    return {**os.environ, "VERCEL_TOKEN": VERCEL_TOKEN} if VERCEL_TOKEN else dict(os.environ)
+
+
 def _check_vercel_installed() -> bool:
     """Check if Vercel CLI is installed."""
     try:
@@ -55,13 +65,6 @@ def vercel_deploy(
             f"project_dir: {project_dir}\nproject_name: {project_name}\ntarget: {target}\n"
             "to actually deploy, call again with approve=True."
         )
-    if not VERCEL_TOKEN:
-        return (
-            "Error: VERCEL_TOKEN not configured.\n"
-            "Add VERCEL_TOKEN=your_token to ~/AI_Agent/.env\n\n"
-            "Get a token from: https://vercel.com/account/tokens"
-        )
-
     if not _check_vercel_installed():
         return (
             "Error: Vercel CLI not installed.\n"
@@ -84,7 +87,7 @@ def vercel_deploy(
 
     try:
         # Build the vercel command
-        cmd = ["vercel", "--token", VERCEL_TOKEN, "--yes"]
+        cmd = ["vercel", *_token_args(), "--yes"]
 
         if project_name:
             cmd.extend(["--name", project_name])
@@ -99,7 +102,7 @@ def vercel_deploy(
             capture_output=True,
             text=True,
             timeout=300,  # 5 minute timeout
-            env={**os.environ, "VERCEL_TOKEN": VERCEL_TOKEN},
+            env=_env(),
         )
 
         if result.returncode != 0:
@@ -135,19 +138,16 @@ def vercel_list_deployments(limit: int = 10) -> str:
     Returns:
         List of recent deployments or error message
     """
-    if not VERCEL_TOKEN:
-        return "Error: VERCEL_TOKEN not configured. Add it to ~/AI_Agent/.env"
-
     if not _check_vercel_installed():
         return "Error: Vercel CLI not installed. Run: sudo npm install -g vercel"
 
     try:
         result = subprocess.run(
-            ["vercel", "ls", "--token", VERCEL_TOKEN, "-n", str(limit)],
+            ["vercel", "ls", *_token_args(), "--limit", str(limit)],
             capture_output=True,
             text=True,
             timeout=30,
-            env={**os.environ, "VERCEL_TOKEN": VERCEL_TOKEN},
+            env=_env(),
         )
 
         if result.returncode != 0:
@@ -171,19 +171,16 @@ def vercel_remove_deployment(url: str) -> str:
     Returns:
         Success or error message
     """
-    if not VERCEL_TOKEN:
-        return "Error: VERCEL_TOKEN not configured."
-
     if not _check_vercel_installed():
         return "Error: Vercel CLI not installed."
 
     try:
         result = subprocess.run(
-            ["vercel", "remove", url, "--token", VERCEL_TOKEN, "--yes"],
+            ["vercel", "remove", url, *_token_args(), "--yes"],
             capture_output=True,
             text=True,
             timeout=60,
-            env={**os.environ, "VERCEL_TOKEN": VERCEL_TOKEN},
+            env=_env(),
         )
 
         if result.returncode != 0:

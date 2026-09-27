@@ -100,10 +100,10 @@ def bidwatt_list_bids(limit: int = 20, status: str = "") -> str:
 
     Args:
         limit: max rows to return (capped server-side at 100).
-        status: optional status filter, e.g. 'open', 'won', 'lost'.
+        status: optional status filter, e.g. 'Bidding', 'Sent', 'Awarded', 'Lost'.
     """
     params: dict = {
-        "select": "id,project_name,client,due_date,status,total_value,created_at",
+        "select": "id,project_name,bid_due_date,status,project_location,created_at,bid_clients(client_name)",
         "order": "created_at.desc",
         "limit": str(min(max(int(limit or 1), 1), 100)),
     }
@@ -125,12 +125,22 @@ def bidwatt_search_bids(query: str, limit: int = 10) -> str:
     """Search BidWatt bids by free-text against project_name and client (read-only)."""
     if not query:
         return "query required"
-    # PostgREST `or=(project_name.ilike.*foo*,client.ilike.*foo*)`
+    # Client names live in bid_clients, and PostgREST can't OR across an
+    # embed — resolve client-matching bid ids first.
     pattern = f"*{query}*"
-    or_filter = f"(project_name.ilike.{pattern},client.ilike.{pattern})"
+    raw = _request("bid_clients", {
+        "client_name": f"ilike.{pattern}", "select": "bid_id", "limit": "50",
+    })
+    try:
+        ids = sorted({row["bid_id"] for row in json.loads(raw)})
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return raw
+    or_parts = [f"project_name.ilike.{pattern}"]
+    if ids:
+        or_parts.append(f"id.in.({','.join(ids)})")
     return _request("bids", {
-        "or": or_filter,
-        "select": "id,project_name,client,due_date,status,total_value",
+        "or": f"({','.join(or_parts)})",
+        "select": "id,project_name,bid_due_date,status,created_at,bid_clients(client_name)",
         "order": "created_at.desc",
         "limit": str(min(max(int(limit or 1), 1), 50)),
     })

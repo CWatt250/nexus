@@ -994,6 +994,7 @@ async def _handle_dispatch_command(update: Update, text: str) -> bool:
         new_meta = _ccd.DispatchMeta.new(
             label=("re-run: " if not is_extend else f"extend({new_budget}m): ") + meta.label,
             time_budget_minutes=new_budget if is_extend else meta.time_budget_minutes,
+            tier=meta.tier,
         )
         _ccd.write_prompt(new_meta, body, pending=False)
         await update.message.reply_text(
