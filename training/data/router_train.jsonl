@@ -1,0 +1,921 @@
+{"text": "make the ai in a box installer detect the gpu and pick vulkan or cpu automatically, and add a test for both paths", "route": "dispatch", "recon_mode": false}
+{"text": "what is the coding router", "route": "wiki", "recon_mode": false}
+{"text": "tell me about timewatt", "route": "wiki", "recon_mode": false}
+{"text": "i think the router misfires less since the guards went in", "route": "quick_chat", "recon_mode": false}
+{"text": "audit the router decisions from this week and report how often the guards fired", "route": "task", "recon_mode": true}
+{"text": "task 7f3e2d1c?", "route": "status", "recon_mode": false}
+{"text": "did the fog of war task land", "route": "status", "recon_mode": false}
+{"text": "build an estimating template generator in python that outputs xlsx", "route": "dispatch", "recon_mode": false}
+{"text": "how does rag work", "route": "quick_chat", "recon_mode": false}
+{"text": "audit which of my github repos have exposed env files, do not push anything", "route": "task", "recon_mode": true}
+{"text": "the new qwen image tier looks amazing", "route": "quick_chat", "recon_mode": false}
+{"text": "run free -h and tell me", "route": "lite_agent", "recon_mode": false}
+{"text": "lets not do the electron thing", "route": "quick_chat", "recon_mode": false}
+{"text": "maybe we move the meetup to thursdays", "route": "quick_chat", "recon_mode": false}
+{"text": "check disk health on the nvme", "route": "lite_agent", "recon_mode": false}
+{"text": "send me the bidwatt pitch pdf", "route": "lite_agent", "recon_mode": false}
+{"text": "update roadmap.md in nexus-core to mark phase 40 done with todays date", "route": "task", "recon_mode": false}
+{"text": "tell me a joke", "route": "quick_chat", "recon_mode": false}
+{"text": "merge the two lessons files and dedupe them", "route": "task", "recon_mode": false}
+{"text": "look up every open issue on the godot repo about navigation performance and summarize the top ones", "route": "task", "recon_mode": false}
+{"text": "build a resource harvesting system for vibe command", "route": "dispatch", "recon_mode": false}
+{"text": "will it freeze tonight in the tri cities", "route": "lite_agent", "recon_mode": false}
+{"text": "link to the ollama releases page", "route": "lite_agent", "recon_mode": false}
+{"text": "tail the telegram log", "route": "lite_agent", "recon_mode": false}
+{"text": "feels like the fan on the nimo is louder lately", "route": "quick_chat", "recon_mode": false}
+{"text": "show my github repos", "route": "lite_agent", "recon_mode": false}
+{"text": "add the new qwenturbo tier to the coding router wiki page and the architecture doc", "route": "task", "recon_mode": false}
+{"text": "what’s the latest version of next.js", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me about the coding router tiers", "route": "wiki", "recon_mode": false}
+{"text": "queue empty?", "route": "status", "recon_mode": false}
+{"text": "lets goooo", "route": "quick_chat", "recon_mode": false}
+{"text": "explain the sparky animation states", "route": "wiki", "recon_mode": false}
+{"text": "add a leaderboard to the flappy game", "route": "dispatch", "recon_mode": false}
+{"text": "is it friday yet", "route": "quick_chat", "recon_mode": false}
+{"text": "pull the latest on vibe-command", "route": "lite_agent", "recon_mode": false}
+{"text": "msrp on the ryzen ai max 395 boards?", "route": "lite_agent", "recon_mode": false}
+{"text": "go through all the cron jobs and report what each one does, dont touch them", "route": "task", "recon_mode": true}
+{"text": "no worries", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate the nightly DeviceLost crashes, just report what you find", "route": "task", "recon_mode": true}
+{"text": "what day is it", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the going rate for a journeyman insulator in WA", "route": "lite_agent", "recon_mode": false}
+{"text": "generate 4 qwen images of the rts command center for concept art and put them in the vibe-command folder", "route": "task", "recon_mode": false}
+{"text": "check every systemd unit for nexus and report which ones are failing, dont restart anything", "route": "task", "recon_mode": true}
+{"text": "you should study the hermes skills system more", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the bug where bidwatt shows the wrong due date timezone", "route": "dispatch", "recon_mode": false}
+{"text": "any news on deepseek v5", "route": "lite_agent", "recon_mode": false}
+{"text": "do you think $250 is too cheap for the ai in a box thing", "route": "quick_chat", "recon_mode": false}
+{"text": "check all the systemd services, restart anything thats dead, and tell me what you did", "route": "task", "recon_mode": false}
+{"text": "generate the typescript types from the supabase schema and wire them into subwatt", "route": "dispatch", "recon_mode": false}
+{"text": "make a telegram mini app for checking my bids", "route": "dispatch", "recon_mode": false}
+{"text": "fix the pathing so units dont get stuck on the refinery", "route": "dispatch", "recon_mode": false}
+{"text": "read the spec pdf in ~/Downloads/230700.pdf and list every insulation requirement by system", "route": "task", "recon_mode": false}
+{"text": "is it hot in spokane", "route": "lite_agent", "recon_mode": false}
+{"text": "build an idle clicker where you estimate bids for cash", "route": "dispatch", "recon_mode": false}
+{"text": "how do transformers work in ai, short version", "route": "quick_chat", "recon_mode": false}
+{"text": "create a discord bot for the ai in the tri group", "route": "dispatch", "recon_mode": false}
+{"text": "it would be sick if vibe command had multiplayer", "route": "quick_chat", "recon_mode": false}
+{"text": "make a one page site for the ai in the tri meetup with the schedule", "route": "dispatch", "recon_mode": false}
+{"text": "who is sparky", "route": "wiki", "recon_mode": false}
+{"text": "heading to the meetup tonight", "route": "quick_chat", "recon_mode": false}
+{"text": "what does prevailing wage mean", "route": "quick_chat", "recon_mode": false}
+{"text": "whats in the queue", "route": "status", "recon_mode": false}
+{"text": "who are bidwatt’s target customers", "route": "wiki", "recon_mode": false}
+{"text": "what is vulkan", "route": "quick_chat", "recon_mode": false}
+{"text": "add dark mode to cwatt-commandcenter", "route": "dispatch", "recon_mode": false}
+{"text": "go through my github notifications and summarize anything that needs me", "route": "task", "recon_mode": false}
+{"text": "nope not that one", "route": "quick_chat", "recon_mode": false}
+{"text": "eta on that task?", "route": "status", "recon_mode": false}
+{"text": "make the tetris game you built earlier work on mobile with swipe controls", "route": "dispatch", "recon_mode": false}
+{"text": "is task a1b2c3d4 done", "route": "status", "recon_mode": false}
+{"text": "what model are you on", "route": "lite_agent", "recon_mode": false}
+{"text": "you doing alright?", "route": "quick_chat", "recon_mode": false}
+{"text": "remind me what the vibe command hud phase was", "route": "wiki", "recon_mode": false}
+{"text": "got any fun ideas for the meetup demo?", "route": "quick_chat", "recon_mode": false}
+{"text": "set up a cron that sends me the pasco weather every morning at 6", "route": "task", "recon_mode": false}
+{"text": "hows the wind in richland this afternoon, were pouring concrete", "route": "lite_agent", "recon_mode": false}
+{"text": "recon the vram usage from the last 24h of logs and report findings", "route": "task", "recon_mode": true}
+{"text": "tell me about watt systems", "route": "wiki", "recon_mode": false}
+{"text": "save this to memory: my truck is the white f250", "route": "lite_agent", "recon_mode": false}
+{"text": "move timewatt from localstorage to supabase", "route": "dispatch", "recon_mode": false}
+{"text": "haha we ship tonight?? jk", "route": "quick_chat", "recon_mode": false}
+{"text": "what is jobwatt’s current status", "route": "wiki", "recon_mode": false}
+{"text": "add unit tests for the chunker in cc_result_reporter", "route": "dispatch", "recon_mode": false}
+{"text": "research open source alternatives to procore and summarize strengths", "route": "task", "recon_mode": false}
+{"text": "what is a task queue in general", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the stack for bidwatt again", "route": "wiki", "recon_mode": false}
+{"text": "tell me about the strix halo in wattbott", "route": "wiki", "recon_mode": false}
+{"text": "build a gantt chart component for jobwatt schedules", "route": "dispatch", "recon_mode": false}
+{"text": "we should add a dark mode to cwatt-commandcenter at some point", "route": "quick_chat", "recon_mode": false}
+{"text": "where’s my report from that task", "route": "status", "recon_mode": false}
+{"text": "find every open source construction takeoff tool on github and rank by stars and activity", "route": "task", "recon_mode": false}
+{"text": "what is godot", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the supabase query that times out on the bids page", "route": "dispatch", "recon_mode": false}
+{"text": "look up DOE minimum pipe insulation thickness table", "route": "lite_agent", "recon_mode": false}
+{"text": "nice work on that", "route": "quick_chat", "recon_mode": false}
+{"text": "build the subwatt vendor directory page with search and filters", "route": "dispatch", "recon_mode": false}
+{"text": "fix the off by one in the vibe command grid snapping", "route": "dispatch", "recon_mode": false}
+{"text": "fetch the insulation spec from the plan room link and pull the pipe sizes into a table https://planroom.example.com/p/88231", "route": "task", "recon_mode": false}
+{"text": "i really think the wiki pages need a cleanup eventually", "route": "quick_chat", "recon_mode": false}
+{"text": "what is vibe command", "route": "wiki", "recon_mode": false}
+{"text": "what tier does /local map to in the coding router", "route": "wiki", "recon_mode": false}
+{"text": "list pending tasks", "route": "status", "recon_mode": false}
+{"text": "whats serving you right now", "route": "lite_agent", "recon_mode": false}
+{"text": "we should probably move subwatt onto supabase too", "route": "quick_chat", "recon_mode": false}
+{"text": "find all the bids due next week in my bidwatt data and put them in a calendar summary", "route": "task", "recon_mode": false}
+{"text": "fix the flaky test in test_router_guards", "route": "dispatch", "recon_mode": false}
+{"text": "thanks", "route": "quick_chat", "recon_mode": false}
+{"text": "who am i to you", "route": "quick_chat", "recon_mode": false}
+{"text": "check the status of the bidwatt vercel deploy", "route": "lite_agent", "recon_mode": false}
+{"text": "is 8b7a6c5d done yet", "route": "status", "recon_mode": false}
+{"text": "hmm", "route": "quick_chat", "recon_mode": false}
+{"text": "build a small sqlite backed todo app for the meetup demo", "route": "dispatch", "recon_mode": false}
+{"text": "should i use postgres or sqlite for timewatt", "route": "quick_chat", "recon_mode": false}
+{"text": "relaunch open webui", "route": "lite_agent", "recon_mode": false}
+{"text": "run npm -v", "route": "lite_agent", "recon_mode": false}
+{"text": "add a feature flag system to bidwatt", "route": "dispatch", "recon_mode": false}
+{"text": "is today a holiday", "route": "quick_chat", "recon_mode": false}
+{"text": "upgrade bidwatt to next 16 and fix what breaks", "route": "dispatch", "recon_mode": false}
+{"text": "which model is loaded", "route": "lite_agent", "recon_mode": false}
+{"text": "read the planwatt folder and summarize the architecture, no changes", "route": "task", "recon_mode": true}
+{"text": "im bored", "route": "quick_chat", "recon_mode": false}
+{"text": "audit the telegram command handlers for anything that could leak secrets, report only", "route": "task", "recon_mode": true}
+{"text": "k", "route": "quick_chat", "recon_mode": false}
+{"text": "run the eval suite, then the live drive, and send me a summary of what failed", "route": "task", "recon_mode": false}
+{"text": "send the flappy game to my phone", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the tier ladder in the coding router", "route": "wiki", "recon_mode": false}
+{"text": "research the best open source whisper alternatives and benchmark them on this box", "route": "task", "recon_mode": false}
+{"text": "investigate why the nexus codebase index skips some files, just report", "route": "dispatch", "recon_mode": true}
+{"text": "research whether i need a contractor license to sell the ai box in WA and summarize", "route": "task", "recon_mode": false}
+{"text": "fix the snake game, it lets you go backwards into yourself", "route": "dispatch", "recon_mode": false}
+{"text": "long week. glad its friday", "route": "quick_chat", "recon_mode": false}
+{"text": "whats a 15% markup on 212k", "route": "quick_chat", "recon_mode": false}
+{"text": "that was fast", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate why sparky overlay wont start on login, just tell me what you find", "route": "task", "recon_mode": true}
+{"text": "tell me what the coding router costs per tier", "route": "wiki", "recon_mode": false}
+{"text": "someday i want nexus to run my whole bid day", "route": "quick_chat", "recon_mode": false}
+{"text": "the bid total in bidwatt is off by the tax amount, fix it", "route": "dispatch", "recon_mode": false}
+{"text": "gas prices in pasco right now", "route": "lite_agent", "recon_mode": false}
+{"text": "for vibe command:\n- add a build queue to the barracks\n- max 5 units queued\n- show progress bars in the hud\ncommit when tests pass", "route": "dispatch", "recon_mode": false}
+{"text": "where did we land on bidwatt pricing", "route": "wiki", "recon_mode": false}
+{"text": "send me the eod summary file", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the cron expression for every monday at 6am", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the login redirect loop on subwatt", "route": "dispatch", "recon_mode": false}
+{"text": "kill comfyui its hogging vram", "route": "lite_agent", "recon_mode": false}
+{"text": "forget it", "route": "quick_chat", "recon_mode": false}
+{"text": "start the state bridge back up", "route": "lite_agent", "recon_mode": false}
+{"text": "add unit selection boxes to the rts", "route": "dispatch", "recon_mode": false}
+{"text": "create a tower defense prototype in godot for fun", "route": "dispatch", "recon_mode": false}
+{"text": "add a lesson to memory/lessons.md about the comfyui mmap fix", "route": "task", "recon_mode": false}
+{"text": "create the vibe command main menu scene with settings and quit", "route": "dispatch", "recon_mode": false}
+{"text": "requeue the failed one", "route": "status", "recon_mode": false}
+{"text": "nah i dont like that approach", "route": "quick_chat", "recon_mode": false}
+{"text": "make a new project called firewatt with the new project script and fill in the roadmap", "route": "task", "recon_mode": false}
+{"text": "we gotta figure out the usb installer before the next meetup", "route": "quick_chat", "recon_mode": false}
+{"text": "add a cancel button to the task queue ui", "route": "dispatch", "recon_mode": false}
+{"text": "who is andrej karpathy", "route": "quick_chat", "recon_mode": false}
+{"text": "the rts needs better unit pathing tbh", "route": "quick_chat", "recon_mode": false}
+{"text": "thinking about dropping vercel for cloudflare pages", "route": "quick_chat", "recon_mode": false}
+{"text": "check if docker is running", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the status on the tetris one", "route": "status", "recon_mode": false}
+{"text": "redo the tasks.md for subwatt, split it into now next later", "route": "task", "recon_mode": false}
+{"text": "look in my notes for the meetup venue contact", "route": "lite_agent", "recon_mode": false}
+{"text": "update the telegram setup doc with the new bot name and chat id steps", "route": "task", "recon_mode": false}
+{"text": "did you get to my task yet", "route": "status", "recon_mode": false}
+{"text": "ok cool", "route": "quick_chat", "recon_mode": false}
+{"text": "build a map editor for vibe command", "route": "dispatch", "recon_mode": false}
+{"text": "explain the jobwatt idea", "route": "wiki", "recon_mode": false}
+{"text": "compare supabase, neon, and planetscale for a small saas with sources and a recommendation", "route": "task", "recon_mode": false}
+{"text": "whats 9 factorial", "route": "quick_chat", "recon_mode": false}
+{"text": "research the best way to do usb installers for linux appliances, compare the options", "route": "task", "recon_mode": false}
+{"text": "is it gonna rain in pasco tomorrow", "route": "lite_agent", "recon_mode": false}
+{"text": "what’s using port 11434", "route": "lite_agent", "recon_mode": false}
+{"text": "weather in kennewick", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me about the bidwatt supabase tables", "route": "wiki", "recon_mode": false}
+{"text": "debug why the tetris pieces rotate through walls and fix it", "route": "dispatch", "recon_mode": false}
+{"text": "ok lets do it, add the csv import to subwatt like we talked about. vendors with name email trade phone", "route": "dispatch", "recon_mode": false}
+{"text": "pull the weather for pasco richland and kennewick and put them in one table for the week", "route": "task", "recon_mode": false}
+{"text": "any snow forecast for snoqualmie pass", "route": "lite_agent", "recon_mode": false}
+{"text": "huh", "route": "quick_chat", "recon_mode": false}
+{"text": "what is the vibe command art style", "route": "wiki", "recon_mode": false}
+{"text": "tell me about planwatt", "route": "wiki", "recon_mode": false}
+{"text": "pick a number 1 to 10", "route": "quick_chat", "recon_mode": false}
+{"text": "make a spreadsheet comparing my last 10 bids, won vs lost with margin", "route": "task", "recon_mode": false}
+{"text": "the rts camera jitters when zooming, can you fix that", "route": "dispatch", "recon_mode": false}
+{"text": "what does Q4_K_M mean", "route": "quick_chat", "recon_mode": false}
+{"text": "look into why dispatches keep timing out and report back, dont fix anything yet", "route": "task", "recon_mode": true}
+{"text": "port the old estimate calculator from excel to a web page", "route": "dispatch", "recon_mode": false}
+{"text": "build a cli tool that converts linear feet of pipe to insulation material quantities", "route": "dispatch", "recon_mode": false}
+{"text": "compile a list of insulation suppliers in the pacific northwest with contact info", "route": "task", "recon_mode": false}
+{"text": "are you up", "route": "lite_agent", "recon_mode": false}
+{"text": "give me 3 talking points for the meetup intro, short", "route": "quick_chat", "recon_mode": false}
+{"text": "whats timewatt for", "route": "wiki", "recon_mode": false}
+{"text": "audit bidwatt dependencies for outdated or vulnerable packages, report findings, do not push", "route": "dispatch", "recon_mode": true}
+{"text": "update the hermes env with the deepseek key from secrets and restart the gateway after", "route": "task", "recon_mode": false}
+{"text": "screenshot", "route": "lite_agent", "recon_mode": false}
+{"text": "yes", "route": "quick_chat", "recon_mode": false}
+{"text": "research which local image models run fastest on gfx1151 and make a table", "route": "task", "recon_mode": false}
+{"text": "remind me at 4 to call the insulation supplier", "route": "lite_agent", "recon_mode": false}
+{"text": "can you restart comfyui", "route": "lite_agent", "recon_mode": false}
+{"text": "fix the eod summary script, its sending empty tables", "route": "dispatch", "recon_mode": false}
+{"text": "what does ASJ mean on pipe insulation", "route": "quick_chat", "recon_mode": false}
+{"text": "what day of the week is the 15th", "route": "quick_chat", "recon_mode": false}
+{"text": "how many tasks are queued up", "route": "status", "recon_mode": false}
+{"text": "maybe the ai in a box should ship with a smaller brain model", "route": "quick_chat", "recon_mode": false}
+{"text": "the hospital job is probably gonna go to the low guy again", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the csv export, the commas in descriptions break it", "route": "dispatch", "recon_mode": false}
+{"text": "audit the nexus tool list and tell me which ones are broken, dont change anything", "route": "task", "recon_mode": true}
+{"text": "is python pass by reference", "route": "quick_chat", "recon_mode": false}
+{"text": "what is a vector database", "route": "quick_chat", "recon_mode": false}
+{"text": "honestly the telegram bot has been solid lately", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the hud overlap on small screens in vibe command", "route": "dispatch", "recon_mode": false}
+{"text": "open bidwatt in chrome", "route": "lite_agent", "recon_mode": false}
+{"text": "explain subwatt", "route": "wiki", "recon_mode": false}
+{"text": "whats the capital of montana", "route": "quick_chat", "recon_mode": false}
+{"text": "write a test suite for the subwatt pricing logic", "route": "dispatch", "recon_mode": false}
+{"text": "wind gusts in west richland tonight?", "route": "lite_agent", "recon_mode": false}
+{"text": "show the process list", "route": "lite_agent", "recon_mode": false}
+{"text": "build a bid leveling spreadsheet tool in next.js", "route": "dispatch", "recon_mode": false}
+{"text": "done?", "route": "status", "recon_mode": false}
+{"text": "bash ls ~/Dev", "route": "lite_agent", "recon_mode": false}
+{"text": "18500 / 12", "route": "quick_chat", "recon_mode": false}
+{"text": "explain how the roadmap phases are numbered", "route": "wiki", "recon_mode": false}
+{"text": "what repos do i have on github", "route": "lite_agent", "recon_mode": false}
+{"text": "search x for strix halo llm benchmarks", "route": "lite_agent", "recon_mode": false}
+{"text": "whats in the nimo, cpu gpu ram", "route": "wiki", "recon_mode": false}
+{"text": "review the last 20 entries in the run logs and tell me what patterns you see, report only", "route": "task", "recon_mode": true}
+{"text": "audit my supabase projects and tell me which ones are unused. read only", "route": "task", "recon_mode": true}
+{"text": "i think local models are finally good enough for real work", "route": "quick_chat", "recon_mode": false}
+{"text": "send me the link to play vibe command", "route": "lite_agent", "recon_mode": false}
+{"text": "look up the ollama num_ctx env var docs", "route": "lite_agent", "recon_mode": false}
+{"text": "hows it going man", "route": "quick_chat", "recon_mode": false}
+{"text": "got the time?", "route": "quick_chat", "recon_mode": false}
+{"text": "what is a router in networking", "route": "quick_chat", "recon_mode": false}
+{"text": "can you see my screen", "route": "lite_agent", "recon_mode": false}
+{"text": "compare the top 5 construction bid management saas tools on pricing and features, table pls", "route": "task", "recon_mode": false}
+{"text": "how long has that task been running", "route": "status", "recon_mode": false}
+{"text": "thats wild", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the memory leak in the task worker loop", "route": "dispatch", "recon_mode": false}
+{"text": "what is watt systems", "route": "wiki", "recon_mode": false}
+{"text": "write a short poem about the tri cities wind", "route": "quick_chat", "recon_mode": false}
+{"text": "run git status in ~/Dev/bidwatt", "route": "lite_agent", "recon_mode": false}
+{"text": "create a pipe insulation takeoff calculator web app", "route": "dispatch", "recon_mode": false}
+{"text": "interesting", "route": "quick_chat", "recon_mode": false}
+{"text": "maybe we swap the router to an even smaller model", "route": "quick_chat", "recon_mode": false}
+{"text": "retry task 0badf00d", "route": "status", "recon_mode": false}
+{"text": "in ~/Dev/bidwatt add a notes field to each bid, show it on the detail page, and make it searchable. migration + ui + tests pls", "route": "dispatch", "recon_mode": false}
+{"text": "rewrite the wiki search to use the codebase index", "route": "dispatch", "recon_mode": false}
+{"text": "do we have a vercel token set up", "route": "lite_agent", "recon_mode": false}
+{"text": "do you like your job lol", "route": "quick_chat", "recon_mode": false}
+{"text": "air quality in pasco, the smoke looks bad", "route": "lite_agent", "recon_mode": false}
+{"text": "i feel like ornith is way better than gpt-oss was", "route": "quick_chat", "recon_mode": false}
+{"text": "is there a new claude code version out", "route": "lite_agent", "recon_mode": false}
+{"text": "add a section to runbook.md on the wattbot port 11434 boot race", "route": "task", "recon_mode": false}
+{"text": "make a memory card matching game with construction icons", "route": "dispatch", "recon_mode": false}
+{"text": "long day at irex today", "route": "quick_chat", "recon_mode": false}
+{"text": "would it be dumb to open source bidwatt", "route": "quick_chat", "recon_mode": false}
+{"text": "clean up the subwatt api routes, theyre a mess, consolidate them", "route": "dispatch", "recon_mode": false}
+{"text": "hows the weather looking thursday in moses lake for the site walk", "route": "lite_agent", "recon_mode": false}
+{"text": "cougs score?", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the gpu temp", "route": "lite_agent", "recon_mode": false}
+{"text": "what apps are in watt systems", "route": "wiki", "recon_mode": false}
+{"text": "the vulkan path is way more stable than rocm ever was", "route": "quick_chat", "recon_mode": false}
+{"text": "whats running on the box", "route": "lite_agent", "recon_mode": false}
+{"text": "what features does bidwatt have so far", "route": "wiki", "recon_mode": false}
+{"text": "hows the bidwatt build coming along", "route": "status", "recon_mode": false}
+{"text": "explain kubernetes like im 5", "route": "quick_chat", "recon_mode": false}
+{"text": "fair enough", "route": "quick_chat", "recon_mode": false}
+{"text": "whats a jsonl file", "route": "quick_chat", "recon_mode": false}
+{"text": "build a dashboard page for cwatt-commandcenter showing all my services", "route": "dispatch", "recon_mode": false}
+{"text": "explain the nimo box", "route": "wiki", "recon_mode": false}
+{"text": "you get that done?", "route": "status", "recon_mode": false}
+{"text": "implement undo for unit commands in the rts", "route": "dispatch", "recon_mode": false}
+{"text": "is the dispatch done yet", "route": "status", "recon_mode": false}
+{"text": "what’s bidwatt’s database schema look like", "route": "wiki", "recon_mode": false}
+{"text": "how much vram is free", "route": "lite_agent", "recon_mode": false}
+{"text": "did you finish that task yet", "route": "status", "recon_mode": false}
+{"text": "make a react native wrapper for the nexus chat", "route": "dispatch", "recon_mode": false}
+{"text": "build a tiny url shortener for the meetup links", "route": "dispatch", "recon_mode": false}
+{"text": "show the queue", "route": "status", "recon_mode": false}
+{"text": "how hot is the cpu", "route": "lite_agent", "recon_mode": false}
+{"text": "who won the seahawks game", "route": "lite_agent", "recon_mode": false}
+{"text": "how much ram you using", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me about vibe command’s units", "route": "wiki", "recon_mode": false}
+{"text": "hey can you check if hermes is running", "route": "lite_agent", "recon_mode": false}
+{"text": "what does sparky do again", "route": "wiki", "recon_mode": false}
+{"text": "look at the subwatt repo and list every external api it calls, report only", "route": "task", "recon_mode": true}
+{"text": "delete the test screenshots in output/", "route": "lite_agent", "recon_mode": false}
+{"text": "build a plugin for open webui that shows sparky", "route": "dispatch", "recon_mode": false}
+{"text": "make sparky blink more slowly in the overlay", "route": "dispatch", "recon_mode": false}
+{"text": "go through the credentials registry and report which tier 1 services are still unconfigured, do not modify secrets", "route": "task", "recon_mode": true}
+{"text": "what would you build if you were me", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate why the eod summary came out empty yesterday", "route": "task", "recon_mode": true}
+{"text": "add a retry with backoff to the telegram sender", "route": "dispatch", "recon_mode": false}
+{"text": "clear out output/images", "route": "lite_agent", "recon_mode": false}
+{"text": "add stripe checkout to jobwatt", "route": "dispatch", "recon_mode": false}
+{"text": "add a pause menu and save game to the rts", "route": "dispatch", "recon_mode": false}
+{"text": "legend", "route": "quick_chat", "recon_mode": false}
+{"text": "research what other people charge for local ai setups like the ai in a box thing", "route": "task", "recon_mode": false}
+{"text": "transcribe this youtube vid and give me the takeaways https://youtube.com/watch?v=Xy12Ab34Cd5", "route": "task", "recon_mode": false}
+{"text": "ok im back", "route": "quick_chat", "recon_mode": false}
+{"text": "tell me about the nexus roadmap", "route": "wiki", "recon_mode": false}
+{"text": "what time is it in tokyo", "route": "quick_chat", "recon_mode": false}
+{"text": "what engine is vibe command on", "route": "wiki", "recon_mode": false}
+{"text": "go to the supabase dashboard in the browser and tell me how many rows are in the bids table", "route": "task", "recon_mode": false}
+{"text": "is the queue backed up", "route": "status", "recon_mode": false}
+{"text": "restart ollama", "route": "lite_agent", "recon_mode": false}
+{"text": "my wifi keeps dropping on the nimo, figure out whats going on and fix it", "route": "task", "recon_mode": false}
+{"text": "what’s today’s date again", "route": "quick_chat", "recon_mode": false}
+{"text": "what does the coding router do with slash commands", "route": "wiki", "recon_mode": false}
+{"text": "2400 * 1.08", "route": "quick_chat", "recon_mode": false}
+{"text": "convert the vibe command gdscript to typed gdscript", "route": "dispatch", "recon_mode": false}
+{"text": "what’s my supabase project status", "route": "lite_agent", "recon_mode": false}
+{"text": "where to buy a usb c nvme enclosure", "route": "lite_agent", "recon_mode": false}
+{"text": "back", "route": "quick_chat", "recon_mode": false}
+{"text": "not a fan of how the eod brief formats tables", "route": "quick_chat", "recon_mode": false}
+{"text": "go through ~/Dev and tell me which projects have uncommitted changes, just report", "route": "task", "recon_mode": true}
+{"text": "what year is it", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the newest qwen model out", "route": "lite_agent", "recon_mode": false}
+{"text": "where are we on the roadmap", "route": "wiki", "recon_mode": false}
+{"text": "what do you know about me", "route": "quick_chat", "recon_mode": false}
+{"text": "recent tasks pls", "route": "status", "recon_mode": false}
+{"text": "explain how subwatt handles vendors", "route": "wiki", "recon_mode": false}
+{"text": "audit the brave search usage and tell me if we are close to the limit", "route": "task", "recon_mode": true}
+{"text": "is the rts task still in progress", "route": "status", "recon_mode": false}
+{"text": "bounce the hermes gateway", "route": "lite_agent", "recon_mode": false}
+{"text": "ping google.com", "route": "lite_agent", "recon_mode": false}
+{"text": "is comfyui running rn", "route": "lite_agent", "recon_mode": false}
+{"text": "migrate the jobwatt styles to tailwind v4", "route": "dispatch", "recon_mode": false}
+{"text": "read the project wiki for bidwatt and tell me whats blocking launch", "route": "task", "recon_mode": false}
+{"text": "any ideas for a name for the box product", "route": "quick_chat", "recon_mode": false}
+{"text": "tell me about wattbott", "route": "wiki", "recon_mode": false}
+{"text": "what is a bid bond", "route": "quick_chat", "recon_mode": false}
+{"text": "haha nice", "route": "quick_chat", "recon_mode": false}
+{"text": "appreciate it bud", "route": "quick_chat", "recon_mode": false}
+{"text": "send the game link", "route": "lite_agent", "recon_mode": false}
+{"text": "explain what a mini pc is vs a nuc", "route": "quick_chat", "recon_mode": false}
+{"text": "explain timewatt real quick", "route": "wiki", "recon_mode": false}
+{"text": "create a snake game but the snake is a pipe and it gets insulated as it grows", "route": "dispatch", "recon_mode": false}
+{"text": "figure out why my second monitor stopped showing up and try to fix it", "route": "task", "recon_mode": false}
+{"text": "how far along is the dispatch", "route": "status", "recon_mode": false}
+{"text": "add to task e5f6a7b8: make it mobile friendly too", "route": "status", "recon_mode": false}
+{"text": "gm", "route": "quick_chat", "recon_mode": false}
+{"text": "switch the chat model over to deepseek flash and make sure the key works", "route": "task", "recon_mode": false}
+{"text": "who invented the transistor", "route": "quick_chat", "recon_mode": false}
+{"text": "forecast for walla walla this weekend", "route": "lite_agent", "recon_mode": false}
+{"text": "what should we work on next", "route": "quick_chat", "recon_mode": false}
+{"text": "open the vibe command project folder on the desktop", "route": "lite_agent", "recon_mode": false}
+{"text": "difference between a mutex and a semaphore?", "route": "quick_chat", "recon_mode": false}
+{"text": "tasks?", "route": "status", "recon_mode": false}
+{"text": "is that right?", "route": "quick_chat", "recon_mode": false}
+{"text": "night", "route": "quick_chat", "recon_mode": false}
+{"text": "read through the bidwatt repo and tell me where auth is handled, no edits", "route": "task", "recon_mode": true}
+{"text": "man the hospital bid was brutal today", "route": "quick_chat", "recon_mode": false}
+{"text": "what is a mixture of experts model good for", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate why the git watcher missed the last few commits on vibe-command", "route": "task", "recon_mode": true}
+{"text": "restart the telegram bot", "route": "lite_agent", "recon_mode": false}
+{"text": "find three solid articles on pricing a hardware plus software bundle and summarize them", "route": "task", "recon_mode": false}
+{"text": "did my last dispatch error out", "route": "status", "recon_mode": false}
+{"text": "brb", "route": "quick_chat", "recon_mode": false}
+{"text": "latest news on the kennewick school levy", "route": "lite_agent", "recon_mode": false}
+{"text": "create a fastapi service that serves the sparky state", "route": "dispatch", "recon_mode": false}
+{"text": "code a chess puzzle trainer", "route": "dispatch", "recon_mode": false}
+{"text": "what version of ollama am i on", "route": "lite_agent", "recon_mode": false}
+{"text": "research stripe connect vs lemon squeezy for selling the box and recommend one", "route": "task", "recon_mode": false}
+{"text": "tell me about the nimo", "route": "wiki", "recon_mode": false}
+{"text": "create a script that reads my bid log xlsx and spits out win rate by client and by month", "route": "dispatch", "recon_mode": false}
+{"text": "hey nexus", "route": "quick_chat", "recon_mode": false}
+{"text": "make a little platformer with sparky as the hero", "route": "dispatch", "recon_mode": false}
+{"text": "download the bid docs for the pasco school job and sort them by trade", "route": "task", "recon_mode": false}
+{"text": "what is the nimo", "route": "wiki", "recon_mode": false}
+{"text": "where do i work", "route": "quick_chat", "recon_mode": false}
+{"text": "scrape the city of pasco bid board and list any insulation related projects", "route": "task", "recon_mode": false}
+{"text": "ty", "route": "quick_chat", "recon_mode": false}
+{"text": "stop the dashboard", "route": "lite_agent", "recon_mode": false}
+{"text": "look into what it takes to get bidwatt SOC2 ready and list the steps", "route": "task", "recon_mode": false}
+{"text": "fix it so the timewatt report rounds to quarter hours instead of tenths", "route": "dispatch", "recon_mode": false}
+{"text": "look up the phone number for the irex office in pasco", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the task id for the tetris build", "route": "status", "recon_mode": false}
+{"text": "what does a framework desktop cost", "route": "lite_agent", "recon_mode": false}
+{"text": "what does CSI division 23 cover", "route": "quick_chat", "recon_mode": false}
+{"text": "pull up the tetris game", "route": "lite_agent", "recon_mode": false}
+{"text": "research labor productivity factors for pipe insulation work at height and cite sources", "route": "task", "recon_mode": false}
+{"text": "recon the hermes install in ~/.hermes and report what its configured to use", "route": "task", "recon_mode": true}
+{"text": "what is hermes", "route": "wiki", "recon_mode": false}
+{"text": "write a script that pulls my bidwatt bids from supabase and emails a weekly summary", "route": "dispatch", "recon_mode": false}
+{"text": "tidy up the scratchpad.md in the bidwatt project, merge the duplicate notes", "route": "task", "recon_mode": false}
+{"text": "i love this thing honestly", "route": "quick_chat", "recon_mode": false}
+{"text": "see if there’s a way to get nexus notifications on my apple watch, research it and tell me the options", "route": "task", "recon_mode": false}
+{"text": "add oauth login with google to planwatt", "route": "dispatch", "recon_mode": false}
+{"text": "what’s this post about https://x.com/ollama/status/1901234567890123456", "route": "lite_agent", "recon_mode": false}
+{"text": "who won the mariners game last night", "route": "lite_agent", "recon_mode": false}
+{"text": "recon the cwatt-bidboard repo layout and report findings as a checklist", "route": "dispatch", "recon_mode": true}
+{"text": "pull latest on bidwatt, run the test suite, and tell me what failed", "route": "task", "recon_mode": false}
+{"text": "quick google: board feet in a 2x4x8", "route": "lite_agent", "recon_mode": false}
+{"text": "cancel everything in the queue", "route": "status", "recon_mode": false}
+{"text": "tell me about bidwatt", "route": "wiki", "recon_mode": false}
+{"text": "what did we learn from hermes", "route": "wiki", "recon_mode": false}
+{"text": "look through the nexus git history for the last month and give me a changelog, dont commit anything", "route": "task", "recon_mode": true}
+{"text": "hellooo", "route": "quick_chat", "recon_mode": false}
+{"text": "explain oauth refresh tokens real quick", "route": "quick_chat", "recon_mode": false}
+{"text": "change the default time budget in cc_dispatcher to 30 minutes", "route": "dispatch", "recon_mode": false}
+{"text": "tell me about sparky", "route": "wiki", "recon_mode": false}
+{"text": "split coding_agent.py into planner and executor", "route": "dispatch", "recon_mode": false}
+{"text": "who is wattbott", "route": "wiki", "recon_mode": false}
+{"text": "stop the chronicle service", "route": "lite_agent", "recon_mode": false}
+{"text": "go through the wiki and give me a report of stale pages, do not modify", "route": "task", "recon_mode": true}
+{"text": "add keyboard shortcuts to the rts, like ctrl groups", "route": "dispatch", "recon_mode": false}
+{"text": "read these three posts and compare them\nhttps://x.com/a/status/1901111111111111111\nhttps://x.com/b/status/1902222222222222222\nhttps://x.com/c/status/1903333333333333333", "route": "task", "recon_mode": false}
+{"text": "show me tools/diff_tool.py line count", "route": "lite_agent", "recon_mode": false}
+{"text": "set up a weekly job that emails me a bidwatt usage report", "route": "task", "recon_mode": false}
+{"text": "audit the disk usage of the models folder and report which models we could drop, dont delete", "route": "task", "recon_mode": true}
+{"text": "do you get tired", "route": "quick_chat", "recon_mode": false}
+{"text": "explain the watt systems product lineup", "route": "wiki", "recon_mode": false}
+{"text": "what is a webhook", "route": "quick_chat", "recon_mode": false}
+{"text": "build a reading list of the best local llm blogs and add it to the wiki", "route": "task", "recon_mode": false}
+{"text": "weather", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me about subwatt", "route": "wiki", "recon_mode": false}
+{"text": "queue length?", "route": "status", "recon_mode": false}
+{"text": "any tasks running?", "route": "status", "recon_mode": false}
+{"text": "check if the git watcher is running", "route": "lite_agent", "recon_mode": false}
+{"text": "what month is it", "route": "quick_chat", "recon_mode": false}
+{"text": "show me the readme for subwatt", "route": "lite_agent", "recon_mode": false}
+{"text": "gimme the play link for the breakout one", "route": "lite_agent", "recon_mode": false}
+{"text": "where can i play the snake game you made", "route": "lite_agent", "recon_mode": false}
+{"text": "whats next on the nexus roadmap", "route": "wiki", "recon_mode": false}
+{"text": "is the nexus-task-worker service running", "route": "lite_agent", "recon_mode": false}
+{"text": "we should really write tests for subwatt one day", "route": "quick_chat", "recon_mode": false}
+{"text": "build a game where you dodge falling ductwork", "route": "dispatch", "recon_mode": false}
+{"text": "download every image on this page into output/refs https://example.com/moodboard", "route": "task", "recon_mode": false}
+{"text": "do i need a jacket tonight", "route": "lite_agent", "recon_mode": false}
+{"text": "read me the first 20 lines of SOUL.md", "route": "lite_agent", "recon_mode": false}
+{"text": "create a github repo for timewatt and push the starter files from ~/Dev/timewatt", "route": "task", "recon_mode": false}
+{"text": "perfect thank you", "route": "quick_chat", "recon_mode": false}
+{"text": "cancel 4d3c2b1a", "route": "status", "recon_mode": false}
+{"text": "gpu usage?", "route": "lite_agent", "recon_mode": false}
+{"text": "what is wattbott’s gpu", "route": "wiki", "recon_mode": false}
+{"text": "pull the karpathy llm wiki gist, read it, and write a one pager on how it maps to our wiki", "route": "task", "recon_mode": false}
+{"text": "whats loaded in ollama right now", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me about the watt systems brand", "route": "wiki", "recon_mode": false}
+{"text": "what is sparky", "route": "wiki", "recon_mode": false}
+{"text": "check if the meetup page is loading", "route": "lite_agent", "recon_mode": false}
+{"text": "why is the sky blue", "route": "quick_chat", "recon_mode": false}
+{"text": "anything fail in the queue?", "route": "status", "recon_mode": false}
+{"text": "snap the screen", "route": "lite_agent", "recon_mode": false}
+{"text": "is the nexus design server up on 11436", "route": "lite_agent", "recon_mode": false}
+{"text": "restart nexus-prewarm pls", "route": "lite_agent", "recon_mode": false}
+{"text": "make a chrome extension that saves x posts to my nexus wiki", "route": "dispatch", "recon_mode": false}
+{"text": "never mind", "route": "quick_chat", "recon_mode": false}
+{"text": "whats eating my cpu", "route": "lite_agent", "recon_mode": false}
+{"text": "you should probably refactor the dispatcher one of these days", "route": "quick_chat", "recon_mode": false}
+{"text": "tail the last 50 lines of the task worker log", "route": "lite_agent", "recon_mode": false}
+{"text": "how long does concrete take to cure", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the npm vulnerabilities in bidwatt", "route": "dispatch", "recon_mode": false}
+{"text": "investigate the memory growth in the sparky state bridge and report, dont fix yet", "route": "dispatch", "recon_mode": true}
+{"text": "explain what timewatt tracks per worker", "route": "wiki", "recon_mode": false}
+{"text": "append tonights meetup notes to the ai-in-the-tri wiki", "route": "task", "recon_mode": false}
+{"text": "what is prompt caching", "route": "quick_chat", "recon_mode": false}
+{"text": "round 3.14159 to 2 places", "route": "quick_chat", "recon_mode": false}
+{"text": "download the ollama logs from last night, find the DeviceLost errors, and restart ollama after", "route": "task", "recon_mode": false}
+{"text": "tell me about hermes", "route": "wiki", "recon_mode": false}
+{"text": "set up the credentials for vercel and supabase and verify both work", "route": "task", "recon_mode": false}
+{"text": "make a timesheet pdf generator for timewatt", "route": "dispatch", "recon_mode": false}
+{"text": "qwen 3.5 122b felt slower than i expected", "route": "quick_chat", "recon_mode": false}
+{"text": "whats a sparky on a jobsite, like the slang", "route": "quick_chat", "recon_mode": false}
+{"text": "you awake", "route": "quick_chat", "recon_mode": false}
+{"text": "google mechanical insulation labor units", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the difference between tcp and udp", "route": "quick_chat", "recon_mode": false}
+{"text": "why do people like rust so much", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the date", "route": "quick_chat", "recon_mode": false}
+{"text": "update decisions.md for vibe-command, we decided on godot 4.7 navigation servers", "route": "task", "recon_mode": false}
+{"text": "scan the bidwatt supabase schema and report which tables have no row level security, do not change policies", "route": "task", "recon_mode": true}
+{"text": "do a recon of whats listening on every port on the box and report it", "route": "task", "recon_mode": true}
+{"text": "uv index today", "route": "lite_agent", "recon_mode": false}
+{"text": "make a 2048 clone with a dark theme", "route": "dispatch", "recon_mode": false}
+{"text": "make the eod brief script shorter and group by project", "route": "dispatch", "recon_mode": false}
+{"text": "what games do we have", "route": "lite_agent", "recon_mode": false}
+{"text": "is the research task still going", "route": "status", "recon_mode": false}
+{"text": "i kinda want to rewrite vibe command in rust lol", "route": "quick_chat", "recon_mode": false}
+{"text": "why?", "route": "quick_chat", "recon_mode": false}
+{"text": "read through subwatt and tell me what it would take to add multi tenant, do not edit", "route": "dispatch", "recon_mode": true}
+{"text": "no", "route": "quick_chat", "recon_mode": false}
+{"text": "is it finished", "route": "status", "recon_mode": false}
+{"text": "explain planwatt vs bidwatt", "route": "wiki", "recon_mode": false}
+{"text": "remind me what jobwatt tracks", "route": "wiki", "recon_mode": false}
+{"text": "say something nice", "route": "quick_chat", "recon_mode": false}
+{"text": "whats task 3fa9c1 doing", "route": "status", "recon_mode": false}
+{"text": "fix the broken links in the wiki index page", "route": "task", "recon_mode": false}
+{"text": "write up the meetup recap for tuesday and post it to the ai in the tri wiki", "route": "task", "recon_mode": false}
+{"text": "update models.json so the router points at qwen3:4b-router once its trained", "route": "task", "recon_mode": false}
+{"text": "recon my cwatt-commandcenter repo and list what needs a login or api key before it can run", "route": "task", "recon_mode": true}
+{"text": "fix the typo in STYLE.md where it says teh", "route": "task", "recon_mode": false}
+{"text": "ai in the tri was packed last night like 30 people showed", "route": "quick_chat", "recon_mode": false}
+{"text": "explain bidwatt to me like im pitching it", "route": "wiki", "recon_mode": false}
+{"text": "explain hermes and how it compares to you", "route": "wiki", "recon_mode": false}
+{"text": "how big is the chroma folder", "route": "lite_agent", "recon_mode": false}
+{"text": "what’s the difference between gguf and safetensors", "route": "quick_chat", "recon_mode": false}
+{"text": "what are you exactly", "route": "quick_chat", "recon_mode": false}
+{"text": "compare ollama vs llama.cpp vs vllm on strix halo with sources", "route": "task", "recon_mode": false}
+{"text": "what was phase 39 on the roadmap", "route": "wiki", "recon_mode": false}
+{"text": "how much is a 4090 going for these days", "route": "lite_agent", "recon_mode": false}
+{"text": "any open PRs on bidwatt?", "route": "lite_agent", "recon_mode": false}
+{"text": "how’s that job going", "route": "status", "recon_mode": false}
+{"text": "build a tetris clone in one html file", "route": "dispatch", "recon_mode": false}
+{"text": "is the telegram bot service up", "route": "lite_agent", "recon_mode": false}
+{"text": "for task 99aa88bb also include a readme", "route": "status", "recon_mode": false}
+{"text": "what specs does the nimo have", "route": "wiki", "recon_mode": false}
+{"text": "what’s your favorite project of mine", "route": "quick_chat", "recon_mode": false}
+{"text": "read the supabase auth docs and tell me how to do magic links with next 15, step by step", "route": "task", "recon_mode": false}
+{"text": "you should stop saying WHAMMY so much lol", "route": "quick_chat", "recon_mode": false}
+{"text": "search for the vulkan backend flag for ollama", "route": "lite_agent", "recon_mode": false}
+{"text": "any dispatches in flight", "route": "status", "recon_mode": false}
+{"text": "research how other agent frameworks do long term memory and give me a comparison doc", "route": "task", "recon_mode": false}
+{"text": "what products are under watt systems", "route": "wiki", "recon_mode": false}
+{"text": "where is vibe command at", "route": "wiki", "recon_mode": false}
+{"text": "find 5 good youtube tutorials on godot fog of war and summarize each", "route": "task", "recon_mode": false}
+{"text": "investigate why the ollama service restarted 4 times today", "route": "task", "recon_mode": true}
+{"text": "fix the telegram chunker splitting code blocks wrong", "route": "dispatch", "recon_mode": false}
+{"text": "dark mode would look sick on the jobwatt dashboard", "route": "quick_chat", "recon_mode": false}
+{"text": "thinking we add a fire sprinkler module later", "route": "quick_chat", "recon_mode": false}
+{"text": "build a racing game in three.js", "route": "dispatch", "recon_mode": false}
+{"text": "sqrt of 2", "route": "quick_chat", "recon_mode": false}
+{"text": "how many days till christmas", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the date next tuesday", "route": "quick_chat", "recon_mode": false}
+{"text": "did the snake game task finish", "route": "status", "recon_mode": false}
+{"text": "are you local or cloud", "route": "quick_chat", "recon_mode": false}
+{"text": "drop me the url for the rts web build", "route": "lite_agent", "recon_mode": false}
+{"text": "how many stars does bidwatt have lol", "route": "lite_agent", "recon_mode": false}
+{"text": "what is a change order vs a CCD", "route": "quick_chat", "recon_mode": false}
+{"text": "how does the coding router work", "route": "wiki", "recon_mode": false}
+{"text": "whats the difference between a GC and a sub", "route": "quick_chat", "recon_mode": false}
+{"text": "whats on the nexus roadmap", "route": "wiki", "recon_mode": false}
+{"text": "what’s a LLM wiki", "route": "quick_chat", "recon_mode": false}
+{"text": "look through memory/lessons.md and flag anything outdated, do not edit it", "route": "task", "recon_mode": true}
+{"text": "add sound effects to the breakout game, just simple beeps", "route": "dispatch", "recon_mode": false}
+{"text": "what was the result of task ab12cd34ef", "route": "status", "recon_mode": false}
+{"text": "make a script that watches ~/Downloads and files specs by project", "route": "dispatch", "recon_mode": false}
+{"text": "cancel the last task", "route": "status", "recon_mode": false}
+{"text": "we could probably get rid of the game studio tools", "route": "quick_chat", "recon_mode": false}
+{"text": "add caching to the brave search tool", "route": "dispatch", "recon_mode": false}
+{"text": "honestly the coding router table is getting too big", "route": "quick_chat", "recon_mode": false}
+{"text": "audit nexus.py tool registrations vs the mcp server and report any mismatches", "route": "task", "recon_mode": true}
+{"text": "nexus you ok? feeling slow", "route": "lite_agent", "recon_mode": false}
+{"text": "add pagination to the bids table in bidwatt", "route": "dispatch", "recon_mode": false}
+{"text": "is tailscale having an outage right now", "route": "lite_agent", "recon_mode": false}
+{"text": "makes sense", "route": "quick_chat", "recon_mode": false}
+{"text": "fix the crash when you select zero units in the rts", "route": "dispatch", "recon_mode": false}
+{"text": "investigate why the vibe command build fails on export and report back, dont modify the project", "route": "dispatch", "recon_mode": true}
+{"text": "fix whatever is making the jobwatt tests fail", "route": "dispatch", "recon_mode": false}
+{"text": "what does UMA mean on amd apus", "route": "quick_chat", "recon_mode": false}
+{"text": "what is subwatt", "route": "wiki", "recon_mode": false}
+{"text": "should i quit my job and do this full time lol", "route": "quick_chat", "recon_mode": false}
+{"text": "imo the rts art should look more like c&c generals", "route": "quick_chat", "recon_mode": false}
+{"text": "cancel task 9f8e7d6c5b4a", "route": "status", "recon_mode": false}
+{"text": "queue?", "route": "status", "recon_mode": false}
+{"text": "dig into how hermes does skill patching and write up what we could steal for nexus", "route": "task", "recon_mode": false}
+{"text": "thx", "route": "quick_chat", "recon_mode": false}
+{"text": "edit SOUL.md so you stop using emojis in replies", "route": "task", "recon_mode": false}
+{"text": "read the llm_router guards and report which ones overlap, do not modify", "route": "dispatch", "recon_mode": true}
+{"text": "build a flappy sparky game where sparky dodges hard hats", "route": "dispatch", "recon_mode": false}
+{"text": "which task is running right now", "route": "status", "recon_mode": false}
+{"text": "find me reviews of every mini pc with strix halo and make a comparison chart", "route": "task", "recon_mode": false}
+{"text": "gather the top 20 AI news stories from the past week and make me a digest", "route": "task", "recon_mode": false}
+{"text": "you there?", "route": "quick_chat", "recon_mode": false}
+{"text": "research godot 4 rts multiplayer networking approaches, pros and cons", "route": "task", "recon_mode": false}
+{"text": "what did the last dispatch change", "route": "status", "recon_mode": false}
+{"text": "i bet we could sell 10 boxes at the next meetup", "route": "quick_chat", "recon_mode": false}
+{"text": "oh damn", "route": "quick_chat", "recon_mode": false}
+{"text": "what’s left in the queue", "route": "status", "recon_mode": false}
+{"text": "schedule a reminder friday 10am to submit the hospital bid, and another at 9 to double check the alternates", "route": "task", "recon_mode": false}
+{"text": "price check on a 5090", "route": "lite_agent", "recon_mode": false}
+{"text": "can you hear me", "route": "quick_chat", "recon_mode": false}
+{"text": "pull together a list of every tech meetup in the tri cities with dates and links", "route": "task", "recon_mode": false}
+{"text": "i wonder if strix halo can do video gen decent", "route": "quick_chat", "recon_mode": false}
+{"text": "what was my last tweet", "route": "lite_agent", "recon_mode": false}
+{"text": "clean the duplicate entries out of memory/patterns.md and commit it", "route": "task", "recon_mode": false}
+{"text": "look at the jobwatt repo and tell me whats half built, do not edit or push", "route": "task", "recon_mode": true}
+{"text": "whats up sparky", "route": "quick_chat", "recon_mode": false}
+{"text": "what’s sparky’s personality supposed to be", "route": "wiki", "recon_mode": false}
+{"text": "generate an image of sparky in a hard hat and send it to me", "route": "task", "recon_mode": false}
+{"text": "how many square feet is 40 by 60", "route": "quick_chat", "recon_mode": false}
+{"text": "add rate limiting to the telegram commands", "route": "dispatch", "recon_mode": false}
+{"text": "what happened with the task i sent this morning", "route": "status", "recon_mode": false}
+{"text": "add a /health endpoint to nexus_api.py", "route": "dispatch", "recon_mode": false}
+{"text": "replace the regex in the lookup guard with a proper parser and add tests", "route": "dispatch", "recon_mode": false}
+{"text": "give me a funny name for a pipe insulation company", "route": "quick_chat", "recon_mode": false}
+{"text": "any word on the subwatt csv task?", "route": "status", "recon_mode": false}
+{"text": "roast my bid spreadsheet habits", "route": "quick_chat", "recon_mode": false}
+{"text": "which should i finish first, subwatt or timewatt?", "route": "quick_chat", "recon_mode": false}
+{"text": "open youtube on the desktop", "route": "lite_agent", "recon_mode": false}
+{"text": "we should think about a mobile app for jobwatt eventually", "route": "quick_chat", "recon_mode": false}
+{"text": "is it overkill to fine tune the router", "route": "quick_chat", "recon_mode": false}
+{"text": "code a minesweeper in vanilla js", "route": "dispatch", "recon_mode": false}
+{"text": "note for task 1a2b3c4d: use tailwind not css modules", "route": "status", "recon_mode": false}
+{"text": "how many days left in the month", "route": "quick_chat", "recon_mode": false}
+{"text": "make me a pong game i can play on my phone", "route": "dispatch", "recon_mode": false}
+{"text": "check why bidwatt.vercel.app is down", "route": "lite_agent", "recon_mode": false}
+{"text": "look up every godot 4.7 breaking change and list what affects vibe command", "route": "task", "recon_mode": false}
+{"text": "whats subwatt supposed to do again", "route": "wiki", "recon_mode": false}
+{"text": "tell me the date", "route": "quick_chat", "recon_mode": false}
+{"text": "is my github token still good", "route": "lite_agent", "recon_mode": false}
+{"text": "whats a submittal in construction", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate the memory leak in the task worker, report findings first", "route": "task", "recon_mode": true}
+{"text": "lmk when its done", "route": "status", "recon_mode": false}
+{"text": "feel like making a game", "route": "quick_chat", "recon_mode": false}
+{"text": "disk space left?", "route": "lite_agent", "recon_mode": false}
+{"text": "what’s on my screen rn", "route": "lite_agent", "recon_mode": false}
+{"text": "youre getting smarter lol", "route": "quick_chat", "recon_mode": false}
+{"text": "add a loading spinner to the jobwatt login", "route": "dispatch", "recon_mode": false}
+{"text": "remind me what bidwatt does", "route": "wiki", "recon_mode": false}
+{"text": "evening", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the link to play the rts", "route": "lite_agent", "recon_mode": false}
+{"text": "read through the ai in a box checklist and update anything we already finished", "route": "task", "recon_mode": false}
+{"text": "what tasks failed today", "route": "status", "recon_mode": false}
+{"text": "tell me about planwatt’s features", "route": "wiki", "recon_mode": false}
+{"text": "remember my wife’s birthday is march 3", "route": "lite_agent", "recon_mode": false}
+{"text": "research how to market a $250 local ai box to small contractors, give me 10 ideas with examples", "route": "task", "recon_mode": false}
+{"text": "we should make the eod summary shorter", "route": "quick_chat", "recon_mode": false}
+{"text": "current llama.cpp release", "route": "lite_agent", "recon_mode": false}
+{"text": "send over that image you generated", "route": "lite_agent", "recon_mode": false}
+{"text": "thank you!!", "route": "quick_chat", "recon_mode": false}
+{"text": "create the onboarding wizard for the ai in a box first boot", "route": "dispatch", "recon_mode": false}
+{"text": "build a voice memo to bid note tool using whisper", "route": "dispatch", "recon_mode": false}
+{"text": "find me 10 mechanical insulation contractors in eastern washington and put them in a spreadsheet", "route": "task", "recon_mode": false}
+{"text": "build a checkers game with an ai opponent", "route": "dispatch", "recon_mode": false}
+{"text": "what are the coding router stats", "route": "wiki", "recon_mode": false}
+{"text": "implement row level security policies for subwatt", "route": "dispatch", "recon_mode": false}
+{"text": "restart nexus-api", "route": "lite_agent", "recon_mode": false}
+{"text": "search github for godot rts starter templates", "route": "lite_agent", "recon_mode": false}
+{"text": "add websocket updates to the commandcenter dashboard", "route": "dispatch", "recon_mode": false}
+{"text": "whats your opinion on tauri for a desktop version of bidwatt", "route": "quick_chat", "recon_mode": false}
+{"text": "research the washington state L&I rules for apprentice ratios and summarize them for insulators", "route": "task", "recon_mode": false}
+{"text": "whats the current mortgage rate in washington", "route": "lite_agent", "recon_mode": false}
+{"text": "set up tailscale funnel for the nexus api and test it from outside", "route": "task", "recon_mode": false}
+{"text": "download this pdf https://example.com/specs/230700-hvac-insulation.pdf", "route": "lite_agent", "recon_mode": false}
+{"text": "write a godot shader for the rts water", "route": "dispatch", "recon_mode": false}
+{"text": "what did you find on that research task", "route": "status", "recon_mode": false}
+{"text": "wanna build something cool this weekend?", "route": "quick_chat", "recon_mode": false}
+{"text": "bidwatt: the bid list sorts alphabetically but i want it by due date then by client. fix it and add a sort toggle", "route": "dispatch", "recon_mode": false}
+{"text": "might be time to retire qwen3:4b as the fallback", "route": "quick_chat", "recon_mode": false}
+{"text": "am i logged into gh", "route": "lite_agent", "recon_mode": false}
+{"text": "clean up the ollama models i havent used in a month and tell me how much space we freed", "route": "task", "recon_mode": false}
+{"text": "scaffold a new next.js app for planwatt with supabase auth", "route": "dispatch", "recon_mode": false}
+{"text": "audit the ai in a box installer script and list anything that would break on a fresh ubuntu install", "route": "task", "recon_mode": true}
+{"text": "read every file in ~/AI_Agent/docs and make me an index with one line each", "route": "task", "recon_mode": false}
+{"text": "morning bud", "route": "quick_chat", "recon_mode": false}
+{"text": "make a python tool that parses bid tabulations from pdf into json", "route": "dispatch", "recon_mode": false}
+{"text": "grab a screenshot and tell me whats on it", "route": "lite_agent", "recon_mode": false}
+{"text": "tell me when that task wraps up", "route": "status", "recon_mode": false}
+{"text": "who uses jobwatt", "route": "wiki", "recon_mode": false}
+{"text": "start the sparky overlay", "route": "lite_agent", "recon_mode": false}
+{"text": "did anthropic ship anything new this week", "route": "lite_agent", "recon_mode": false}
+{"text": "anything still pending", "route": "status", "recon_mode": false}
+{"text": "check my deepseek balance", "route": "lite_agent", "recon_mode": false}
+{"text": "hook up the resend key so the eod summary can go out by email too", "route": "task", "recon_mode": false}
+{"text": "what’s 1.5 inches in decimal feet", "route": "quick_chat", "recon_mode": false}
+{"text": "build a landing page for ai in a box with a buy button", "route": "dispatch", "recon_mode": false}
+{"text": "where are we on that vibe command dispatch", "route": "status", "recon_mode": false}
+{"text": "just got home from a site walk in richland, im beat", "route": "quick_chat", "recon_mode": false}
+{"text": "did anything finish while i was at work", "route": "status", "recon_mode": false}
+{"text": "are you healthy", "route": "lite_agent", "recon_mode": false}
+{"text": "review my .env files across ~/Dev for duplicate or conflicting keys, do not modify any of them", "route": "task", "recon_mode": true}
+{"text": "what is the nimo’s vram situation", "route": "wiki", "recon_mode": false}
+{"text": "deploy the vibe command web export to vercel and send me the url", "route": "task", "recon_mode": false}
+{"text": "how are you today", "route": "quick_chat", "recon_mode": false}
+{"text": "any progress?", "route": "status", "recon_mode": false}
+{"text": "make a weather widget for the commandcenter dashboard", "route": "dispatch", "recon_mode": false}
+{"text": "did the tools review task finish", "route": "status", "recon_mode": false}
+{"text": "maybe we try gemma for vision instead of ornith", "route": "quick_chat", "recon_mode": false}
+{"text": "cheers man", "route": "quick_chat", "recon_mode": false}
+{"text": "how is nvidia stock doing", "route": "lite_agent", "recon_mode": false}
+{"text": "you done yet?", "route": "status", "recon_mode": false}
+{"text": "is vercel down", "route": "lite_agent", "recon_mode": false}
+{"text": "what does idempotent mean", "route": "quick_chat", "recon_mode": false}
+{"text": "move all the old coding session reports older than 30 days into an archive folder", "route": "task", "recon_mode": false}
+{"text": "run uptime", "route": "lite_agent", "recon_mode": false}
+{"text": "whats a foreign key", "route": "quick_chat", "recon_mode": false}
+{"text": "link to karpathys vibe coding tweet", "route": "lite_agent", "recon_mode": false}
+{"text": "uptime?", "route": "lite_agent", "recon_mode": false}
+{"text": "create a godot scene for the vibe command minimap", "route": "dispatch", "recon_mode": false}
+{"text": "MSFT stock price", "route": "lite_agent", "recon_mode": false}
+{"text": "i think we overbuilt the sparky stuff", "route": "quick_chat", "recon_mode": false}
+{"text": "run rocm-smi", "route": "lite_agent", "recon_mode": false}
+{"text": "audit the secrets.yaml setup and tell me what services are missing tokens, dont print the tokens", "route": "task", "recon_mode": true}
+{"text": "install the new mesa drivers from the ppa and reboot the gpu stack, then test ollama", "route": "task", "recon_mode": false}
+{"text": "whats taking so long on that task", "route": "status", "recon_mode": false}
+{"text": "we should build a takeoff tool into bidwatt someday", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate the slow wiki lookups and tell me where the time goes", "route": "task", "recon_mode": true}
+{"text": "audit the rts gdscript for performance problems, report only", "route": "dispatch", "recon_mode": true}
+{"text": "who is hermes", "route": "wiki", "recon_mode": false}
+{"text": "investigate why the telegram bot went quiet overnight, check the logs and journal and report back", "route": "task", "recon_mode": true}
+{"text": "send me the build report", "route": "lite_agent", "recon_mode": false}
+{"text": "explain the coding router", "route": "wiki", "recon_mode": false}
+{"text": "turn the takeoff calculator into a pwa so i can use it on site without signal", "route": "dispatch", "recon_mode": false}
+{"text": "did the local model pick up my task", "route": "status", "recon_mode": false}
+{"text": "create a python script that renames all my spec pdfs by section number", "route": "dispatch", "recon_mode": false}
+{"text": "google who makes ASJ jacketing", "route": "lite_agent", "recon_mode": false}
+{"text": "clone https://github.com/example/godot-rts-kit and pull their fog of war shader into vibe command", "route": "dispatch", "recon_mode": false}
+{"text": "grab the forecast for all three job sites and text me a combined morning summary every day", "route": "task", "recon_mode": false}
+{"text": "build a small admin page to see all tasks in the nexus queue", "route": "dispatch", "recon_mode": false}
+{"text": "rename the meetup project to ai-in-the-tri and update every wiki reference", "route": "task", "recon_mode": false}
+{"text": "is port 11436 in use", "route": "lite_agent", "recon_mode": false}
+{"text": "check if port 8080 is responding", "route": "lite_agent", "recon_mode": false}
+{"text": "i dont love the new dashboard colors", "route": "quick_chat", "recon_mode": false}
+{"text": "last 5 tasks", "route": "status", "recon_mode": false}
+{"text": "you said you’d ping me, is it done", "route": "status", "recon_mode": false}
+{"text": "latest godot version?", "route": "lite_agent", "recon_mode": false}
+{"text": "rename the bid_items table to line_items everywhere in bidwatt", "route": "dispatch", "recon_mode": false}
+{"text": "is ollama running", "route": "lite_agent", "recon_mode": false}
+{"text": "build out the settings page in bidwatt with company info and logo upload", "route": "dispatch", "recon_mode": false}
+{"text": "current price on 2 inch armaflex", "route": "lite_agent", "recon_mode": false}
+{"text": "how many tasks did you run this week", "route": "status", "recon_mode": false}
+{"text": "good night nexus", "route": "quick_chat", "recon_mode": false}
+{"text": "what are react server components", "route": "quick_chat", "recon_mode": false}
+{"text": "research what the best mic setup is for voice mode on the nimo and give me 3 options with prices", "route": "task", "recon_mode": false}
+{"text": "update on the landing page build?", "route": "status", "recon_mode": false}
+{"text": "still working on it?", "route": "status", "recon_mode": false}
+{"text": "create a markdown to pdf converter script for my proposals", "route": "dispatch", "recon_mode": false}
+{"text": "it’d be cool if sparky could talk", "route": "quick_chat", "recon_mode": false}
+{"text": "check if the cloudflare tunnel is running", "route": "lite_agent", "recon_mode": false}
+{"text": "do you remember what we talked about earlier", "route": "quick_chat", "recon_mode": false}
+{"text": "build a price tracker for 4090s that pings me on telegram", "route": "dispatch", "recon_mode": false}
+{"text": "tell me about jobwatt", "route": "wiki", "recon_mode": false}
+{"text": "yeah go for it", "route": "quick_chat", "recon_mode": false}
+{"text": "bet", "route": "quick_chat", "recon_mode": false}
+{"text": "did task 5e6f7a8b finish or fail", "route": "status", "recon_mode": false}
+{"text": "whats my name", "route": "quick_chat", "recon_mode": false}
+{"text": "that’s exactly what i needed", "route": "quick_chat", "recon_mode": false}
+{"text": "build a vs code extension that sends selected code to nexus", "route": "dispatch", "recon_mode": false}
+{"text": "refactor bidwatt’s bid form into separate components", "route": "dispatch", "recon_mode": false}
+{"text": "audit the test coverage in bidwatt and tell me what is untested, do not add tests yet", "route": "dispatch", "recon_mode": true}
+{"text": "hermes vs nexus, whats the difference", "route": "wiki", "recon_mode": false}
+{"text": "not sure i trust deepseek with client data", "route": "quick_chat", "recon_mode": false}
+{"text": "go through the comfyui logs and figure out why qwen21 generations failed last night, report only", "route": "task", "recon_mode": true}
+{"text": "move the vibe command screenshots to the wiki and embed them in the progress page", "route": "task", "recon_mode": false}
+{"text": "who built you", "route": "quick_chat", "recon_mode": false}
+{"text": "look up the cheapest 128gb ddr5 kit", "route": "lite_agent", "recon_mode": false}
+{"text": "screenshot my desktop pls", "route": "lite_agent", "recon_mode": false}
+{"text": "whats the queue look like", "route": "status", "recon_mode": false}
+{"text": "fix the sparky overlay so it stops flickering", "route": "dispatch", "recon_mode": false}
+{"text": "what is timewatt", "route": "wiki", "recon_mode": false}
+{"text": "find out which of my github repos havent been touched in 6 months and archive the dead ones", "route": "task", "recon_mode": false}
+{"text": "whats 4 crews x 10 hr x 5 days", "route": "quick_chat", "recon_mode": false}
+{"text": "you sure?", "route": "quick_chat", "recon_mode": false}
+{"text": "whats your take on prisma vs raw sql for subwatt", "route": "quick_chat", "recon_mode": false}
+{"text": "investigate the failing jobwatt tests and write up the root cause, do not modify files", "route": "dispatch", "recon_mode": true}
+{"text": "read this and give me the key points plus what applies to nexus https://github.com/anthropics/claude-cookbooks", "route": "task", "recon_mode": false}
+{"text": "you should cache the brave search results for like an hour", "route": "quick_chat", "recon_mode": false}
+{"text": "commit the wiki changes and push, then post the commit hash here", "route": "task", "recon_mode": false}
+{"text": "research the best local tts models that run on vulkan and rank them", "route": "task", "recon_mode": false}
+{"text": "whats 17 percent of 48000", "route": "quick_chat", "recon_mode": false}
+{"text": "grep the nexus log for DeviceLost", "route": "lite_agent", "recon_mode": false}
+{"text": "build a simple space invaders in canvas", "route": "dispatch", "recon_mode": false}
+{"text": "figure out what’s using all the disk space on the nimo but do not delete anything", "route": "task", "recon_mode": true}
+{"text": "high temp tomorrow in kennewick?", "route": "lite_agent", "recon_mode": false}
+{"text": "nvm cancel that one", "route": "status", "recon_mode": false}
+{"text": "wait what", "route": "quick_chat", "recon_mode": false}
+{"text": "we might want to rate limit the telegram commands", "route": "quick_chat", "recon_mode": false}
+{"text": "how many feet in a mile", "route": "quick_chat", "recon_mode": false}
+{"text": "explain sparky’s whole deal", "route": "wiki", "recon_mode": false}
+{"text": "how full is the nvme", "route": "lite_agent", "recon_mode": false}
+{"text": "implement the hermes style skill patching in nexus", "route": "dispatch", "recon_mode": false}
+{"text": "fix the broken build on jobwatt, vercel says type error in page.tsx", "route": "dispatch", "recon_mode": false}
+{"text": "is the resend key configured", "route": "lite_agent", "recon_mode": false}
+{"text": "cancel the bidwatt build task, i changed my mind", "route": "status", "recon_mode": false}
+{"text": "if labor is 62 an hour and its 140 hours whats the total", "route": "quick_chat", "recon_mode": false}
+{"text": "summarize the readme at https://github.com/ggml-org/llama.cpp and pull out anything strix halo specific", "route": "task", "recon_mode": false}
+{"text": "look up the top 10 posts about strix halo on reddit this month and summarize what people are running", "route": "task", "recon_mode": false}
+{"text": "audit the jobwatt codebase for security issues and report findings, no code changes", "route": "dispatch", "recon_mode": true}
+{"text": "honestly id rather pay for claude than fight the local model sometimes", "route": "quick_chat", "recon_mode": false}
+{"text": "you should be more concise in the morning brief", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the last commit on vibe-command", "route": "lite_agent", "recon_mode": false}
+{"text": "what is planwatt", "route": "wiki", "recon_mode": false}
+{"text": "pending?", "route": "status", "recon_mode": false}
+{"text": "system status", "route": "lite_agent", "recon_mode": false}
+{"text": "top processes by memory", "route": "lite_agent", "recon_mode": false}
+{"text": "fill in the runbook for bidwatt with how to redeploy and rotate the supabase keys", "route": "task", "recon_mode": false}
+{"text": "send me a screen grab", "route": "lite_agent", "recon_mode": false}
+{"text": "what did you finish today", "route": "status", "recon_mode": false}
+{"text": "how much memory pressure are we at", "route": "lite_agent", "recon_mode": false}
+{"text": "rainy saturday, just hanging with the kids", "route": "quick_chat", "recon_mode": false}
+{"text": "make the box installer script idempotent", "route": "dispatch", "recon_mode": false}
+{"text": "maybe sparky should wear a hard hat", "route": "quick_chat", "recon_mode": false}
+{"text": "what does quantization actually do to a model", "route": "quick_chat", "recon_mode": false}
+{"text": "how does mixture of experts work", "route": "quick_chat", "recon_mode": false}
+{"text": "write me a haiku about takeoffs", "route": "quick_chat", "recon_mode": false}
+{"text": "whats it like outside rn", "route": "lite_agent", "recon_mode": false}
+{"text": "restart the telegram poller its stuck", "route": "lite_agent", "recon_mode": false}
+{"text": "read the vibe command project and give me a status report on what systems are done, dont edit files", "route": "task", "recon_mode": true}
+{"text": "i think the old regex router was honestly fine", "route": "quick_chat", "recon_mode": false}
+{"text": "link to play it?", "route": "lite_agent", "recon_mode": false}
+{"text": "we need a landing page for ai in a box eventually", "route": "quick_chat", "recon_mode": false}
+{"text": "is the brain model resident", "route": "lite_agent", "recon_mode": false}
+{"text": "convert all the pdfs in ~/Downloads/specs to text and index them in chroma", "route": "task", "recon_mode": false}
+{"text": "whats done in vibe command so far", "route": "wiki", "recon_mode": false}
+{"text": "log a lesson that qwen image needs images downscaled under 1024px", "route": "task", "recon_mode": false}
+{"text": "whats a LoRA adapter", "route": "quick_chat", "recon_mode": false}
+{"text": "take screenshots of every page on bidwatt.app and send them to me as an album", "route": "task", "recon_mode": false}
+{"text": "whats the output from task c0ffee12", "route": "status", "recon_mode": false}
+{"text": "search my notes for the hospital bid scope", "route": "lite_agent", "recon_mode": false}
+{"text": "check the cron jobs list", "route": "lite_agent", "recon_mode": false}
+{"text": "create a rhythm game prototype in godot", "route": "dispatch", "recon_mode": false}
+{"text": "what does this tweet say x.com/sama/status/1899988877766655544", "route": "lite_agent", "recon_mode": false}
+{"text": "search my notes for rate sheet", "route": "lite_agent", "recon_mode": false}
+{"text": "find the prevailing wage rates for benton and franklin county insulators and put them in a table", "route": "task", "recon_mode": false}
+{"text": "tell me about vibe command", "route": "wiki", "recon_mode": false}
+{"text": "is it worth pushing ornith to 128k context", "route": "quick_chat", "recon_mode": false}
+{"text": "run df -h", "route": "lite_agent", "recon_mode": false}
+{"text": "verify the backup ran last night", "route": "lite_agent", "recon_mode": false}
+{"text": "github auth status", "route": "lite_agent", "recon_mode": false}
+{"text": "can you restart the watchdog", "route": "lite_agent", "recon_mode": false}
+{"text": "status of task 7c21e0aa", "route": "status", "recon_mode": false}
+{"text": "i think fine tuning the 4b router on my real messages is the move", "route": "quick_chat", "recon_mode": false}
+{"text": "is 221 prime", "route": "quick_chat", "recon_mode": false}
+{"text": "whats the idea behind planwatt", "route": "wiki", "recon_mode": false}
+{"text": "i think planwatt should be its own product not a bidwatt tab", "route": "quick_chat", "recon_mode": false}
+{"text": "write a bash script that backs up ~/Dev to the external drive nightly", "route": "dispatch", "recon_mode": false}
+{"text": "where can i buy a nimo mini pc", "route": "lite_agent", "recon_mode": false}
+{"text": "i think bidwatt needs a better onboarding flow", "route": "quick_chat", "recon_mode": false}
+{"text": "I’m leaning towards stripe over square for jobwatt", "route": "quick_chat", "recon_mode": false}
+{"text": "pull my x bookmarks from this week and sort them into ai, construction, and random", "route": "task", "recon_mode": false}
+{"text": "update the vibe command wiki with the hud phase being done and the next steps", "route": "task", "recon_mode": false}
+{"text": "lets ship something tonight", "route": "quick_chat", "recon_mode": false}
+{"text": "create a little asteroids game with sound", "route": "dispatch", "recon_mode": false}
+{"text": "upload the ai in a box one pager to google drive and share it with me", "route": "task", "recon_mode": false}
+{"text": "whats the latest on task 2c3d4e5f", "route": "status", "recon_mode": false}
+{"text": "create an api route in bidwatt for exporting bids to csv", "route": "dispatch", "recon_mode": false}
+{"text": "check why open webui wont load", "route": "lite_agent", "recon_mode": false}
+{"text": "refactor the dispatcher into smaller modules", "route": "dispatch", "recon_mode": false}
+{"text": "save this repo as a research source and write a brief on how we could use it https://github.com/browser-use/browser-use", "route": "task", "recon_mode": false}
+{"text": "who is bidwatt for", "route": "wiki", "recon_mode": false}
+{"text": "restart the git watcher service", "route": "lite_agent", "recon_mode": false}
+{"text": "migrate my notes from the old obsidian vault into the nexus wiki", "route": "task", "recon_mode": false}
+{"text": "whats the hold up on my build", "route": "status", "recon_mode": false}
+{"text": "ugh estimates due friday and i havent started the ductwork", "route": "quick_chat", "recon_mode": false}
+{"text": "explain vibe command", "route": "wiki", "recon_mode": false}
+{"text": "how much is copper per pound today", "route": "lite_agent", "recon_mode": false}
+{"text": "what phases are done on the roadmap", "route": "wiki", "recon_mode": false}
+{"text": "what window is focused right now", "route": "lite_agent", "recon_mode": false}
+{"text": "make a breakout game themed like a construction site", "route": "dispatch", "recon_mode": false}
+{"text": "add an export to pdf button on the subwatt quote page", "route": "dispatch", "recon_mode": false}
+{"text": "write a runbook entry for restarting comfyui with --disable-mmap", "route": "task", "recon_mode": false}
+{"text": "is nexus-api up", "route": "lite_agent", "recon_mode": false}
+{"text": "explain the roadmap for nexus", "route": "wiki", "recon_mode": false}
+{"text": "dig into why the coding router stats page stopped updating, report back before touching it", "route": "task", "recon_mode": true}
+{"text": "check if the bidwatt site is up", "route": "lite_agent", "recon_mode": false}
+{"text": "load average?", "route": "lite_agent", "recon_mode": false}
+{"text": "go through my last 30 telegram messages and pull out any todos i mentioned", "route": "task", "recon_mode": false}
+{"text": "make the bidwatt dashboard load faster", "route": "dispatch", "recon_mode": false}
+{"text": "read all the lessons-learned files across projects and report the top recurring mistakes", "route": "task", "recon_mode": true}
+{"text": "recon the vercel build config across my next apps and report any differences", "route": "dispatch", "recon_mode": true}
+{"text": "feels like we should deploy bidwatt to a real domain soon", "route": "quick_chat", "recon_mode": false}
+{"text": "open this and tell me what it is https://github.com/unslothai/unsloth", "route": "lite_agent", "recon_mode": false}
+{"text": "review the coding_agent.py loop for race conditions and report what you find, no edits", "route": "dispatch", "recon_mode": true}
+{"text": "review the diff on the bidwatt feature branch for bugs, do not push anything", "route": "dispatch", "recon_mode": true}
+{"text": "which models do i have pulled", "route": "lite_agent", "recon_mode": false}
+{"text": "vercel pro pricing", "route": "lite_agent", "recon_mode": false}
+{"text": "dig into my private repo cwatt-homelab and tell me what services and keys it depends on, dont change anything", "route": "task", "recon_mode": true}
+{"text": "all good", "route": "quick_chat", "recon_mode": false}
+{"text": "what is wattbott", "route": "wiki", "recon_mode": false}
+{"text": "sweet", "route": "quick_chat", "recon_mode": false}
+{"text": "look at the timewatt repo and tell me if its worth continuing, read only", "route": "task", "recon_mode": true}
+{"text": "build me something like this but for insulation estimates https://x.com/someone/status/1904444444444444444", "route": "dispatch", "recon_mode": false}
+{"text": "find reddit reviews of the nimo mini pc and summarize the complaints", "route": "task", "recon_mode": false}
+{"text": "convert 3/4 inch to mm", "route": "quick_chat", "recon_mode": false}
+{"text": "is anything stuck in the queue", "route": "status", "recon_mode": false}
+{"text": "forget the old kennewick office address", "route": "lite_agent", "recon_mode": false}
+{"text": "lol", "route": "quick_chat", "recon_mode": false}
+{"text": "did it finish or not", "route": "status", "recon_mode": false}
+{"text": "research fire sprinkler estimating software, who are the competitors for firewatt", "route": "task", "recon_mode": false}
+{"text": "check the chroma db health and report findings, dont reindex", "route": "task", "recon_mode": true}
+{"text": "who was hermes in greek mythology", "route": "quick_chat", "recon_mode": false}
+{"text": "gotcha", "route": "quick_chat", "recon_mode": false}
+{"text": "add to memory that the meetup is tuesdays at 6", "route": "lite_agent", "recon_mode": false}
+{"text": "explain wattbott vs nexus", "route": "wiki", "recon_mode": false}
+{"text": "search for godot 4 rts pathfinding tutorial", "route": "lite_agent", "recon_mode": false}
+{"text": "report back when finished", "route": "status", "recon_mode": false}
+{"text": "make a react component that shows bids by due date as a calendar", "route": "dispatch", "recon_mode": false}
+{"text": "how many hours in 3 weeks", "route": "quick_chat", "recon_mode": false}
+{"text": "kinda thinking the subwatt name is lame", "route": "quick_chat", "recon_mode": false}
+{"text": "what can you do", "route": "quick_chat", "recon_mode": false}
+{"text": "reboot the task worker", "route": "lite_agent", "recon_mode": false}
+{"text": "whats jobwatt", "route": "wiki", "recon_mode": false}
+{"text": "go through https://docs.godotengine.org/en/stable/tutorials/navigation/index.html and give me the steps for rts pathing", "route": "task", "recon_mode": false}
+{"text": "refactor the telegram handler so each command is its own file", "route": "dispatch", "recon_mode": false}
+{"text": "how much does supabase pro cost a month", "route": "lite_agent", "recon_mode": false}
+{"text": "make me a slide deck for ai in the tri tuesday about running llms locally", "route": "task", "recon_mode": false}
+{"text": "send me the qwen image you made of sparky", "route": "lite_agent", "recon_mode": false}
+{"text": "hows it going on that thing i asked for", "route": "status", "recon_mode": false}
+{"text": "go through the nexus-core tasks.md and close out anything already shipped", "route": "task", "recon_mode": false}
+{"text": "the timewatt idea is growing on me", "route": "quick_chat", "recon_mode": false}
+{"text": "back up the chroma folder to the external drive and verify the copy", "route": "task", "recon_mode": false}
+{"text": "open brave, go to the bidwatt vercel dashboard, and screenshot the latest deploy logs", "route": "task", "recon_mode": false}
+{"text": "add fog of war to vibe command", "route": "dispatch", "recon_mode": false}
+{"text": "good job nexus", "route": "quick_chat", "recon_mode": false}
+{"text": "find the mesa 25 release notes", "route": "lite_agent", "recon_mode": false}
+{"text": "build me a wordle clone that uses trade words like duct and valve", "route": "dispatch", "recon_mode": false}
+{"text": "create a crew hours calculator for timewatt", "route": "dispatch", "recon_mode": false}
+{"text": "list my repos", "route": "lite_agent", "recon_mode": false}
+{"text": "whats good", "route": "quick_chat", "recon_mode": false}
+{"text": "thanks that did it", "route": "quick_chat", "recon_mode": false}
+{"text": "release date for the next steam deck", "route": "lite_agent", "recon_mode": false}
+{"text": "is tailscale connected on wattbott", "route": "lite_agent", "recon_mode": false}
+{"text": "what does hermes do for self learning", "route": "wiki", "recon_mode": false}
+{"text": "run ollama ps", "route": "lite_agent", "recon_mode": false}
+{"text": "make a typing speed test game for the meetup", "route": "dispatch", "recon_mode": false}
+{"text": "check if ollama is listening on 11434", "route": "lite_agent", "recon_mode": false}
+{"text": "refactor the rts unit code to use a state machine", "route": "dispatch", "recon_mode": false}
+{"text": "whats the weather gonna be for the pour tomorrow in pasco", "route": "lite_agent", "recon_mode": false}
+{"text": "migrate bidwatt from prisma to drizzle", "route": "dispatch", "recon_mode": false}
+{"text": "price of a strix halo mini pc", "route": "lite_agent", "recon_mode": false}
+{"text": "when does gta 6 come out", "route": "lite_agent", "recon_mode": false}
+{"text": "sup dude", "route": "quick_chat", "recon_mode": false}
+{"text": "what’s 340 lf times 12.50", "route": "quick_chat", "recon_mode": false}
+{"text": "can you do some research on whether nemotron would fit on my box with 32k context and how fast it would be", "route": "task", "recon_mode": false}
+{"text": "how does subwatt fit with bidwatt", "route": "wiki", "recon_mode": false}
+{"text": "look into small business grants for software startups in washington and summarize the good ones", "route": "task", "recon_mode": false}
+{"text": "find me the supabase row level security docs page", "route": "lite_agent", "recon_mode": false}
+{"text": "what day is thanksgiving this year", "route": "quick_chat", "recon_mode": false}
+{"text": "look through the planwatt code and list every TODO and half finished feature, dont change code", "route": "dispatch", "recon_mode": true}
+{"text": "make the rts units avoid each other when pathing", "route": "dispatch", "recon_mode": false}
+{"text": "whats the r value of 2 inch fiberglass pipe insulation roughly", "route": "quick_chat", "recon_mode": false}
